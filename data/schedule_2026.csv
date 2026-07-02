@@ -1,0 +1,26 @@
+tournament_id,name,cls,start_date,end_date,mpo,fpo,fpo_points,completed
+96401,DGPT - Discraft’s Supreme Flight Open Presented by Florida’s Adventure Coast,elite,2026-02-27,2026-03-01,True,True,True,True
+96402,DGPT - MVP Big Easy Open presented by Flight Factory,elite,2026-03-13,2026-03-15,True,True,True,True
+96403,DGPT - Queen City Classic presented by Another Round,elite,2026-03-27,2026-03-29,True,True,True,True
+97336,2026 PDGA Champions Cup Presented by Vessi,major,2026-04-09,2026-04-12,True,True,True,True
+96404,DGPT - Play it Again Sports Jonesboro Open presented by Westside Discs,elite,2026-04-17,2026-04-19,True,True,True,True
+96407,DGPT - GRIPeq 44th Kansas City Wide Open presented by Nexus Disc Golf,elite,2026-04-24,2026-04-26,True,True,True,True
+102001,DGPT JomezPro - Innova presents WACO powered by Legit Disc Golf,jomez,2026-05-01,2026-05-03,True,True,True,True
+96408,DGPT+ Barbasol Open at Austin presented by Hampton Inn/Home2 Suites Austin East,elite_plus,2026-05-07,2026-05-10,True,True,True,True
+96409,DGPT+ / WGE - OTB Open by MVP Disc Sports,elite_plus,2026-05-21,2026-05-24,True,True,True,True
+98193,DGPT JomezPro - Discraft Cascade Challenge,jomez,2026-05-29,2026-05-31,True,True,True,True
+96410,DGPT+ Northwest Championship Presented by Latitude 64°,elite_plus,2026-06-04,2026-06-07,True,True,True,True
+97339,2026 PDGA European Open,major,2026-06-18,2026-06-21,True,True,True,True
+96411,DGPT - Swedish Open presented by Kastaplast,elite,2026-06-26,2026-06-28,True,True,True,True
+96412,DGPT - Ale Open presented by Discraft,elite,2026-07-03,2026-07-05,True,True,True,False
+96413,DGPT - Heinola Open,elite,2026-07-10,2026-07-12,True,True,False,False
+97341,2026 PDGA United States Women's Disc Golf Championships,major,2026-07-16,2026-07-19,False,True,True,False
+100195,DGPT JomezPro Champions Landing Open presented by Dynamic Discs,jomez,2026-07-24,2026-07-26,True,True,True,False
+96414,DGPT+ Ledgestone Open,elite_plus,2026-07-30,2026-08-02,True,True,True,False
+96415,DGPT - Discmania Challenge,elite,2026-08-07,2026-08-09,True,True,True,False
+96416,DGPT - Doubles Championship at The Preserve,doubles,2026-08-14,2026-08-16,True,True,True,False
+97344,2026 PDGA Professional Disc Golf World Championships,major,2026-08-26,2026-08-30,True,True,True,False
+96417,DGPT - Open at Idlewild,elite,2026-09-04,2026-09-06,True,True,True,False
+96418,DGPT Playoffs - Green Mountain Championship,playoff,2026-09-17,2026-09-20,True,True,True,False
+96419,DGPT Playoffs - MVP Open x OTB,playoff,2026-09-24,2026-09-27,True,True,True,False
+96421,DGPT Powerball Cup,championship,2026-10-15,2026-10-18,True,True,True,False

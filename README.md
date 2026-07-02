@@ -1,60 +1,65 @@
-# DGPT Standings Forecast — a Monte Carlo model
+# DGPT Standings Forecast
 
-A Monte Carlo simulation that forecasts the **end-of-season standings of the Disc
-Golf Pro Tour (DGPT)** — i.e. each pro's probability of finishing 1st, top-8,
-top-16, etc. across the MPO and FPO divisions — rather than just predicting a
-single outcome.
+Monte Carlo forecast of the Disc Golf Pro Tour World Standings — who makes
+the Powerball Cup (the DGPT Championship), and at what odds. Inspired by
+[FiveThirtyEight's sports forecasts](https://projects.fivethirtyeight.com/soccer-predictions/).
 
-Inspired by [FiveThirtyEight's sports forecasts](https://projects.fivethirtyeight.com/soccer-predictions/).
-It began as a Google Sheets model (capped near ~50 simulations by spreadsheet
-recalculation time) and was ported to Python/pandas to run **1,000+ full-season
-simulations**.
+Originally built for the 2021 season with hand-pulled CSVs (preserved in
+[archive/2021](archive/2021/)); rebuilt in 2026 on top of the PDGA API so it
+can refresh automatically.
 
 ## How it works
 
-1. **Inputs** (`events/`, `eventplayers/`, `pointslogic/`):
-   - the season's event schedule — date, tour, event type, number of rounds;
-   - each event's projected field, with every player's PDGA rating;
-   - the DGPT points tables by tour and finishing position.
-2. **Rating → expected score.** Each player's PDGA rating becomes an expected
-   strokes-vs-field-average per round (≈ 6 rating points per stroke), with a
-   time-decay term so events further in the future carry more uncertainty.
-3. **Simulate (N = 1,000).** For every player at every event, draw each round
-   from a normal distribution (σ ≈ 6.8 strokes), sum to an event score, rank the
-   field, and resolve first-place ties with a random playoff.
-4. **Score it.** Apply DGPT points by tour/finish, split points across ties, and
-   apply each series' "best N of M events count" rule (Elite top 8, Silver top 3,
-   NT top 4, PDPT top 4). Completed events use real results in place of simulated.
-5. **Aggregate.** Across all 1,000 runs, compute each player's standings
-   *distribution* — P(1st), P(top 8 / 16 / 32) and average finish — per division
-   and tour. Results land in `results/`.
+1. **Schedule** — pulled from the official PDGA REST API (`tier=ES` for
+   Elite Series, `tier=M` for Pro Majors, plus JomezPro Series A-tiers).
+2. **Results** — finishing places for completed events from PDGA's public
+   live-scoring API, with DNF/WD detection.
+3. **Points** — the 2025/2026 StatMando-administered points system:
+   separate MPO/FPO per-place curves ([data/pointslogic](data/pointslogic/)),
+   straight class multipliers (Elite ×1 → 150 for a win, DGPT+ ×4/3 → 200,
+   Playoff ×5/3 → 250, Major ×2 → 300), tie groups averaging the points of
+   the places they span, JomezPro flat bonuses (20/10/5 for 1st/2nd–5th/6th–10th),
+   and the season counting rules: best 14 finishes, top 2 majors counted
+   (MPO 2-of-3, FPO 2-of-4), no FPO points at Heinola, the doubles-adjusted
+   curve at the Preserve, and no points at the Powerball Cup or USDGC.
+   **Computed standings match StatMando's official totals exactly** for all
+   ~500 MPO+FPO players (validated July 2026).
+4. **Fields for future events** — manual overrides, else the real PDGA Live
+   registration list when the event is within two weeks, else per-player
+   participation rates from this season's starts (split US / Europe /
+   JomezPro).
+5. **Simulation** — each run draws a field per event, simulates round
+   scores (`-(rating - field_avg) / 6` strokes per round, σ = 6.82 — same
+   core as the 2021 model), ranks, awards points, applies the counting
+   rules on top of banked points, and tallies final standings ranks.
 
-## Repository layout
+Championship qualification: 32 MPO / 20 FPO play the Powerball Cup — top
+28 / top 18 from standings plus playoff-performance alternates. The output
+reports both `p_top28_standings` (direct qualification) and `p_top32`
+(field size, an upper bound that ignores the MVP Open alternate path).
+
+## Usage
 
 ```
-DGPTModelV2.ipynb    the current model (load → simulate → score → aggregate)
-events/              event schedules (date, tour, type, rounds)
-eventplayers/        projected fields + PDGA ratings, per scenario
-pointslogic/         DGPT points tables (Elite / Silver / NT / PDPT)
-results/             aggregated forecast outputs (MPO & FPO)
-other/               earlier model version + a results-scraping experiment
+pip install -r requirements.txt
+cp .env.example .env   # add your PDGA API credentials (developer access)
+python -m dgpt.refresh --sims 100000
 ```
 
-## Techniques shown
+Outputs: `data/standings_{mpo,fpo}_2026.csv` (current standings) and
+`results/2026/projections_{mpo,fpo}.csv` (qualification odds).
 
-Monte Carlo simulation · probabilistic forecasting · pandas data wrangling ·
-rating-based score modeling · sports analytics.
+To force a specific player in/out of an event, add a row to
+`data/overrides/fields.csv` (`tournament_id,pdga_number,plays`).
 
-## Status & caveats
+## Data sources
 
-- Built for the **2021 DGPT season** (data snapshots dated Aug 2021). It's a
-  point-in-time exploratory notebook, not a maintained library — to run a
-  different season you'd swap in that season's CSVs.
-- `DGPTModelV2.ipynb` is current; `other/DGPTModel.ipynb` is the earlier version
-  and `other/ScreenscrapeTest.ipynb` an experiment for scraping live results.
-- The final aggregation cell is intentionally verbose (one block per finishing
-  position) — function over polish.
-- Player ratings, schedules and results are public/factual PDGA data.
+- [PDGA REST API](https://www.pdga.com/dev/api/rest/v1/services) (events,
+  ratings; requires developer credentials)
+- PDGA live-scoring API (results; public)
+- [2026 points structure](https://www.dgpt.com/announcements/2026-points-structure/),
+  [2025 standings structure](https://www.dgpt.com/announcements/2025-standings-structure/)
+- [StatMando standings](https://statmando.com/rankings/dgpt/mpo) (validation only)
 
 ## License
 

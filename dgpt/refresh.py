@@ -1,0 +1,36 @@
+"""Refresh everything: schedule -> results -> standings -> projections.
+
+Usage:
+    python -m dgpt.refresh [--sims 10000] [--skip-sim]
+"""
+from __future__ import annotations
+
+import argparse
+
+from . import schedule, simulate, standings
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--sims", type=int, default=simulate.DEFAULT_SIMS)
+    ap.add_argument("--skip-sim", action="store_true", help="standings only")
+    args = ap.parse_args()
+
+    print("building schedule from PDGA API ...")
+    rows = schedule.build()
+    done = sum(1 for r in rows if r["completed"])
+    print(f"  {len(rows)} points-relevant events, {done} completed")
+
+    for division in ("MPO", "FPO"):
+        print(f"computing {division} standings ...")
+        table = standings.compute(division)
+        standings.write_csv(division, table)
+        print(f"  #1: {table[0]['name']} ({table[0]['points']})")
+        if not args.skip_sim:
+            print(f"simulating {division} ({args.sims} runs) ...")
+            res = simulate.run(division, n_sims=args.sims)
+            simulate.write_csv(res)
+
+
+if __name__ == "__main__":
+    main()
