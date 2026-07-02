@@ -92,7 +92,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         and row["cls"] != "championship"
         and (division == "MPO" or row["fpo_points"])
     ]
-    rates = fields.participation_rates(sched, player_events, division)
+    player_names = {r["pdga_number"]: r["name"] for r in table}
+    rates = fields.participation_rates(sched, player_events, division, player_names)
     overrides = fields.load_overrides()
     event_probs = []
     for row in remaining:
