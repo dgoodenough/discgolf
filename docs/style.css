@@ -18,28 +18,53 @@ html, body { margin: 0; }
 
 /* tables */
 .table-ledger { width: 100%; }
-.table-ledger th { position: sticky; top: 0; }
+.table-ledger th { position: sticky; top: 0; z-index: 2; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--pend-on-band, #ffd21e); }
+th.sorted { color: var(--pos-on-band, #7ee2a8); }
 tbody tr.expandable { cursor: pointer; }
 tbody tr.expandable:hover td { background: var(--pos-fill); }
-tbody tr.detail > td { background: var(--paper-2) !important; padding: var(--pad-2) 14px 14px; }
+tbody tr.detail > td { background: var(--chrome-2, var(--paper-2)) !important; padding: var(--pad-2) 14px 14px; }
 .dim { color: var(--ink-3); }
 
 /* PDGA-required player/event links: quiet in the tables, obvious on hover */
 a.plink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
 a.plink:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* inline probability bar (Ledger .bar container + fill span) */
-td.barcell { width: 112px; }
-td.barcell .bar { width: 100px; }
-td.barcell .bar > span.pend { background: var(--pend-solid); }
+/* in-row sparkline of the finishing-position distribution */
+td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
+.spark { display: flex; align-items: flex-end; gap: 1px; height: 22px; width: 120px; cursor: crosshair; }
+.spark .col { flex: 1; min-width: 1px; background: var(--grid-strong); }
+.spark .col.in-cut { background: var(--pos); }
+.spark .col.overflow { background: var(--neg); opacity: .7; }
 
-/* rank histogram */
-.hist { display: flex; align-items: flex-end; gap: 2px; height: 84px; margin: 8px 0 2px; }
-.hist .col { flex: 1; min-width: 6px; background: var(--grid-strong); }
+/* floating tooltip (immediate, no native-title delay) */
+#spark-tip {
+  position: fixed; z-index: 50; pointer-events: none;
+  background: var(--band); color: var(--band-ink); font-variant-numeric: tabular-nums;
+  font-size: var(--fs-caption); padding: 2px 7px; border-radius: var(--radius);
+  border: 1px solid var(--grid-strong); white-space: nowrap;
+}
+
+/* expanded detail: two-column breakdown + big histogram */
+.detail-grid { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.detail-grid > div { flex: 1; min-width: 300px; }
+.detail-tbl { margin-top: 4px; }
+.detail-tbl th { position: static; font-size: var(--fs-caption); }
+.detail-tbl td { font-size: var(--fs-small); }
+tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--neg); }
+.drop-tag { color: var(--neg); font-size: var(--fs-caption); text-decoration: none; display: inline-block; }
+.keep-tag { color: var(--pos); font-size: var(--fs-caption); }
+.detail-grid .band, .bighist-wrap .band { font-size: var(--fs-caption); margin-bottom: 2px; }
+
+/* rank histogram (expanded detail) */
+.bighist-wrap { margin-top: 14px; }
+.hist { display: flex; align-items: flex-end; gap: 2px; height: 84px; margin: 4px 0 2px; }
+.hist .col { flex: 1; min-width: 4px; background: var(--grid-strong); }
 .hist .col.in-cut { background: var(--pos); }
-.hist .col.overflow { background: var(--neg-fill); }
+.hist .col.overflow { background: var(--neg); opacity: .7; }
 .hist-labels { display: flex; gap: 2px; font-size: 10px; color: var(--ink-3); }
-.hist-labels span { flex: 1; text-align: center; min-width: 6px; }
+.hist-labels span { flex: 1; text-align: center; min-width: 4px; }
 
 /* headline stats */
 .statrow { display: flex; gap: 30px; margin: 10px 0 12px; flex-wrap: wrap; }

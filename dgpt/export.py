@@ -74,6 +74,11 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 "mean_rank": round(float(res.mean_rank[i]), 1),
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
                 "att": [round(float(res.att_probs[e, i]), 3) for e in range(len(res.events_meta))],
+                "upcoming": {
+                    ev["tid"]: res.ev_stats[e][i]
+                    for e, ev in enumerate(res.events_meta)
+                    if res.ev_stats[e][i] is not None
+                },
             }
         )
     players.sort(key=lambda p: (-p["points"], p["rank"]))

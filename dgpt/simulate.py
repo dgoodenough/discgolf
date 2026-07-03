@@ -25,7 +25,9 @@ STANDINGS_CUT = {"MPO": 28, "FPO": 18}
 FIELD_SIZE = {"MPO": 32, "FPO": 20}
 
 
-MAX_HIST_RANK = 50  # per-position histogram depth for the app
+MAX_HIST_RANK = 50   # per-position histogram depth for the app
+MAX_EV_PLACE = 160   # place-histogram depth per event (covers the full points curve)
+EV_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99)
 
 
 @dataclass
@@ -49,6 +51,7 @@ class SimResult:
     att_probs: np.ndarray   # (n_events, n_players) baseline P(plays)
     events_meta: list[dict]  # remaining events: id/name/cls/rounds/major + score stats
     banked: list[list]      # per player: [(tid, points, is_major), ...]
+    ev_stats: list           # (n_events)(n_players) dict of points stats | None (conditional on playing)
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
@@ -115,6 +118,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     total_pts = np.zeros((n_sims, n))
     total_rank = np.zeros((n_sims, n), dtype=np.int32)
     rank_hist = np.zeros((n, MAX_HIST_RANK), dtype=np.int64)
+    ev_place_hist = np.zeros((len(remaining), n, MAX_EV_PLACE), dtype=np.int64)  # cond. on playing
     cutline = np.zeros(n_sims)
     cutline2 = np.zeros(n_sims)
     events_meta = [
@@ -155,6 +159,13 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             place[rows_ix, order] = np.arange(1, n + 1)[None, :]
             if row["cls"] == "doubles":
                 place = (place + 1) // 2  # individual rank -> implied team place
+            # place histogram conditional on playing (for upcoming-event stats)
+            cp = np.where(plays, np.minimum(place, MAX_EV_PLACE), 0)  # 0 = did not play
+            stride = MAX_EV_PLACE + 1
+            flat = (np.arange(n) * stride)[None, :] + cp
+            ev_place_hist[ev_i] += np.bincount(
+                flat.ravel(), minlength=n * stride
+            ).reshape(n, stride)[:, 1:]
             pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
             pts[~plays] = 0.0
             if row["cls"] == "major":
@@ -191,6 +202,19 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             rank_hist[i] += np.bincount(capped[:, i], minlength=MAX_HIST_RANK + 1)[1:]
         done += c
 
+    # per-event per-player points stats (conditional on playing) from the
+    # place histograms — points are a deterministic function of place.
+    ev_stats = []
+    for ev_i, row in enumerate(remaining):
+        cv = curves[row["tournament_id"]]  # index by place; len n+2
+        pts_by_place = np.zeros(MAX_EV_PLACE)  # place 1..MAX (pad past field size)
+        m = min(MAX_EV_PLACE, len(cv) - 1)
+        pts_by_place[:m] = cv[1 : 1 + m]
+        per_player = []
+        for pi in range(n):
+            per_player.append(_points_stats(ev_place_hist[ev_i, pi], pts_by_place, n_sims))
+        ev_stats.append(per_player)
+
     cut = STANDINGS_CUT[division]
     fsz = FIELD_SIZE[division]
     return SimResult(
@@ -215,7 +239,37 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             [(tid, pts, tid in major_tids) for tid, pts, _, _ in r["events"]]
             for r in table
         ],
+        ev_stats=ev_stats,
     )
+
+
+def _points_stats(place_hist: np.ndarray, pts_by_place: np.ndarray, n_sims: int) -> dict | None:
+    """Points distribution (conditional on playing) from a place histogram.
+
+    Returns mean, min, max, selected percentiles, and the play frequency.
+    Points are monotone-decreasing in place, so percentiles come straight
+    from the weighted place distribution.
+    """
+    total = int(place_hist.sum())
+    if total == 0:
+        return None
+    w = place_hist
+    mean = float((pts_by_place * w).sum() / total)
+    # ascending in points == descending in place
+    v_asc = pts_by_place[::-1]
+    cum = np.cumsum(w[::-1])
+    pct = {}
+    for q in EV_QUANTILES:
+        idx = int(np.searchsorted(cum, q * total))
+        pct[f"p{int(q * 100)}"] = round(float(v_asc[min(idx, len(v_asc) - 1)]), 1)
+    nz = np.nonzero(w)[0]
+    return {
+        "mean": round(mean, 1),
+        "min": round(float(pts_by_place[nz[-1]]), 1),   # worst finish points
+        "max": round(float(pts_by_place[nz[0]]), 1),    # best finish points
+        "play_freq": round(total / n_sims, 3),
+        **pct,
+    }
 
 
 def write_csv(res: SimResult) -> None:

@@ -133,13 +133,12 @@ def play_probabilities(row: dict, division: str, players: list[int],
                        rates: dict[int, dict[str, float]],
                        overrides: dict[tuple[int, int], bool]) -> dict[int, float]:
     """P(plays) for each player at one remaining event."""
-    # Registration lists for far-out events still include the waitlist
-    # (e.g. 146 "registered" a month early vs ~108 field spots), so only
-    # trust them close to the event.
-    import datetime as dt
-
-    days_out = (dt.date.fromisoformat(row["start_date"]) - dt.date.today()).days
-    known = registered_field(row["tournament_id"], division) if days_out <= 14 else None
+    # Trust the PDGA Live registration list whenever it exists. Large fields
+    # (e.g. Ledgestone ~150, Pro Worlds ~200) are real: those events split
+    # MPO/FPO across separate courses, so the field runs bigger than a normal
+    # Elite stop. Only the playoffs + Powerball Cup lack registrations (they
+    # are qualification-based), where we fall back to participation rates.
+    known = registered_field(row["tournament_id"], division)
     group = _event_group(row)
     probs: dict[int, float] = {}
     for pdga in players:

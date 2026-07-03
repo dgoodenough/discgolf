@@ -3,7 +3,7 @@
    a single player against frozen per-sim cutlines ("cutline replay"). */
 "use strict";
 
-const state = { div: "mpo", view: "projections", data: {}, whatifPdga: null };
+const state = { div: "mpo", view: "forecast", data: {}, whatifPdga: null, sort: { key: "p_cut", dir: "desc" } };
 
 const $ = (sel) => document.querySelector(sel);
 const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
@@ -43,77 +43,116 @@ function shortName(name) {
     .replace(/^DGPT JomezPro( -)? /, "Jomez: ");
 }
 
-function histHtml(p, meta) {
-  const cut = meta.cut;
-  const hist = p.hist;
-  const max = Math.max(...hist, 1e-9);
-  const show = hist.length; // last bucket = "50+"
-  let cols = "", labels = "";
+const CLS_LABEL = { elite: "DGPT", elite_plus: "DGPT+", playoff: "playoff", major: "major", doubles: "doubles", jomez: "jomez", championship: "cup" };
+
+/* which banked events count toward the season total (best-N, top-2 majors);
+   the rest are "dropped" and shown struck through */
+function countedTids(p, meta) {
+  const majors = p.banked.filter((b) => b.major).slice().sort((a, b) => b.pts - a.pts);
+  const countedMajors = majors.slice(0, meta.majors_counted);
+  const pool = p.banked.filter((b) => !b.major).concat(countedMajors).sort((a, b) => b.pts - a.pts);
+  return new Set(pool.slice(0, meta.top_n_finishes).map((b) => b.tid));
+}
+
+/* small inline sparkline of the finishing-rank distribution; hover shows the
+   exact place + probability immediately via a shared floating tooltip */
+const sparkStore = new Map(); // pdga -> hist array
+function sparkCell(p, meta) {
+  sparkStore.set(p.pdga, p.hist);
+  const max = Math.max(...p.hist, 1e-9);
+  const show = p.hist.length;
+  let cols = "";
   for (let k = 0; k < show; k++) {
-    const h = Math.max(1, Math.round((hist[k] / max) * 80));
-    const cls = k + 1 <= cut ? "in-cut" : k === show - 1 ? "overflow" : "";
-    const pct = (hist[k] * 100).toFixed(1);
-    cols += `<div class="col ${cls}" style="height:${h}px" title="${k + 1 === show ? show + "+" : "#" + (k + 1)}: ${pct}%"></div>`;
-    labels += `<span>${(k + 1) % 10 === 0 ? k + 1 : ""}</span>`;
+    const h = Math.max(1, Math.round((p.hist[k] / max) * 100));
+    const cls = k + 1 <= meta.cut ? "in-cut" : k === show - 1 ? "overflow" : "";
+    cols += `<i class="col ${cls}" style="height:${h}%"></i>`;
   }
-  return `<div class="hist">${cols}</div><div class="hist-labels">${labels}</div>
-    <p class="dim" style="font-size:.75rem">P(finishing position); green = inside the top-${cut} cut, red bucket = ${show}th or worse.</p>`;
+  return `<div class="spark" data-pdga="${p.pdga}">${cols}</div>`;
 }
 
-/* ---------- projections view ---------- */
+/* ---------- forecast view (standings + projections, sortable) ---------- */
 
-function renderProjections(d) {
-  const cut = d.meta.cut, fs = d.meta.field_size;
-  const rows = [...d.players]
-    .filter((p) => p.p_field >= 0.0005 || p.rank <= fs)
-    .sort((a, b) => b.p_cut - a.p_cut || b.p_field - a.p_field || b.points - a.points);
-  let html = `<table class="table-ledger"><thead><tr>
-    <th class="num">#</th><th>Player</th><th class="num">Points</th>
-    <th class="num">Proj. pts</th><th class="num">Proj. rank</th>
-    <th class="num">P(top ${cut})</th><th></th><th class="num">P(top ${fs})</th>
-    </tr></thead><tbody>`;
-  rows.forEach((p) => {
-    const bubble = p.p_cut < 0.99 && p.p_cut >= 0.02;
-    html += `<tr class="expandable" data-pdga="${p.pdga}">
-      <td class="num dim">${p.rank}</td><td>${playerLink(p)}</td>
-      <td class="num">${fmtPts(p.points)}</td>
-      <td class="num dim">${fmtPts(p.mean_pts)}</td>
-      <td class="num dim">${p.mean_rank.toFixed(1)}</td>
-      <td class="num ${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</td>
-      <td class="barcell"><div class="bar"><span class="${bubble ? "pend" : ""}" style="width:${Math.round(p.p_cut * 100)}%"></span></div></td>
-      <td class="num ${probClass(p.p_field)}">${fmtPct(p.p_field)}</td></tr>`;
+function forecastCols(meta) {
+  return [
+    { key: "rank", label: "#", num: true, get: (p) => p.rank, cell: (p) => `<span class="dim">${p.rank}</span>`, dir0: "asc" },
+    { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: playerLink, dir0: "asc" },
+    { key: "rating", label: "Rating", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
+    { key: "starts", label: "Starts", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
+    { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
+    { key: "mean_pts", label: "Proj. pts", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
+    { key: "mean_rank", label: "Proj. rank", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
+    { key: "p_cut", label: `P(top ${meta.cut})`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
+    { key: "p_field", label: `P(top ${meta.field_size})`, num: true, get: (p) => p.p_field, cell: (p) => `<span class="${probClass(p.p_field)}">${fmtPct(p.p_field)}</span>`, dir0: "desc" },
+    { key: "spark", label: "Finish distribution", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
+  ];
+}
+
+function renderForecast(d) {
+  const meta = d.meta;
+  const cols = forecastCols(meta);
+  const sort = state.sort;
+  const col = cols.find((c) => c.key === sort.key) || cols[0];
+  const rows = [...d.players].filter((p) => p.points > 0 || p.p_field >= 0.0005);
+  rows.sort((a, b) => {
+    const av = col.get(a), bv = col.get(b);
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return (sort.dir === "asc" ? cmp : -cmp) || a.rank - b.rank;
   });
-  html += "</tbody></table>";
-  const el = $("#view-projections");
-  el.innerHTML = html;
-  el.querySelectorAll("tr.expandable").forEach((tr) =>
-    tr.addEventListener("click", (ev) => { if (ev.target.closest("a")) return; toggleDetail(tr, d, "hist"); })
+
+  const head = cols.map((c) => {
+    const active = c.key === sort.key;
+    const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
+    const cls = [c.num ? "num" : "", c.sortable === false ? "" : "sortable", active ? "sorted" : ""].join(" ").trim();
+    return `<th class="${cls}" data-key="${c.key}">${c.label}${arrow}</th>`;
+  }).join("");
+
+  const body = rows.map((p) =>
+    `<tr class="expandable" data-pdga="${p.pdga}">` +
+    cols.map((c) => `<td class="${c.num ? "num" : ""}${c.key === "spark" ? " sparkcell" : ""}">${c.cell(p)}</td>`).join("") +
+    "</tr>"
+  ).join("");
+
+  const el = $("#view-forecast");
+  el.innerHTML = `<table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+    <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event-by-event breakdown and finishing-position odds · hover the sparkline for exact odds.</p>`;
+
+  el.querySelectorAll("th.sortable").forEach((th) =>
+    th.addEventListener("click", () => {
+      const key = th.dataset.key;
+      const c = cols.find((x) => x.key === key);
+      state.sort = { key, dir: state.sort.key === key ? (state.sort.dir === "asc" ? "desc" : "asc") : c.dir0 };
+      renderForecast(d);
+    })
   );
+  el.querySelectorAll("tr.expandable").forEach((tr) =>
+    tr.addEventListener("click", (ev) => { if (ev.target.closest("a")) return; toggleDetail(tr, d); })
+  );
+  wireSparkTips(el, meta);
 }
 
-/* ---------- standings view ---------- */
-
-function renderStandings(d) {
-  const rows = [...d.players].sort((a, b) => a.rank - b.rank).filter((p) => p.points > 0);
-  let html = `<table class="table-ledger"><thead><tr>
-    <th class="num">Rank</th><th>Player</th><th class="num">Rating</th>
-    <th class="num">Starts</th><th class="num">Points</th></tr></thead><tbody>`;
-  for (const p of rows) {
-    html += `<tr class="expandable" data-pdga="${p.pdga}">
-      <td class="num">${p.rank}</td><td>${playerLink(p)}</td>
-      <td class="num dim">${p.rating ?? ""}</td>
-      <td class="num dim">${p.banked.length}</td>
-      <td class="num"><b>${fmtPts(p.points)}</b></td></tr>`;
-  }
-  html += "</tbody></table>";
-  const el = $("#view-standings");
-  el.innerHTML = html;
-  el.querySelectorAll("tr.expandable").forEach((tr) =>
-    tr.addEventListener("click", (ev) => { if (ev.target.closest("a")) return; toggleDetail(tr, d, "banked"); })
-  );
+function wireSparkTips(el, meta) {
+  const tip = $("#spark-tip");
+  el.querySelectorAll(".spark").forEach((sp) => {
+    const hist = sparkStore.get(+sp.dataset.pdga);
+    sp.addEventListener("mousemove", (e) => {
+      const r = sp.getBoundingClientRect();
+      const k = Math.min(hist.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * hist.length)));
+      const place = k + 1 === hist.length ? `${hist.length}th+` : ordinal(k + 1);
+      tip.textContent = `${place}: ${(hist[k] * 100).toFixed(1)}%`;
+      tip.hidden = false;
+      tip.style.left = e.clientX + 12 + "px";
+      tip.style.top = e.clientY - 8 + "px";
+    });
+    sp.addEventListener("mouseleave", () => { tip.hidden = true; });
+  });
 }
 
-function toggleDetail(tr, d, kind) {
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function toggleDetail(tr, d) {
   const next = tr.nextElementSibling;
   if (next && next.classList.contains("detail")) { next.remove(); return; }
   tr.parentElement.querySelectorAll("tr.detail").forEach((x) => x.remove());
@@ -122,17 +161,63 @@ function toggleDetail(tr, d, kind) {
   detail.className = "detail";
   const td = document.createElement("td");
   td.colSpan = tr.children.length;
-  if (kind === "hist") {
-    td.innerHTML = histHtml(p, d.meta);
-  } else {
-    const ev = [...p.banked].sort((a, b) => b.pts - a.pts)
-      .map((b) => `<tr><td>${eventLink(b.tid, shortName(b.event))}${b.major ? ' <span class="chip">major</span>' : ""}</td>
-                   <td class="num">${fmtPts(b.pts)}</td></tr>`).join("");
-    td.innerHTML = `<table class="table-ledger" style="max-width:460px"><tbody>${ev}</tbody></table>
-      <p class="dim" style="font-size:.75rem">Counting rules: best ${d.meta.top_n_finishes} finishes, top ${d.meta.majors_counted} majors.</p>`;
-  }
+  td.innerHTML = detailHtml(p, d);
   detail.appendChild(td);
   tr.after(detail);
+}
+
+function detailHtml(p, d) {
+  const meta = d.meta;
+  const counted = countedTids(p, meta);
+
+  const banked = [...p.banked].sort((a, b) => b.pts - a.pts).map((b) => {
+    const drop = !counted.has(b.tid);
+    return `<tr class="${drop ? "dropped" : ""}">
+      <td>${eventLink(b.tid, shortName(b.event))}${b.major ? ' <span class="chip">major</span>' : ""}</td>
+      <td class="num">${fmtPts(b.pts)}</td>
+      <td>${drop ? '<span class="drop-tag">dropped</span>' : '<span class="keep-tag">counts</span>'}</td></tr>`;
+  }).join("");
+
+  const upcoming = d.events.filter((e) => p.upcoming[e.tid]).map((e) => {
+    const s = p.upcoming[e.tid];
+    return `<tr>
+      <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span></td>
+      <td class="num">${Math.round(s.play_freq * 100)}%</td>
+      <td class="num">${fmtPts(s.mean)}</td>
+      <td class="num dim">${fmtPts(s.p50)}</td>
+      <td class="num">${fmtPts(s.p90)}</td>
+      <td class="num dim">${fmtPts(s.max)}</td></tr>`;
+  }).join("");
+
+  return `<div class="detail-grid">
+    <div>
+      <div class="band">Season so far — best ${meta.top_n_finishes}, top ${meta.majors_counted} majors count</div>
+      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts</th><th></th></tr></thead>
+        <tbody>${banked || '<tr><td colspan="3" class="dim">no results yet</td></tr>'}</tbody></table>
+    </div>
+    <div>
+      <div class="band">If they play — projected points per upcoming event</div>
+      <table class="table-ledger detail-tbl"><thead><tr>
+        <th>Event</th><th class="num">Plays</th><th class="num">Avg</th><th class="num">Med</th><th class="num">90th</th><th class="num">Ceiling</th>
+      </tr></thead><tbody>${upcoming || '<tr><td colspan="6" class="dim">no remaining events</td></tr>'}</tbody></table>
+    </div>
+  </div>
+  ${bigHist(p, meta)}`;
+}
+
+function bigHist(p, meta) {
+  const max = Math.max(...p.hist, 1e-9);
+  const show = p.hist.length;
+  let cols = "", labels = "";
+  for (let k = 0; k < show; k++) {
+    const h = Math.max(1, Math.round((p.hist[k] / max) * 80));
+    const cls = k + 1 <= meta.cut ? "in-cut" : k === show - 1 ? "overflow" : "";
+    cols += `<div class="col ${cls}" style="height:${h}px" data-k="${k}"></div>`;
+    labels += `<span>${(k + 1) % 10 === 0 ? k + 1 : ""}</span>`;
+  }
+  return `<div class="bighist-wrap">
+    <div class="band">Finishing-position probability — green inside the top-${meta.cut} cut, red bucket = ${show}th+</div>
+    <div class="hist" data-pdga="${p.pdga}">${cols}</div><div class="hist-labels">${labels}</div></div>`;
 }
 
 /* ---------- what-if view (cutline replay) ---------- */
@@ -283,11 +368,9 @@ async function render() {
     `Event data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
     `Player data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
     `PDGA Authorized Developer`;
-  $("#view-projections").hidden = state.view !== "projections";
-  $("#view-standings").hidden = state.view !== "standings";
+  $("#view-forecast").hidden = state.view !== "forecast";
   $("#view-whatif").hidden = state.view !== "whatif";
-  if (state.view === "projections") renderProjections(d);
-  if (state.view === "standings") renderStandings(d);
+  if (state.view === "forecast") renderForecast(d);
   if (state.view === "whatif") renderWhatif(d);
 }
 
