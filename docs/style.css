@@ -1,0 +1,70 @@
+/* App layer on top of the vendored Ledger tokens (tokens.css, pinned from
+   github.com/dgoodenough/style). Layout + app-specific components only —
+   colors and type come from the tokens. */
+
+html, body { margin: 0; }
+#app { max-width: 1080px; margin: 0 auto; padding: 0 16px 32px; }
+
+/* header */
+#top { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; padding: 16px 0 10px; }
+#top h1 { margin: 0; font-size: 1.3rem; letter-spacing: .2px; }
+#top .sub { margin: 3px 0 0; color: var(--ink-2); font-size: var(--fs-small); }
+.controls { display: flex; gap: 8px; }
+
+/* segmented control (band = active, per Ledger greyscale-structure rule) */
+.seg { display: flex; border: 1px solid var(--grid-strong); border-radius: var(--radius); overflow: hidden; background: var(--paper); }
+.seg button { font: inherit; padding: 6px 13px; background: none; border: none; color: var(--ink-2); cursor: pointer; }
+.seg button.active { background: var(--band); color: var(--band-ink); font-weight: 700; }
+
+/* tables */
+.table-ledger { width: 100%; }
+.table-ledger th { position: sticky; top: 0; }
+tbody tr.expandable { cursor: pointer; }
+tbody tr.expandable:hover td { background: var(--pos-fill); }
+tbody tr.detail > td { background: var(--paper-2) !important; padding: var(--pad-2) 14px 14px; }
+.dim { color: var(--ink-3); }
+
+/* inline probability bar (Ledger .bar container + fill span) */
+td.barcell { width: 112px; }
+td.barcell .bar { width: 100px; }
+td.barcell .bar > span.pend { background: var(--pend-solid); }
+
+/* rank histogram */
+.hist { display: flex; align-items: flex-end; gap: 2px; height: 84px; margin: 8px 0 2px; }
+.hist .col { flex: 1; min-width: 6px; background: var(--grid-strong); }
+.hist .col.in-cut { background: var(--pos); }
+.hist .col.overflow { background: var(--neg-fill); }
+.hist-labels { display: flex; gap: 2px; font-size: 10px; color: var(--ink-3); }
+.hist-labels span { flex: 1; text-align: center; min-width: 6px; }
+
+/* headline stats */
+.statrow { display: flex; gap: 30px; margin: 10px 0 12px; flex-wrap: wrap; }
+.stat { font-size: 1.9rem; }
+.caption, .stat-label { font-size: var(--fs-caption); color: var(--ink-2); text-transform: uppercase; letter-spacing: .6px; margin-top: 2px; }
+
+/* what-if */
+#whatif-layout { display: flex; gap: 14px; align-items: flex-start; }
+#whatif-picker { width: 250px; min-width: 250px; border: 1px solid var(--grid); background: var(--paper); padding: 8px; }
+#whatif-search { width: 100%; }
+#whatif-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 480px; overflow-y: auto; }
+#whatif-list li { padding: 4px 7px; cursor: pointer; display: flex; justify-content: space-between; font-size: var(--fs-body); border-bottom: 1px solid var(--grid); }
+#whatif-list li:last-child { border-bottom: none; }
+#whatif-list li:hover { background: var(--paper-2); }
+#whatif-list li.active { background: var(--pos-fill); color: var(--pos); font-weight: 700; }
+#whatif-detail { flex: 1; border: 1px solid var(--grid); background: var(--paper); padding: 12px 16px 14px; }
+.hint { color: var(--ink-2); font-size: var(--fs-small); }
+
+.event-check { display: flex; align-items: center; gap: 9px; padding: 5px 4px; border-bottom: 1px solid var(--grid); }
+.event-check:last-child { border-bottom: none; }
+.event-check .ev-date { color: var(--ink-3); font-size: var(--fs-small); width: 46px; }
+.event-check .ev-name { flex: 1; }
+.event-check .ev-att { color: var(--ink-3); font-size: var(--fs-small); width: 108px; text-align: right; }
+.event-check .ev-att.reg { color: var(--pos); font-weight: 600; }
+.event-check .ev-att.noreg { color: var(--neg); }
+
+footer { margin-top: 22px; color: var(--ink-3); font-size: var(--fs-small); }
+
+@media (max-width: 760px) {
+  #whatif-layout { flex-direction: column; }
+  #whatif-picker { width: 100%; }
+}

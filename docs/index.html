@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DGPT Standings Forecast</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="ledger">
+<div id="app">
+  <header id="top">
+    <div class="title">
+      <h1>DGPT Standings Forecast</h1>
+      <p class="sub">Powerball Cup qualification odds from a 100k-run Monte Carlo ·
+        <span id="meta-line"></span></p>
+    </div>
+    <div class="controls">
+      <div class="seg" id="division-seg">
+        <button data-div="mpo" class="active">MPO</button>
+        <button data-div="fpo">FPO</button>
+      </div>
+      <div class="seg" id="view-seg">
+        <button data-view="projections" class="active">Projections</button>
+        <button data-view="standings">Standings</button>
+        <button data-view="whatif">What-if</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="view-projections"></section>
+    <section id="view-standings" hidden></section>
+    <section id="view-whatif" hidden>
+      <div id="whatif-layout">
+        <div id="whatif-picker">
+          <input id="whatif-search" type="search" placeholder="Find a player…" autocomplete="off">
+          <ul id="whatif-list"></ul>
+        </div>
+        <div id="whatif-detail">
+          <p class="hint">Pick a player, then check the events they'll attend. Odds update
+            instantly against 25,000 frozen cutlines from the full simulation.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Points engine validated exactly against official StatMando standings ·
+      <a href="https://github.com/dgoodenough/discgolf">source & methodology</a></p>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

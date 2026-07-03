@@ -25,6 +25,9 @@ STANDINGS_CUT = {"MPO": 28, "FPO": 18}
 FIELD_SIZE = {"MPO": 32, "FPO": 20}
 
 
+MAX_HIST_RANK = 50  # per-position histogram depth for the app
+
+
 @dataclass
 class SimResult:
     division: str
@@ -39,6 +42,13 @@ class SimResult:
     p_cut: np.ndarray       # P(final standings rank <= standings cut)
     p_field: np.ndarray     # P(rank <= championship field size) ~ upper bound incl. playoff path
     p_first: np.ndarray
+    # extras for the web app / what-if replay
+    rank_hist: np.ndarray   # (n_players, MAX_HIST_RANK) counts of final rank
+    cutline: np.ndarray     # per sim: points of the last direct-qualification spot
+    cutline2: np.ndarray    # per sim: points of the first spot outside the cut
+    att_probs: np.ndarray   # (n_events, n_players) baseline P(plays)
+    events_meta: list[dict]  # remaining events: id/name/cls/rounds/major + score stats
+    banked: list[list]      # per player: [(tid, points, is_major), ...]
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
@@ -104,6 +114,19 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     total_pts = np.zeros((n_sims, n))
     total_rank = np.zeros((n_sims, n), dtype=np.int32)
+    rank_hist = np.zeros((n, MAX_HIST_RANK), dtype=np.int64)
+    cutline = np.zeros(n_sims)
+    cutline2 = np.zeros(n_sims)
+    events_meta = [
+        {
+            "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
+            "start_date": row["start_date"],
+            "rounds": ROUNDS.get(row["cls"], 3),
+            "is_major": row["tournament_id"] in major_tids,
+            "field_avg_rating": 0.0, "opp_score_sd": 0.0, "field_size": 0.0,
+        }
+        for row in remaining
+    ]
 
     done = 0
     while done < n_sims:
@@ -111,7 +134,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         sim_major = np.zeros((c, n, sum(1 for r in remaining if r["cls"] == "major")))
         sim_other = np.zeros((c, n, sum(1 for r in remaining if r["cls"] != "major")))
         mi = oi = 0
-        for row, probs in zip(remaining, event_probs):
+        for ev_i, (row, probs) in enumerate(zip(remaining, event_probs)):
             plays = rng.random((c, n)) < probs  # field draw per sim
             n_rounds = ROUNDS.get(row["cls"], 3)
             # field-average rating per sim (guard empty fields)
@@ -121,6 +144,11 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             mu = -(ratings[None, :] - avg[:, None]) / RATING_PTS_PER_STROKE * n_rounds
             scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
             scores[~plays] = np.inf
+            if done == 0:  # score-distribution stats for the client-side replay
+                played_scores = np.where(plays, scores, np.nan)
+                events_meta[ev_i]["field_avg_rating"] = round(float(avg.mean()), 1)
+                events_meta[ev_i]["opp_score_sd"] = round(float(np.nanstd(played_scores)), 2)
+                events_meta[ev_i]["field_size"] = round(float(fcnt.mean()), 1)
             order = np.argsort(scores, axis=1)
             place = np.empty_like(order)
             rows_ix = np.arange(c)[:, None]
@@ -153,6 +181,14 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         ranks[np.arange(c)[:, None], order] = np.arange(1, n + 1)[None, :]
         total_pts[done : done + c] = totals
         total_rank[done : done + c] = ranks
+
+        cut_n = STANDINGS_CUT[division]
+        sorted_totals = -np.sort(-totals, axis=1)
+        cutline[done : done + c] = sorted_totals[:, cut_n - 1]
+        cutline2[done : done + c] = sorted_totals[:, cut_n]
+        capped = np.minimum(ranks, MAX_HIST_RANK)
+        for i in range(n):
+            rank_hist[i] += np.bincount(capped[:, i], minlength=MAX_HIST_RANK + 1)[1:]
         done += c
 
     cut = STANDINGS_CUT[division]
@@ -170,6 +206,15 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         p_cut=(total_rank <= cut).mean(axis=0),
         p_field=(total_rank <= fsz).mean(axis=0),
         p_first=(total_rank == 1).mean(axis=0),
+        rank_hist=rank_hist,
+        cutline=cutline,
+        cutline2=cutline2,
+        att_probs=np.array(event_probs),
+        events_meta=events_meta,
+        banked=[
+            [(tid, pts, tid in major_tids) for tid, pts, _, _ in r["events"]]
+            for r in table
+        ],
     )
 
 

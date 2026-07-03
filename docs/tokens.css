@@ -1,0 +1,120 @@
+/* ============================================================================
+   LEDGER — design tokens + core components
+   dgoodenough's portfolio style. Greyscale carries structure; color carries
+   meaning: green = positive/have/happened · red = negative/missing/never ·
+   yellow = pending/upcoming. Excel heritage, 538 numerals, McMaster speed.
+   Vendor this file per project (pin a copy); source of truth:
+   https://github.com/dgoodenough/style
+   ========================================================================== */
+
+:root {
+  /* ---- greyscale (structure) ---- */
+  --paper: #ffffff;        /* page background */
+  --paper-2: #f6f6f6;      /* panels, zebra rows */
+  --grid: #e2e2e2;         /* hairline gridlines */
+  --grid-strong: #c9c9c9;  /* emphasized rules / control borders */
+  --ink: #111417;          /* primary text */
+  --ink-2: #55595e;        /* secondary text */
+  --ink-3: #8a8f94;        /* hints, captions */
+  --band: #0b0b0c;         /* header band background (Excel black header) */
+  --band-ink: #ffffff;     /* text on a band */
+
+  /* ---- semantic accents (meaning) — solid / pale-fill pairs ---- */
+  --pos: #107c41;          /* green: positive / have / happened */
+  --pos-fill: #d9f0e3;
+  --neg: #c62828;          /* red: negative / missing / never */
+  --neg-fill: #fbe3e1;
+  --pend: #9a7b00;         /* yellow: pending / upcoming (text-safe) */
+  --pend-fill: #fff3bf;
+  --pend-solid: #f2c744;   /* yellow as a block colour (cells, swatches) */
+  --accent: var(--pos);    /* green is THE interactive colour */
+
+  /* light-on-dark variants for use on a band */
+  --pos-on-band: #7ee2a8;
+  --neg-on-band: #ff8f85;
+  --pend-on-band: #ffd21e;
+
+  /* ---- type ---- */
+  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fs-body: 14px;
+  --fs-small: 12px;
+  --fs-caption: 11px;
+  --fs-stat: 2.5rem;       /* 538-style headline number */
+
+  /* ---- density ---- */
+  --pad: 6px;              /* base cell padding */
+  --pad-2: 10px;           /* section padding */
+  --radius: 4px;           /* maximum rounding anywhere */
+}
+
+/* ---- base ---------------------------------------------------------------- */
+.ledger, body.ledger {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+.ledger a { color: var(--accent); text-decoration-thickness: 1px; }
+.ledger a:hover { color: var(--ink); }
+.num, .ledger td.num, .ledger .stat { font-variant-numeric: tabular-nums; }
+
+/* ---- header band (Excel black header) ------------------------------------ */
+.band {
+  background: var(--band);
+  color: var(--band-ink);
+  padding: var(--pad) var(--pad-2);
+  font-weight: 700;
+}
+.band .dim { color: #b9bcbf; font-weight: 400; }
+
+/* ---- stat (538 headline number) ------------------------------------------ */
+.stat { font-size: var(--fs-stat); font-weight: 800; line-height: 1; letter-spacing: -0.5px; }
+.stat.pos { color: var(--pos); }
+.stat.neg { color: var(--neg); }
+.stat-label { font-size: var(--fs-small); color: var(--ink-2); }
+
+/* ---- ledger table (the first-class citizen) ------------------------------ */
+.table-ledger { border-collapse: collapse; font-size: var(--fs-body); }
+.table-ledger th {
+  background: var(--band); color: var(--band-ink);
+  font-weight: 700; text-align: left; padding: var(--pad) 9px;
+  border: 1px solid var(--band);
+}
+.table-ledger td { padding: 4px 9px; border: 1px solid var(--grid); }
+.table-ledger tr:nth-child(even) td { background: var(--paper-2); }
+.table-ledger td.num, .table-ledger th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* conditional-formatting fills */
+.table-ledger td.pos, .pos-fill { background: var(--pos-fill) !important; color: #0b5c30; }
+.table-ledger td.neg, .neg-fill { background: var(--neg-fill) !important; color: #8e1f1a; }
+.table-ledger td.pend, .pend-fill { background: var(--pend-fill) !important; color: #7a6200; }
+
+/* ---- controls ------------------------------------------------------------ */
+.btn {
+  font: inherit; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--grid-strong); border-radius: var(--radius);
+  padding: 5px 12px; cursor: pointer;
+}
+.btn:hover { border-color: var(--ink); }
+.btn.primary { background: var(--pos); border-color: var(--pos); color: #fff; font-weight: 600; }
+.btn.primary:hover { background: #0b5c30; }
+.chip {
+  display: inline-block; font-size: var(--fs-caption); border: 1px solid var(--grid-strong);
+  border-radius: var(--radius); padding: 1px 7px; color: var(--ink-2); background: var(--paper);
+}
+.ledger input[type="search"], .ledger input[type="text"], .ledger select {
+  font: inherit; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--grid-strong); border-radius: var(--radius); padding: 5px 8px;
+}
+.ledger input[type="checkbox"], .ledger input[type="range"] { accent-color: var(--pos); }
+
+/* ---- inline data bar ------------------------------------------------------ */
+.bar { height: 8px; background: var(--paper-2); border: 1px solid var(--grid); overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--pos); }
+
+/* ---- print --------------------------------------------------------------- */
+@media print {
+  :root { --paper: #fff; --ink: #000; }
+  .ledger { font-size: 9pt; }
+  .band, .table-ledger th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
