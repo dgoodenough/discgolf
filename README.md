@@ -1,8 +1,22 @@
 # DGPT Standings Forecast
 
+**Live: [dgoodenough.github.io/discgolf](https://dgoodenough.github.io/discgolf/)** —
+current standings, Powerball Cup qualification odds with per-position
+distributions, and a what-if mode that recomputes a player's odds instantly
+as you toggle which events they'll attend.
+
 Monte Carlo forecast of the Disc Golf Pro Tour World Standings — who makes
 the Powerball Cup (the DGPT Championship), and at what odds. Inspired by
 [FiveThirtyEight's sports forecasts](https://projects.fivethirtyeight.com/soccer-predictions/).
+Styled with [Ledger](https://github.com/dgoodenough/style) (vendored `tokens.css`).
+
+The what-if mode uses **cutline replay**: the browser re-simulates just the
+selected player against 25,000 frozen per-sim qualification cutlines from the
+full model run — real distributional math at <100ms per toggle. Validated
+within ~2 points of the full model across the odds spectrum; multi-event
+scenarios for a single player are exact in spirit, simultaneous edits to
+many players are not (each player is scored against cutlines that don't
+know about the others).
 
 Originally built for the 2021 season with hand-pulled CSVs (preserved in
 [archive/2021](archive/2021/)); rebuilt in 2026 on top of the PDGA API so it
