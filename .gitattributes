@@ -1,0 +1,13 @@
+# Normalize line endings so local (Windows) and CI (Linux) refreshes don't
+# flip every line of the generated CSVs/JSON on each run.
+* text=auto
+*.csv text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.png binary
+*.ipynb text eol=lf
