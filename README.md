@@ -66,6 +66,14 @@ Outputs: `data/standings_{mpo,fpo}_2026.csv` (current standings) and
 To force a specific player in/out of an event, add a row to
 `data/overrides/fields.csv` (`tournament_id,pdga_number,plays`).
 
+## Attribution
+
+Event data © 2026 [PDGA](https://www.pdga.com) · Player data © 2026
+[PDGA](https://www.pdga.com) · PDGA Authorized Developer. Per the
+[PDGA developer program requirements](https://www.pdga.com/dev/developer-program),
+every player name in the app links to the player's PDGA profile and every
+event name links to its PDGA event page.
+
 ## Data sources
 
 - [PDGA REST API](https://www.pdga.com/dev/api/rest/v1/services) (events,

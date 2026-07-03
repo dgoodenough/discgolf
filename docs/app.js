@@ -27,6 +27,13 @@ function probClass(p) {
   return "dim";
 }
 
+/* PDGA attribution requirements (pdga.com/dev/developer-program): player
+   names link to the player profile, event names to the event page */
+const playerLink = (p) =>
+  `<a class="plink" href="https://www.pdga.com/player/${p.pdga}" target="_blank" rel="noopener">${p.name}</a>`;
+const eventLink = (tid, label) =>
+  `<a class="plink" href="https://www.pdga.com/tour/event/${tid}" target="_blank" rel="noopener">${label}</a>`;
+
 function shortName(name) {
   return name
     .replace(/^DGPT( Playoffs)?( -)? /, "")
@@ -68,7 +75,7 @@ function renderProjections(d) {
   rows.forEach((p) => {
     const bubble = p.p_cut < 0.99 && p.p_cut >= 0.02;
     html += `<tr class="expandable" data-pdga="${p.pdga}">
-      <td class="num dim">${p.rank}</td><td>${p.name}</td>
+      <td class="num dim">${p.rank}</td><td>${playerLink(p)}</td>
       <td class="num">${fmtPts(p.points)}</td>
       <td class="num dim">${fmtPts(p.mean_pts)}</td>
       <td class="num dim">${p.mean_rank.toFixed(1)}</td>
@@ -80,7 +87,7 @@ function renderProjections(d) {
   const el = $("#view-projections");
   el.innerHTML = html;
   el.querySelectorAll("tr.expandable").forEach((tr) =>
-    tr.addEventListener("click", () => toggleDetail(tr, d, "hist"))
+    tr.addEventListener("click", (ev) => { if (ev.target.closest("a")) return; toggleDetail(tr, d, "hist"); })
   );
 }
 
@@ -93,7 +100,7 @@ function renderStandings(d) {
     <th class="num">Starts</th><th class="num">Points</th></tr></thead><tbody>`;
   for (const p of rows) {
     html += `<tr class="expandable" data-pdga="${p.pdga}">
-      <td class="num">${p.rank}</td><td>${p.name}</td>
+      <td class="num">${p.rank}</td><td>${playerLink(p)}</td>
       <td class="num dim">${p.rating ?? ""}</td>
       <td class="num dim">${p.banked.length}</td>
       <td class="num"><b>${fmtPts(p.points)}</b></td></tr>`;
@@ -102,7 +109,7 @@ function renderStandings(d) {
   const el = $("#view-standings");
   el.innerHTML = html;
   el.querySelectorAll("tr.expandable").forEach((tr) =>
-    tr.addEventListener("click", () => toggleDetail(tr, d, "banked"))
+    tr.addEventListener("click", (ev) => { if (ev.target.closest("a")) return; toggleDetail(tr, d, "banked"); })
   );
 }
 
@@ -119,7 +126,7 @@ function toggleDetail(tr, d, kind) {
     td.innerHTML = histHtml(p, d.meta);
   } else {
     const ev = [...p.banked].sort((a, b) => b.pts - a.pts)
-      .map((b) => `<tr><td>${shortName(b.event)}${b.major ? ' <span class="chip">major</span>' : ""}</td>
+      .map((b) => `<tr><td>${eventLink(b.tid, shortName(b.event))}${b.major ? ' <span class="chip">major</span>' : ""}</td>
                    <td class="num">${fmtPts(b.pts)}</td></tr>`).join("");
     td.innerHTML = `<table class="table-ledger" style="max-width:460px"><tbody>${ev}</tbody></table>
       <p class="dim" style="font-size:.75rem">Counting rules: best ${d.meta.top_n_finishes} finishes, top ${d.meta.majors_counted} majors.</p>`;
@@ -204,10 +211,14 @@ function renderWhatif(d) {
   list.innerHTML = players
     .filter((p) => p.name.toLowerCase().includes(q))
     .map((p) => `<li data-pdga="${p.pdga}" class="${p.pdga === state.whatifPdga ? "active" : ""}">
-        <span>${p.name}</span><span class="dim">${fmtPct(p.p_cut)}</span></li>`)
+        <span>${playerLink(p)}</span><span class="dim">${fmtPct(p.p_cut)}</span></li>`)
     .join("");
   list.querySelectorAll("li").forEach((li) =>
-    li.addEventListener("click", () => { state.whatifPdga = +li.dataset.pdga; renderWhatif(d); })
+    li.addEventListener("click", (ev) => {
+      if (ev.target.closest("a")) return; // name click = PDGA profile, not select
+      state.whatifPdga = +li.dataset.pdga;
+      renderWhatif(d);
+    })
   );
   if (state.whatifPdga) renderWhatifDetail(d, d.players.find((p) => p.pdga === state.whatifPdga));
 }
@@ -224,14 +235,14 @@ function renderWhatifDetail(d, p) {
       return `<label class="event-check">
         <input type="checkbox" data-tid="${e.tid}" ${checked}>
         <span class="ev-date">${e.start_date.slice(5)}</span>
-        <span class="ev-name">${shortName(e.name)}</span>
+        <span class="ev-name">${eventLink(e.tid, shortName(e.name))}</span>
         <span class="chip">${clsLabel}</span>
         <span class="ev-att ${known ? (att ? "reg" : "noreg") : ""}">${known ? (att ? "registered" : "not registered") : "model: " + Math.round(att * 100) + "%"}</span>
       </label>`;
     })
     .join("");
   el.innerHTML = `
-    <h2 style="margin:0 0 2px">${p.name} <span class="dim" style="font-size:.85rem">#${p.rank} · ${fmtPts(p.points)} pts · ${p.rating} rated</span></h2>
+    <h2 style="margin:0 0 2px">${playerLink(p)} <span class="dim" style="font-size:.85rem">#${p.rank} · ${fmtPts(p.points)} pts · ${p.rating} rated</span></h2>
     <div class="statrow">
       <div><div class="stat">${fmtPct(p.p_cut)}</div><div class="stat-label">model P(top ${d.meta.cut})</div></div>
       <div><div class="stat" id="wf-scenario">–</div><div class="stat-label">scenario P(top ${d.meta.cut})</div></div>
@@ -268,6 +279,10 @@ async function render() {
   $("#meta-line").textContent =
     `updated ${d.meta.generated.slice(0, 10)} · ${d.meta.n_sims.toLocaleString()} sims · ` +
     `top ${d.meta.cut} qualify directly, field of ${d.meta.field_size}`;
+  $("#pdga-attribution").innerHTML =
+    `Event data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
+    `Player data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
+    `PDGA Authorized Developer`;
   $("#view-projections").hidden = state.view !== "projections";
   $("#view-standings").hidden = state.view !== "standings";
   $("#view-whatif").hidden = state.view !== "whatif";
