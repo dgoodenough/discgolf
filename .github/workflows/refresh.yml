@@ -1,0 +1,70 @@
+name: Refresh forecast
+
+# Keeps the live site current: re-pulls schedule/results/registrations,
+# recomputes standings, re-runs the 100k-sim forecast, and commits if
+# anything changed (which redeploys GitHub Pages).
+#
+# Mondays: pick up the weekend's results. Thursdays: pick up registration
+# lists as upcoming events enter the trusted 14-day window.
+on:
+  schedule:
+    - cron: "0 11 * * 1,4"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: refresh-forecast
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore results cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          # completed-event results never change; let the cache grow all season
+          key: pdga-cache-2026-${{ github.run_id }}
+          restore-keys: pdga-cache-2026-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh standings and projections
+        env:
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+        run: python -m dgpt.refresh --sims 100000
+
+      - name: Commit if anything changed
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs/data results
+          # ignore the generated-at timestamp when deciding whether data moved
+          if git diff --cached --quiet -I'"generated":'; then
+            echo "No data changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Auto-refresh standings + projections ($(date -u +%F))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger Pages build
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds"
