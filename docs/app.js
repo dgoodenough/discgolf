@@ -123,7 +123,9 @@ function renderForecast(d) {
   const cols = forecastCols(meta);
   const sort = state.sort;
   const col = cols.find((c) => c.key === sort.key) || cols[0];
-  const rows = [...d.players].filter((p) => p.points > 0 || p.p_field >= 0.0005);
+  const rows = [...d.players].filter(
+    (p) => p.points > 0 || p.p_field >= 0.0005 || (p.live && Object.keys(p.live).length)
+  );
   rows.sort((a, b) => {
     const av = col.get(a), bv = col.get(b);
     const cmp = av < bv ? -1 : av > bv ? 1 : 0;
@@ -240,22 +242,31 @@ const placeTag = (place) => (place ? ` <span class="place">${ordinal(place)}</sp
 const DOUBLES_NOTE = "Team pairings aren't modeled yet — points assume a field-average partner. TODO: use announced teams once the full list is out.";
 const PLAYOFF_NOTE = "Playoff registration isn't open yet — the model assumes every player who qualifies for this field will attend. Real signups will shift these odds.";
 
-/* project a player's points if they played event e (same model as the
-   replay); returns avg / median / 90th / ceiling over a quick Monte Carlo */
+/* projection of a player's finish if they played event e; live events use the
+   sim's remaining-holes result, future events a quick from-scratch Monte Carlo.
+   Returns { win, p10, p50, p90 } points percentiles + win probability. */
+function eventProj(d, p, e) {
+  if (p.live && p.live[e.tid]) {
+    const l = p.live[e.tid];
+    return { win: l.win, p10: l.p10, p50: l.p50, p90: l.p90, live: l };
+  }
+  return projectPoints(d, p, e);
+}
+
 function projectPoints(d, p, e, draws = 2500) {
   const out = new Float64Array(draws);
+  let wins = 0;
   for (let i = 0; i < draws; i++) {
     const mu = (-(p.rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
     const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
     const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
     const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
+    if (place === 1) wins++;
     out[i] = place <= e.curve.length ? e.curve[place - 1] : 0;
   }
   out.sort();
   const q = (f) => out[Math.min(draws - 1, Math.floor(f * draws))];
-  let sum = 0;
-  for (let i = 0; i < draws; i++) sum += out[i];
-  return { mean: sum / draws, p50: q(0.5), p90: q(0.9), max: out[draws - 1] };
+  return { win: wins / draws, p10: q(0.1), p50: q(0.5), p90: q(0.9) };
 }
 
 function detailHtml(p, d) {
@@ -276,21 +287,23 @@ function detailHtml(p, d) {
   const live = liveTidSet(d);
   const upcoming = d.events.map((e) => {
     const att = attOf.get(e.tid) ?? 0;
-    const s = projectPoints(d, p, e);
-    const dflt = att >= 0.5 ? "checked" : "";
-    const attTxt = att >= 0.999 ? "yes" : att <= 0.001 ? "—" : Math.round(att * 100) + "%";
+    const isLive = live.has(e.tid) && p.live && p.live[e.tid];
+    const s = eventProj(d, p, e);
+    const dflt = (isLive || att >= 0.5) ? "checked" : "";
+    const attTxt = isLive ? "playing" : att >= 0.999 ? "yes" : att <= 0.001 ? "—" : Math.round(att * 100) + "%";
     let note = "";
     if (e.tid === meta.dbl_tid) note += ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ teams TBD</span>`;
     if (e.cls === "playoff") note += ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ assumes qualifiers attend</span>`;
-    if (live.has(e.tid)) note += ` <span class="live-badge"><span class="live-dot"></span>live</span>`;
-    return `<tr class="${att <= 0.001 ? "not-att" : ""}">
-      <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt}></td>
+    if (isLive) note += ` <span class="live-badge"><span class="live-dot"></span>live · now ${s.live.cur >= 0 ? "+" : ""}${s.live.cur}, proj ${ordinal(Math.round(s.live.mean_place))}</span>`;
+    // live events are locked in (player is in the field) → checkbox disabled
+    return `<tr class="${att <= 0.001 && !isLive ? "not-att" : ""}">
+      <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt} ${isLive ? "disabled" : ""}></td>
       <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
-      <td class="num ${att >= 0.999 ? "pos" : ""}">${attTxt}</td>
-      <td class="num">${fmtPts(s.mean)}</td>
-      <td class="num dim">${fmtPts(s.p50)}</td>
+      <td class="num ${att >= 0.999 || isLive ? "pos" : ""}">${attTxt}</td>
+      <td class="num dim">${fmtPts(s.p10)}</td>
+      <td class="num">${fmtPts(s.p50)}</td>
       <td class="num">${fmtPts(s.p90)}</td>
-      <td class="num dim">${fmtPts(s.max)}</td></tr>`;
+      <td class="num ${s.win >= 0.1 ? "pos" : "dim"}">${fmtPct(s.win)}</td></tr>`;
   }).join("");
 
   return `<div class="detail-grid">
@@ -302,7 +315,7 @@ function detailHtml(p, d) {
     <div>
       <div class="band">What-if — check the events they'll play; projected points if they do</div>
       <table class="table-ledger detail-tbl"><thead><tr>
-        <th></th><th>Event</th><th class="num">Plays</th><th class="num">Avg</th><th class="num">Med</th><th class="num">90th</th><th class="num">Ceiling</th>
+        <th></th><th>Event</th><th class="num">Plays</th><th class="num" title="10th-percentile points — a low/floor outcome">10th</th><th class="num">Med</th><th class="num">90th</th><th class="num" title="probability of winning the event">Win%</th>
       </tr></thead><tbody>${upcoming || '<tr><td colspan="7" class="dim">no remaining events</td></tr>'}</tbody></table>
       <div class="wf-scenario" data-pdga="${p.pdga}">
         <span class="stat" id="wf-cut">${fmtPct(p.p_cut)}</span>

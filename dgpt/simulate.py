@@ -26,6 +26,7 @@ FIELD_SIZE = {"MPO": 32, "FPO": 20}
 
 
 MAX_HIST_RANK = 50   # per-position histogram depth for the app
+LIVE_CAP = 130       # place-histogram depth for a live event's projection
 
 
 @dataclass
@@ -53,6 +54,7 @@ class SimResult:
     att_probs: np.ndarray    # (n_events, n_players) realized P(plays) incl. playoff gating
     events_meta: list[dict]  # remaining events: id/name/cls/rounds/major + score stats
     banked: list[list]       # per player: [(tid, points, is_major, place), ...]
+    live_stats: dict         # {tid: {pdga: {cur, rem, win, mean_place, p10/p50/p90, mean_pts}}}
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
@@ -77,6 +79,23 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     # players: anyone with a start this season and a known rating
     table = [r for r in table if r["rating"]]
+
+    # add players making their first start at a live event (no standings row yet)
+    live_now = schedule.live_events(sched)
+    have = {r["pdga_number"] for r in table}
+    max_rank = max((r["rank"] for r in table), default=0)
+    for ev in live_now:
+        field = live_api.live_field(ev["tournament_id"], division)
+        for pdga, info in (field or {}).items():
+            if pdga in have or not info.get("rating"):
+                continue
+            have.add(pdga)
+            max_rank += 1
+            table.append({
+                "pdga_number": pdga, "name": info["name"], "rating": info["rating"],
+                "rank": max_rank, "points": 0.0, "events": [],
+            })
+
     n = len(table)
     pdga_numbers = [r["pdga_number"] for r in table]
     ratings = np.array([float(r["rating"]) for r in table])
@@ -125,21 +144,21 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     # live events in progress: model each player's current score plus a
     # rating-based projection of the holes they have left, instead of
     # simulating the whole event from scratch
-    live_tids = {r["tournament_id"] for r in schedule.live_events(sched)}
+    live_tids = {r["tournament_id"] for r in live_now}
     live_data: dict[int, tuple] = {}
     for ev_i, row in enumerate(remaining):
         if row["tournament_id"] not in live_tids:
             continue
-        state = live_api.live_state(row["tournament_id"], division)
+        state = live_api.live_field(row["tournament_id"], division)
         if not state:
             continue
         cur = np.zeros(n)
         rem = np.zeros(n)
         in_field = np.zeros(n, dtype=bool)
-        for pdga, (topar, rounds_left) in state.items():
+        for pdga, info in state.items():
             if pdga in idx:
                 j = idx[pdga]
-                cur[j], rem[j], in_field[j] = topar, rounds_left, True
+                cur[j], rem[j], in_field[j] = info["cur"], info["rem"], True
         favg = float(ratings[in_field].mean()) if in_field.any() else 1000.0
         live_data[ev_i] = (cur, rem, in_field, favg)
 
@@ -158,6 +177,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     total_pts = np.zeros((n_sims, n))
     total_rank = np.zeros((n_sims, n), dtype=np.int32)
     rank_hist = np.zeros((n, MAX_HIST_RANK), dtype=np.int64)
+    live_place_hist = {ev_i: np.zeros((n, LIVE_CAP), dtype=np.int64) for ev_i in live_data}
     att_count = np.zeros((len(remaining), n))  # realized plays per event per player
     cutline = np.zeros(n_sims)
     cutline2 = np.zeros(n_sims)
@@ -212,6 +232,14 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             if row["cls"] == "doubles":
                 place = (place + 1) // 2
             att_count[ev_i] += plays.sum(axis=0)
+            if ev_i in live_place_hist:  # projected finish distribution for a live event
+                inf = live_data[ev_i][2]
+                cp = np.where(inf[None, :], np.minimum(place, LIVE_CAP), 0)
+                stride = LIVE_CAP + 1
+                flat = (np.arange(n) * stride)[None, :] + cp
+                live_place_hist[ev_i] += np.bincount(
+                    flat.ravel(), minlength=n * stride
+                ).reshape(n, stride)[:, 1:]
             pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
             pts[~plays] = 0.0
             return pts, place
@@ -314,6 +342,38 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     p_champ = p_champ_hits / n_sims
     att_probs = att_count / n_sims
 
+    # per-player live-event projections (finish + points) from the place hist
+    live_stats: dict[int, dict] = {}
+    places = np.arange(1, LIVE_CAP + 1)
+    for ev_i, hist in live_place_hist.items():
+        tid = remaining[ev_i]["tournament_id"]
+        cur, rem, in_field, _ = live_data[ev_i]
+        cv = curves[tid]
+        pts_by_place = np.zeros(LIVE_CAP)
+        m = min(LIVE_CAP, len(cv) - 1)
+        pts_by_place[:m] = cv[1 : 1 + m]
+        v_asc = pts_by_place[::-1]
+        per: dict[int, dict] = {}
+        for j in range(n):
+            if not in_field[j]:
+                continue
+            w = hist[j]
+            tot = int(w.sum())
+            if tot == 0:
+                continue
+            cum = np.cumsum(w[::-1])
+            def q(f: float) -> float:
+                return float(v_asc[min(int(np.searchsorted(cum, f * tot)), LIVE_CAP - 1)])
+            per[pdga_numbers[j]] = {
+                "cur": round(float(cur[j]), 1),
+                "rem": round(float(rem[j]), 2),
+                "win": round(float(w[0] / tot), 4),
+                "mean_place": round(float((places * w).sum() / tot), 1),
+                "mean_pts": round(float((pts_by_place * w).sum() / tot), 1),
+                "p10": q(0.10), "p50": q(0.50), "p90": q(0.90),
+            }
+        live_stats[tid] = per
+
     cut = STANDINGS_CUT[division]
     fsz = FIELD_SIZE[division]
     return SimResult(
@@ -342,6 +402,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             [(tid, pts, tid in major_tids, place) for tid, pts, place, _ in r["events"]]
             for r in table
         ],
+        live_stats=live_stats,
     )
 
 

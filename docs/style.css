@@ -26,18 +26,23 @@ html, body { margin: 0; }
 /* tables */
 .table-tools { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
 .table-tools .btn { font-size: var(--fs-small); padding: 4px 10px; }
-.table-wrap { container-type: inline-size; overflow-x: auto; }
+/* overflow-x:visible in the default view keeps the page as the scroll context
+   so the header can stick; only the "all columns" view scrolls horizontally */
+.table-wrap { overflow-x: visible; }
 .table-ledger { width: 100%; }
 .table-ledger th { position: sticky; top: 0; z-index: 2; }
 
-/* Responsive columns: hide low-priority tiers as the table narrows.
+/* Responsive columns: hide low-priority tiers as the window narrows.
    Order of importance is #, Player, Points, Cup (core, never hidden) →
    Proj.pts + sparkline (t1) → Auto Bid + MVP Bid (t2) → GMC + MVP (t3) →
-   Rating + Starts + Proj.rank (t4). "All columns" overrides every hide. */
-@container (max-width: 900px) { .t4 { display: none; } }
-@container (max-width: 740px) { .t3 { display: none; } }
-@container (max-width: 640px) { .t2 { display: none; } }
-@container (max-width: 510px) { .t1 { display: none; } }
+   Rating + Starts + Proj.rank (t4). "All columns" overrides every hide.
+   Viewport (not container) queries so no scroll-container ancestor breaks
+   the sticky header. */
+@media (max-width: 940px) { .t4 { display: none; } }
+@media (max-width: 790px) { .t3 { display: none; } }
+@media (max-width: 690px) { .t2 { display: none; } }
+@media (max-width: 560px) { .t1 { display: none; } }
+.table-wrap.cols-all { overflow-x: auto; }
 .table-wrap.cols-all .t1, .table-wrap.cols-all .t2,
 .table-wrap.cols-all .t3, .table-wrap.cols-all .t4 { display: table-cell; }
 /* All columns: let the table exceed the wrap so it scrolls (don't cram) */

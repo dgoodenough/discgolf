@@ -63,12 +63,12 @@ def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: boo
     return _get(url, cf)["data"]
 
 
-def live_state(tournament_id: int, division: str) -> dict[int, tuple[float, float]] | None:
+def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     """Current standing of an in-progress event, for the remaining-holes model.
 
-    Returns {pdga_number: (current_to_par, rounds_remaining)} for players with
-    posted scores (excluding withdrawals), or None if nothing has been posted
-    yet (fall back to the from-scratch simulation).
+    Returns {pdga_number: {name, rating, cur (to-par), rem (rounds left)}} for
+    players with posted scores (excluding withdrawals), or None if nothing has
+    been posted yet (fall back to the from-scratch simulation).
     """
     event = fetch_event(tournament_id)
     total_rounds = event.get("FinalRound")
@@ -78,15 +78,25 @@ def live_state(tournament_id: int, division: str) -> dict[int, tuple[float, floa
     latest = div.get("LatestRound")
     scores = fetch_round(tournament_id, division, latest).get("scores") or []
 
-    out: dict[int, tuple[float, float]] = {}
+    out: dict[int, dict] = {}
     for s in scores:
         pdga, topar = s.get("PDGANum"), s.get("ToPar")
         if not pdga or topar is None or str(s.get("GrandTotal")) == "999":
             continue
         holes_played = (latest - 1) * 18 + (s.get("Played") or 0)
-        rounds_remaining = max(total_rounds * 18 - holes_played, 0) / 18.0
-        out[pdga] = (float(topar), rounds_remaining)
+        out[pdga] = {
+            "name": s.get("Name"),
+            "rating": s.get("Rating"),
+            "cur": float(topar),
+            "rem": max(total_rounds * 18 - holes_played, 0) / 18.0,
+        }
     return out or None
+
+
+def live_state(tournament_id: int, division: str) -> dict[int, tuple[float, float]] | None:
+    """Back-compat: {pdga: (current_to_par, rounds_remaining)}."""
+    field = live_field(tournament_id, division)
+    return {p: (v["cur"], v["rem"]) for p, v in field.items()} if field else None
 
 
 def final_results(tournament_id: int, division: str, *, use_cache: bool = True) -> list[dict]:

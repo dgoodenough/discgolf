@@ -82,6 +82,12 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
                 # realized attendance per remaining event (playoffs reflect gating)
                 "att": [round(float(res.att_probs[e, i]), 3) for e in range(len(res.events_meta))],
+                # live-event projections (current position + projected finish), if any
+                "live": {
+                    tid: stats[res.pdga_numbers[i]]
+                    for tid, stats in res.live_stats.items()
+                    if res.pdga_numbers[i] in stats
+                },
             }
         )
     players.sort(key=lambda p: (-p["points"], p["rank"]))
