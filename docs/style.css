@@ -59,7 +59,10 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 /* placement shown after a single event's points — smaller, quieter */
 .place { color: var(--ink-3); font-size: var(--fs-caption); }
 .note-flag { color: var(--pend); font-size: var(--fs-caption); cursor: help; }
+.medal { cursor: help; }
 .detail-tbl input[type="checkbox"] { width: 14px; height: 14px; vertical-align: middle; }
+/* events the player isn't projected to attend: greyed until checked */
+.detail-tbl tr.not-att td:not(:first-child) { color: var(--ink-3); }
 
 /* inline what-if scenario readout */
 .wf-scenario { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; flex-wrap: wrap; }

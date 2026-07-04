@@ -26,8 +26,6 @@ FIELD_SIZE = {"MPO": 32, "FPO": 20}
 
 
 MAX_HIST_RANK = 50   # per-position histogram depth for the app
-MAX_EV_PLACE = 160   # place-histogram depth per event (covers the full points curve)
-EV_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99)
 
 
 @dataclass
@@ -41,19 +39,20 @@ class SimResult:
     current_rank: list[int]
     mean_points: np.ndarray
     mean_rank: np.ndarray
-    p_cut: np.ndarray       # P(final standings rank <= standings cut) = automatic bid
-    p_field: np.ndarray     # P(rank <= championship field size) ~ upper bound incl. playoff path
+    p_cut: np.ndarray        # P(final standings rank <= cut) = automatic bid
+    p_field: np.ndarray      # P(rank <= championship field size)
     p_first: np.ndarray
-    p_gmc: np.ndarray       # P(makes the Green Mountain Championship field)
-    p_mvp: np.ndarray       # P(makes the MVP Open field via points)
+    p_gmc: np.ndarray        # P(makes the Green Mountain Championship field)
+    p_mvp: np.ndarray        # P(makes the MVP Open field via points)
+    p_mvp_qual: np.ndarray   # P(earns a championship spot via MVP-performance path)
+    p_champ: np.ndarray      # P(in the championship field) = p_cut + p_mvp_qual
     # extras for the web app / what-if replay
-    rank_hist: np.ndarray   # (n_players, MAX_HIST_RANK) counts of final rank
-    cutline: np.ndarray     # per sim: points of the last direct-qualification spot
-    cutline2: np.ndarray    # per sim: points of the first spot outside the cut
-    att_probs: np.ndarray   # (n_events, n_players) baseline P(plays)
+    rank_hist: np.ndarray    # (n_players, MAX_HIST_RANK) counts of final rank
+    cutline: np.ndarray      # per sim: points of the last direct-qualification spot
+    cutline2: np.ndarray     # per sim: points of the first spot outside the cut
+    att_probs: np.ndarray    # (n_events, n_players) realized P(plays) incl. playoff gating
     events_meta: list[dict]  # remaining events: id/name/cls/rounds/major + score stats
-    banked: list[list]      # per player: [(tid, points, is_major), ...]
-    ev_stats: list           # (n_events)(n_players) dict of points stats | None (conditional on playing)
+    banked: list[list]       # per player: [(tid, points, is_major, place), ...]
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
@@ -127,14 +126,18 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     mvp_cut = config.PLAYOFF_QUAL["mvp"]["cut"][division]
     mvp_perf = config.PLAYOFF_QUAL["mvp"]["perf"][division]
 
+    perf_champ = FIELD_SIZE[division] - STANDINGS_CUT[division]  # MVP-performance spots
+
     total_pts = np.zeros((n_sims, n))
     total_rank = np.zeros((n_sims, n), dtype=np.int32)
     rank_hist = np.zeros((n, MAX_HIST_RANK), dtype=np.int64)
-    ev_place_hist = np.zeros((len(remaining), n, MAX_EV_PLACE), dtype=np.int64)  # cond. on playing
+    att_count = np.zeros((len(remaining), n))  # realized plays per event per player
     cutline = np.zeros(n_sims)
     cutline2 = np.zeros(n_sims)
-    p_gmc_hits = np.zeros(n)  # P(standings rank before GMC within its field cut)
-    p_mvp_hits = np.zeros(n)  # P(standings rank before MVP within its points cut)
+    p_gmc_hits = np.zeros(n)       # rank before GMC within its field cut
+    p_mvp_hits = np.zeros(n)       # rank before MVP within its points cut
+    p_mvp_qual_hits = np.zeros(n)  # earns championship via MVP performance
+    p_champ_hits = np.zeros(n)     # in the championship field (auto bid or MVP perf)
     events_meta = [
         {
             "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
@@ -172,10 +175,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             place[rows_ix, order] = np.arange(1, n + 1)[None, :]
             if row["cls"] == "doubles":
                 place = (place + 1) // 2
-            cp = np.where(plays, np.minimum(place, MAX_EV_PLACE), 0)
-            stride = MAX_EV_PLACE + 1
-            flat = (np.arange(n) * stride)[None, :] + cp
-            ev_place_hist[ev_i] += np.bincount(flat.ravel(), minlength=n * stride).reshape(n, stride)[:, 1:]
+            att_count[ev_i] += plays.sum(axis=0)
             pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
             pts[~plays] = 0.0
             return pts, place
@@ -221,6 +221,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             extra.append(gmc_pts)
 
         # -- MVP Open: top mvp_cut in pre-MVP standings + top GMC performers --
+        mvp_plays = None
+        mvp_place = None
         if mvp_ei is not None:
             rank_pre_mvp = rank_of(season_totals(extra))
             p_mvp_hits += (rank_pre_mvp <= mvp_cut).sum(axis=0)
@@ -230,15 +232,28 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 gp = np.where(elig, gmc_place, n + 1)
                 kth = np.partition(gp, mvp_perf - 1, axis=1)[:, mvp_perf - 1]
                 mvp_plays = mvp_plays | ((gp <= kth[:, None]) & elig)
-            mvp_pts, _ = draw_event(mvp_ei, mvp_plays)
+            mvp_pts, mvp_place = draw_event(mvp_ei, mvp_plays)
             extra.append(mvp_pts)
 
+        cut_n = STANDINGS_CUT[division]
         totals = season_totals(extra)
         ranks = rank_of(totals)
         total_pts[done : done + c] = totals
         total_rank[done : done + c] = ranks
 
-        cut_n = STANDINGS_CUT[division]
+        # -- Championship field: auto bid (top cut) + MVP-performance path --
+        auto_bid = ranks <= cut_n
+        champ_field = auto_bid.copy()
+        if mvp_place is not None:
+            # top perf_champ MVP finishers outside the standings cut earn a spot
+            elig = mvp_plays & ~auto_bid
+            mp = np.where(elig, mvp_place, n + 1)
+            kth = np.partition(mp, perf_champ - 1, axis=1)[:, perf_champ - 1]
+            mvp_qual = (mp <= kth[:, None]) & elig
+            p_mvp_qual_hits += mvp_qual.sum(axis=0)
+            champ_field |= mvp_qual
+        p_champ_hits += champ_field.sum(axis=0)
+
         sorted_totals = -np.sort(-totals, axis=1)
         cutline[done : done + c] = sorted_totals[:, cut_n - 1]
         cutline2[done : done + c] = sorted_totals[:, cut_n]
@@ -249,19 +264,9 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     p_gmc = p_gmc_hits / n_sims
     p_mvp = p_mvp_hits / n_sims
-
-    # per-event per-player points stats (conditional on playing) from the
-    # place histograms — points are a deterministic function of place.
-    ev_stats = []
-    for ev_i, row in enumerate(remaining):
-        cv = curves[row["tournament_id"]]  # index by place; len n+2
-        pts_by_place = np.zeros(MAX_EV_PLACE)  # place 1..MAX (pad past field size)
-        m = min(MAX_EV_PLACE, len(cv) - 1)
-        pts_by_place[:m] = cv[1 : 1 + m]
-        per_player = []
-        for pi in range(n):
-            per_player.append(_points_stats(ev_place_hist[ev_i, pi], pts_by_place, n_sims))
-        ev_stats.append(per_player)
+    p_mvp_qual = p_mvp_qual_hits / n_sims
+    p_champ = p_champ_hits / n_sims
+    att_probs = att_count / n_sims
 
     cut = STANDINGS_CUT[division]
     fsz = FIELD_SIZE[division]
@@ -280,46 +285,18 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         p_first=(total_rank == 1).mean(axis=0),
         p_gmc=p_gmc,
         p_mvp=p_mvp,
+        p_mvp_qual=p_mvp_qual,
+        p_champ=p_champ,
         rank_hist=rank_hist,
         cutline=cutline,
         cutline2=cutline2,
-        att_probs=np.array(event_probs),
+        att_probs=att_probs,
         events_meta=events_meta,
         banked=[
             [(tid, pts, tid in major_tids, place) for tid, pts, place, _ in r["events"]]
             for r in table
         ],
-        ev_stats=ev_stats,
     )
-
-
-def _points_stats(place_hist: np.ndarray, pts_by_place: np.ndarray, n_sims: int) -> dict | None:
-    """Points distribution (conditional on playing) from a place histogram.
-
-    Returns mean, min, max, selected percentiles, and the play frequency.
-    Points are monotone-decreasing in place, so percentiles come straight
-    from the weighted place distribution.
-    """
-    total = int(place_hist.sum())
-    if total == 0:
-        return None
-    w = place_hist
-    mean = float((pts_by_place * w).sum() / total)
-    # ascending in points == descending in place
-    v_asc = pts_by_place[::-1]
-    cum = np.cumsum(w[::-1])
-    pct = {}
-    for q in EV_QUANTILES:
-        idx = int(np.searchsorted(cum, q * total))
-        pct[f"p{int(q * 100)}"] = round(float(v_asc[min(idx, len(v_asc) - 1)]), 1)
-    nz = np.nonzero(w)[0]
-    return {
-        "mean": round(mean, 1),
-        "min": round(float(pts_by_place[nz[-1]]), 1),   # worst finish points
-        "max": round(float(pts_by_place[nz[0]]), 1),    # best finish points
-        "play_freq": round(total / n_sims, 3),
-        **pct,
-    }
 
 
 def write_csv(res: SimResult) -> None:

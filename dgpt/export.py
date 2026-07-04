@@ -71,15 +71,14 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 "p_cut": round(float(res.p_cut[i]), 4),
                 "p_gmc": round(float(res.p_gmc[i]), 4),
                 "p_mvp": round(float(res.p_mvp[i]), 4),
+                "p_mvp_qual": round(float(res.p_mvp_qual[i]), 4),
+                "p_champ": round(float(res.p_champ[i]), 4),
                 "p_first": round(float(res.p_first[i]), 4),
                 "mean_pts": round(float(res.mean_points[i]), 1),
                 "mean_rank": round(float(res.mean_rank[i]), 1),
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
-                "upcoming": {
-                    ev["tid"]: res.ev_stats[e][i]
-                    for e, ev in enumerate(res.events_meta)
-                    if res.ev_stats[e][i] is not None
-                },
+                # realized attendance per remaining event (playoffs reflect gating)
+                "att": [round(float(res.att_probs[e, i]), 3) for e in range(len(res.events_meta))],
             }
         )
     players.sort(key=lambda p: (-p["points"], p["rank"]))

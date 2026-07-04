@@ -3,7 +3,7 @@
    a single player against frozen per-sim cutlines ("cutline replay"). */
 "use strict";
 
-const state = { div: "mpo", view: "forecast", data: {}, whatifPdga: null, sort: { key: "p_cut", dir: "desc" } };
+const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" } };
 
 const $ = (sel) => document.querySelector(sel);
 const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
@@ -72,18 +72,26 @@ function sparkCell(p, meta) {
 
 /* ---------- forecast view (standings + projections, sortable) ---------- */
 
+const hasWin = (p) => p.banked.some((b) => b.place === 1);
+function nameCell(p) {
+  return playerLink(p) + (hasWin(p) ? ' <span class="medal" title="Won a points event this year — event winners who miss the cut get a special Championship invite as a bottom seed">🥇</span>' : "");
+}
+
 function forecastCols(meta) {
+  const perf = meta.field_size - meta.cut; // MVP-performance championship spots
   return [
     { key: "rank", label: "#", num: true, get: (p) => p.rank, cell: (p) => `<span class="dim">${p.rank}</span>`, dir0: "asc" },
-    { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: playerLink, dir0: "asc" },
+    { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: nameCell, dir0: "asc" },
     { key: "rating", label: "Rating", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
     { key: "starts", label: "Starts", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
     { key: "mean_pts", label: "Proj. pts", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
     { key: "mean_rank", label: "Proj. rank", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
-    { key: "p_cut", label: "Auto Bid", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
     { key: "p_gmc", label: "GMC", title: `P(top ${meta.gmc_cut} before the Green Mountain Championship — makes the first playoff field)`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
     { key: "p_mvp", label: "MVP", title: `P(top ${meta.mvp_cut} before the MVP Open — makes the second playoff field via points)`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
+    { key: "p_cut", label: "Auto Bid", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
+    { key: "p_mvp_qual", label: "MVP Bid", title: `P(earns a Cup spot via a top-${perf} MVP Open finish, outside the standings cut)`, num: true, get: (p) => p.p_mvp_qual, cell: (p) => `<span class="${probClass(p.p_mvp_qual)}">${fmtPct(p.p_mvp_qual)}</span>`, dir0: "desc" },
+    { key: "p_champ", label: "Cup", title: "P(in the Powerball Cup field) = Auto Bid + MVP Bid", num: true, get: (p) => p.p_champ, cell: (p) => `<b class="${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</b>`, dir0: "desc" },
     { key: "spark", label: "Finish distribution", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
   ];
 }
@@ -115,7 +123,8 @@ function renderForecast(d) {
 
   const el = $("#view-forecast");
   el.innerHTML = `<table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
-    <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event-by-event breakdown and finishing-position odds · hover the sparkline for exact odds.</p>`;
+    <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event breakdown and inline what-if · hover the sparkline for exact odds · <b>Cup</b> = Auto Bid + MVP Bid.
+    🥇 = won a points event this year; event winners who miss every cut still receive a special Championship invite as a bottom seed (adds a spot, not modeled in these columns).</p>`;
 
   el.querySelectorAll("th.sortable").forEach((th) =>
     th.addEventListener("click", () => {
@@ -185,11 +194,11 @@ function wireWhatif(detail, p, d) {
       swingEl.className = "wf-swing " + (sw > 0 ? "pos" : "neg");
     }
   };
+  const attOf = new Map(d.events.map((e, i) => [e.tid, p.att[i]]));
   detail.querySelectorAll(".wf-box").forEach((c) => c.addEventListener("change", recompute));
   detail.querySelector("#wf-reset").addEventListener("click", () => {
     detail.querySelectorAll(".wf-box").forEach((c) => {
-      const s = p.upcoming[+c.dataset.tid];
-      c.checked = !!(s && s.play_freq >= 0.5);
+      c.checked = (attOf.get(+c.dataset.tid) ?? 0) >= 0.5;
     });
     recompute();
   });
@@ -200,26 +209,48 @@ function wireWhatif(detail, p, d) {
 const placeTag = (place) => (place ? ` <span class="place">${ordinal(place)}</span>` : "");
 const DOUBLES_NOTE = "Team pairings aren't modeled yet — points assume a field-average partner. TODO: use announced teams once the full list is out.";
 
+/* project a player's points if they played event e (same model as the
+   replay); returns avg / median / 90th / ceiling over a quick Monte Carlo */
+function projectPoints(d, p, e, draws = 2500) {
+  const out = new Float64Array(draws);
+  for (let i = 0; i < draws; i++) {
+    const mu = (-(p.rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
+    const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
+    const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
+    const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
+    out[i] = place <= e.curve.length ? e.curve[place - 1] : 0;
+  }
+  out.sort();
+  const q = (f) => out[Math.min(draws - 1, Math.floor(f * draws))];
+  let sum = 0;
+  for (let i = 0; i < draws; i++) sum += out[i];
+  return { mean: sum / draws, p50: q(0.5), p90: q(0.9), max: out[draws - 1] };
+}
+
 function detailHtml(p, d) {
   const meta = d.meta;
   const counted = countedTids(p, meta);
+  const attOf = new Map(d.events.map((e, i) => [e.tid, p.att[i]]));
 
   const banked = [...p.banked].sort((a, b) => b.pts - a.pts).map((b) => {
     const drop = !counted.has(b.tid);
     return `<tr class="${drop ? "dropped" : ""}">
       <td>${eventLink(b.tid, shortName(b.event))}${b.major ? ' <span class="chip">major</span>' : ""}</td>
       <td class="num">${fmtPts(b.pts)}${placeTag(b.place)}</td>
-      <td>${drop ? '<span class="drop-tag">dropped</span>' : '<span class="keep-tag">counts</span>'}</td></tr>`;
+      <td>${drop ? '<span class="drop-tag">dropped</span>' : ""}</td></tr>`;
   }).join("");
 
-  const upcoming = d.events.filter((e) => p.upcoming[e.tid]).map((e) => {
-    const s = p.upcoming[e.tid];
-    const dflt = s.play_freq >= 0.5 ? "checked" : "";
+  // every remaining event — attended or not — so any can be toggled on
+  const upcoming = d.events.map((e) => {
+    const att = attOf.get(e.tid) ?? 0;
+    const s = projectPoints(d, p, e);
+    const dflt = att >= 0.5 ? "checked" : "";
+    const attTxt = att >= 0.999 ? "yes" : att <= 0.001 ? "—" : Math.round(att * 100) + "%";
     const note = e.tid === meta.dbl_tid ? ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ teams TBD</span>` : "";
-    return `<tr>
+    return `<tr class="${att <= 0.001 ? "not-att" : ""}">
       <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt}></td>
       <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
-      <td class="num">${Math.round(s.play_freq * 100)}%</td>
+      <td class="num ${att >= 0.999 ? "pos" : ""}">${attTxt}</td>
       <td class="num">${fmtPts(s.mean)}</td>
       <td class="num dim">${fmtPts(s.p50)}</td>
       <td class="num">${fmtPts(s.p90)}</td>
@@ -228,7 +259,7 @@ function detailHtml(p, d) {
 
   return `<div class="detail-grid">
     <div>
-      <div class="band">Season so far — best ${meta.top_n_finishes}, top ${meta.majors_counted} majors count</div>
+      <div class="band">Season so far — best ${meta.top_n_finishes}, top ${meta.majors_counted} majors count (struck through = doesn't count)</div>
       <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th></th></tr></thead>
         <tbody>${banked || '<tr><td colspan="3" class="dim">no results yet</td></tr>'}</tbody></table>
     </div>
