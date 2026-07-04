@@ -64,6 +64,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                         "pts": pts,
                         "major": major,
                         "place": place,
+                        "cls": sched_by_tid[tid]["cls"] if tid in sched_by_tid else "",
                         "event": sched_by_tid[tid]["name"] if tid in sched_by_tid else str(tid),
                     }
                     for tid, pts, major, place in res.banked[i]

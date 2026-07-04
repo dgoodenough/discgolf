@@ -14,12 +14,21 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sims", type=int, default=simulate.DEFAULT_SIMS)
     ap.add_argument("--skip-sim", action="store_true", help="standings only")
+    ap.add_argument("--only-if-live", action="store_true",
+                    help="exit early unless a points event is in progress (for the frequent live cron)")
     args = ap.parse_args()
 
     print("building schedule from PDGA API ...")
     rows = schedule.build()
     done = sum(1 for r in rows if r["completed"])
     print(f"  {len(rows)} points-relevant events, {done} completed")
+
+    if args.only_if_live:
+        live = schedule.live_events(rows)
+        if not live:
+            print("no live event — skipping refresh")
+            return
+        print(f"  live now: {', '.join(r['name'][:40] for r in live)}")
 
     for division in ("MPO", "FPO"):
         print(f"computing {division} standings ...")

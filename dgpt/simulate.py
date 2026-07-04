@@ -99,6 +99,12 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     for i, b in enumerate(banked_others):
         banked_arr[i, : len(b)] = b
 
+    # already-won a DGPT/Major event (not Jomez) -> guaranteed Cup special invite
+    has_banked_win = np.array([
+        any(place == 1 and tid not in config.JOMEZ_TIDS for tid, _, place, _ in r["events"])
+        for r in table
+    ])
+
     remaining = [
         row for row in sched
         if not row["completed"]
@@ -190,9 +196,12 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         sim_major = np.zeros((c, n, sum(1 for r in remaining if r["cls"] == "major")))
         other_cols = []
         mi = 0
+        sim_win = np.zeros((c, n), dtype=bool)  # won a DGPT/Major event this sim
         for ev_i in pre_eis:
             plays = rng.random((c, n)) < event_probs[ev_i]
-            pts, _ = draw_event(ev_i, plays)
+            pts, place = draw_event(ev_i, plays)
+            if remaining[ev_i]["cls"] != "jomez":
+                sim_win |= (place == 1) & plays
             if remaining[ev_i]["cls"] == "major":
                 sim_major[:, :, mi] = pts
                 mi += 1
@@ -218,6 +227,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             p_gmc_hits += (rank_pre_gmc <= gmc_cut).sum(axis=0)
             gmc_plays = rank_pre_gmc <= gmc_fill
             gmc_pts, gmc_place = draw_event(gmc_ei, gmc_plays)
+            sim_win |= (gmc_place == 1) & gmc_plays
             extra.append(gmc_pts)
 
         # -- MVP Open: top mvp_cut in pre-MVP standings + top GMC performers --
@@ -233,6 +243,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 kth = np.partition(gp, mvp_perf - 1, axis=1)[:, mvp_perf - 1]
                 mvp_plays = mvp_plays | ((gp <= kth[:, None]) & elig)
             mvp_pts, mvp_place = draw_event(mvp_ei, mvp_plays)
+            sim_win |= (mvp_place == 1) & mvp_plays
             extra.append(mvp_pts)
 
         cut_n = STANDINGS_CUT[division]
@@ -241,7 +252,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         total_pts[done : done + c] = totals
         total_rank[done : done + c] = ranks
 
-        # -- Championship field: auto bid (top cut) + MVP-performance path --
+        # -- Championship field: auto bid + MVP-performance + event-winner invite --
         auto_bid = ranks <= cut_n
         champ_field = auto_bid.copy()
         if mvp_place is not None:
@@ -252,6 +263,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             mvp_qual = (mp <= kth[:, None]) & elig
             p_mvp_qual_hits += mvp_qual.sum(axis=0)
             champ_field |= mvp_qual
+        # DGPT/Major winners get a special invite (bottom seed) if not already in
+        champ_field |= has_banked_win[None, :] | sim_win
         p_champ_hits += champ_field.sum(axis=0)
 
         sorted_totals = -np.sort(-totals, axis=1)

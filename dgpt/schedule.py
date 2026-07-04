@@ -72,6 +72,16 @@ def build(client: PDGAClient | None = None) -> list[dict]:
     return rows
 
 
+def live_events(rows: list[dict] | None = None) -> list[dict]:
+    """Points events currently in progress (start_date <= today <= end_date)."""
+    rows = rows if rows is not None else load()
+    today = dt.date.today()
+    return [
+        r for r in rows
+        if dt.date.fromisoformat(r["start_date"]) <= today <= dt.date.fromisoformat(r["end_date"])
+    ]
+
+
 def load() -> list[dict]:
     with open(SCHEDULE_CSV, newline="", encoding="utf-8") as f:
         rows = []
