@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 
-from . import export, schedule, simulate, standings
+from . import export, schedule, simulate, snapshot, standings
 
 
 def main() -> None:
@@ -40,6 +40,7 @@ def main() -> None:
             res = simulate.run(division, n_sims=args.sims)
             simulate.write_csv(res)
             export.export(res)
+            print("  " + snapshot.record(res, division))
 
 
 if __name__ == "__main__":
