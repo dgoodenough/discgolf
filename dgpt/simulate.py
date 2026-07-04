@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import config, fields, points, schedule, standings
+from . import config, fields, live_api, points, schedule, standings
 
 RATING_PTS_PER_STROKE = 6.0   # from DGPTModelV2
 ROUND_SD = 6.82               # strokes per round, from DGPTModelV2
@@ -122,6 +122,27 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     curves = {row["tournament_id"]: _curve_vector(division, row["cls"], n) for row in remaining}
 
+    # live events in progress: model each player's current score plus a
+    # rating-based projection of the holes they have left, instead of
+    # simulating the whole event from scratch
+    live_tids = {r["tournament_id"] for r in schedule.live_events(sched)}
+    live_data: dict[int, tuple] = {}
+    for ev_i, row in enumerate(remaining):
+        if row["tournament_id"] not in live_tids:
+            continue
+        state = live_api.live_state(row["tournament_id"], division)
+        if not state:
+            continue
+        cur = np.zeros(n)
+        rem = np.zeros(n)
+        in_field = np.zeros(n, dtype=bool)
+        for pdga, (topar, rounds_left) in state.items():
+            if pdga in idx:
+                j = idx[pdga]
+                cur[j], rem[j], in_field[j] = topar, rounds_left, True
+        favg = float(ratings[in_field].mean()) if in_field.any() else 1000.0
+        live_data[ev_i] = (cur, rem, in_field, favg)
+
     # playoff events (drawn last, with attendance gated on standings)
     gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
     mvp_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_MVP), None)
@@ -164,18 +185,27 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         def draw_event(ev_i, plays):
             """Draw one event's points + place (c, n); update place-hist + meta."""
             row = remaining[ev_i]
-            n_rounds = ROUNDS.get(row["cls"], 3)
-            fsum = (plays * ratings).sum(axis=1)
-            fcnt = plays.sum(axis=1)
-            avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
-            mu = -(ratings[None, :] - avg[:, None]) / RATING_PTS_PER_STROKE * n_rounds
-            scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
-            scores[~plays] = np.inf
+            if ev_i in live_data:
+                # in progress: lock in the score so far, project the holes left
+                cur, rem, in_field, favg = live_data[ev_i]
+                plays = np.broadcast_to(in_field, (c, n))
+                mu = cur[None, :] - (ratings[None, :] - favg) / RATING_PTS_PER_STROKE * rem[None, :]
+                sd = ROUND_SD * np.sqrt(np.maximum(rem, 1e-9))
+                scores = mu + rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
+                scores = np.where(in_field[None, :], scores, np.inf)
+            else:
+                n_rounds = ROUNDS.get(row["cls"], 3)
+                fsum = (plays * ratings).sum(axis=1)
+                fcnt = plays.sum(axis=1)
+                avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
+                mu = -(ratings[None, :] - avg[:, None]) / RATING_PTS_PER_STROKE * n_rounds
+                scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
+                scores[~plays] = np.inf
             if done == 0:
                 played = np.where(plays, scores, np.nan)
-                events_meta[ev_i]["field_avg_rating"] = round(float(avg.mean()), 1)
+                events_meta[ev_i]["field_avg_rating"] = round(float((ratings[plays[0]].mean()) if plays[0].any() else 1000.0), 1)
                 events_meta[ev_i]["opp_score_sd"] = round(float(np.nanstd(played)), 2)
-                events_meta[ev_i]["field_size"] = round(float(fcnt.mean()), 1)
+                events_meta[ev_i]["field_size"] = round(float(plays.sum(axis=1).mean()), 1)
             order = np.argsort(scores, axis=1)
             place = np.empty_like(order)
             place[rows_ix, order] = np.arange(1, n + 1)[None, :]
@@ -198,7 +228,10 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         mi = 0
         sim_win = np.zeros((c, n), dtype=bool)  # won a DGPT/Major event this sim
         for ev_i in pre_eis:
-            plays = rng.random((c, n)) < event_probs[ev_i]
+            if ev_i in live_data:
+                plays = np.broadcast_to(live_data[ev_i][2], (c, n))
+            else:
+                plays = rng.random((c, n)) < event_probs[ev_i]
             pts, place = draw_event(ev_i, plays)
             if remaining[ev_i]["cls"] != "jomez":
                 sim_win |= (place == 1) & plays
