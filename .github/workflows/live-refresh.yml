@@ -53,8 +53,19 @@ jobs:
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Trigger Pages build
+      - name: Trigger Pages build (retry on transient deploy failure)
         if: steps.commit.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X POST "repos/${{ github.repository }}/pages/builds"
+        run: |
+          for attempt in 1 2 3; do
+            gh api -X POST "repos/${{ github.repository }}/pages/builds" >/dev/null
+            for i in $(seq 1 20); do
+              sleep 10
+              status=$(gh api "repos/${{ github.repository }}/pages/builds/latest" --jq .status)
+              echo "attempt $attempt: $status"
+              [ "$status" = "built" ] && exit 0
+              [ "$status" = "errored" ] && break
+            done
+          done
+          echo "::warning::Pages did not reach 'built' after 3 attempts (data commit still landed)"
