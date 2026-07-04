@@ -41,9 +41,11 @@ class SimResult:
     current_rank: list[int]
     mean_points: np.ndarray
     mean_rank: np.ndarray
-    p_cut: np.ndarray       # P(final standings rank <= standings cut)
+    p_cut: np.ndarray       # P(final standings rank <= standings cut) = automatic bid
     p_field: np.ndarray     # P(rank <= championship field size) ~ upper bound incl. playoff path
     p_first: np.ndarray
+    p_gmc: np.ndarray       # P(makes the Green Mountain Championship field)
+    p_mvp: np.ndarray       # P(makes the MVP Open field via points)
     # extras for the web app / what-if replay
     rank_hist: np.ndarray   # (n_players, MAX_HIST_RANK) counts of final rank
     cutline: np.ndarray     # per sim: points of the last direct-qualification spot
@@ -115,12 +117,24 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     curves = {row["tournament_id"]: _curve_vector(division, row["cls"], n) for row in remaining}
 
+    # playoff events (drawn last, with attendance gated on standings)
+    gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
+    mvp_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_MVP), None)
+    playoff_eis = {gmc_ei, mvp_ei} - {None}
+    pre_eis = [i for i in range(len(remaining)) if i not in playoff_eis]
+    gmc_cut = config.PLAYOFF_QUAL["gmc"]["cut"][division]
+    gmc_fill = config.PLAYOFF_QUAL["gmc"]["fill"][division]
+    mvp_cut = config.PLAYOFF_QUAL["mvp"]["cut"][division]
+    mvp_perf = config.PLAYOFF_QUAL["mvp"]["perf"][division]
+
     total_pts = np.zeros((n_sims, n))
     total_rank = np.zeros((n_sims, n), dtype=np.int32)
     rank_hist = np.zeros((n, MAX_HIST_RANK), dtype=np.int64)
     ev_place_hist = np.zeros((len(remaining), n, MAX_EV_PLACE), dtype=np.int64)  # cond. on playing
     cutline = np.zeros(n_sims)
     cutline2 = np.zeros(n_sims)
+    p_gmc_hits = np.zeros(n)  # P(standings rank before GMC within its field cut)
+    p_mvp_hits = np.zeros(n)  # P(standings rank before MVP within its points cut)
     events_meta = [
         {
             "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
@@ -131,65 +145,96 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         }
         for row in remaining
     ]
+    k = config.TOP_N_FINISHES
 
     done = 0
     while done < n_sims:
         c = min(chunk, n_sims - done)
-        sim_major = np.zeros((c, n, sum(1 for r in remaining if r["cls"] == "major")))
-        sim_other = np.zeros((c, n, sum(1 for r in remaining if r["cls"] != "major")))
-        mi = oi = 0
-        for ev_i, (row, probs) in enumerate(zip(remaining, event_probs)):
-            plays = rng.random((c, n)) < probs  # field draw per sim
+        rows_ix = np.arange(c)[:, None]
+
+        def draw_event(ev_i, plays):
+            """Draw one event's points + place (c, n); update place-hist + meta."""
+            row = remaining[ev_i]
             n_rounds = ROUNDS.get(row["cls"], 3)
-            # field-average rating per sim (guard empty fields)
             fsum = (plays * ratings).sum(axis=1)
             fcnt = plays.sum(axis=1)
             avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
             mu = -(ratings[None, :] - avg[:, None]) / RATING_PTS_PER_STROKE * n_rounds
             scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
             scores[~plays] = np.inf
-            if done == 0:  # score-distribution stats for the client-side replay
-                played_scores = np.where(plays, scores, np.nan)
+            if done == 0:
+                played = np.where(plays, scores, np.nan)
                 events_meta[ev_i]["field_avg_rating"] = round(float(avg.mean()), 1)
-                events_meta[ev_i]["opp_score_sd"] = round(float(np.nanstd(played_scores)), 2)
+                events_meta[ev_i]["opp_score_sd"] = round(float(np.nanstd(played)), 2)
                 events_meta[ev_i]["field_size"] = round(float(fcnt.mean()), 1)
             order = np.argsort(scores, axis=1)
             place = np.empty_like(order)
-            rows_ix = np.arange(c)[:, None]
             place[rows_ix, order] = np.arange(1, n + 1)[None, :]
             if row["cls"] == "doubles":
-                place = (place + 1) // 2  # individual rank -> implied team place
-            # place histogram conditional on playing (for upcoming-event stats)
-            cp = np.where(plays, np.minimum(place, MAX_EV_PLACE), 0)  # 0 = did not play
+                place = (place + 1) // 2
+            cp = np.where(plays, np.minimum(place, MAX_EV_PLACE), 0)
             stride = MAX_EV_PLACE + 1
             flat = (np.arange(n) * stride)[None, :] + cp
-            ev_place_hist[ev_i] += np.bincount(
-                flat.ravel(), minlength=n * stride
-            ).reshape(n, stride)[:, 1:]
+            ev_place_hist[ev_i] += np.bincount(flat.ravel(), minlength=n * stride).reshape(n, stride)[:, 1:]
             pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
             pts[~plays] = 0.0
-            if row["cls"] == "major":
+            return pts, place
+
+        def rank_of(totals):
+            order = np.argsort(-totals, axis=1)
+            r = np.empty_like(order)
+            r[rows_ix, order] = np.arange(1, n + 1)[None, :]
+            return r
+
+        # -- pre-playoff events (attendance from registrations / participation) --
+        sim_major = np.zeros((c, n, sum(1 for r in remaining if r["cls"] == "major")))
+        other_cols = []
+        mi = 0
+        for ev_i in pre_eis:
+            plays = rng.random((c, n)) < event_probs[ev_i]
+            pts, _ = draw_event(ev_i, plays)
+            if remaining[ev_i]["cls"] == "major":
                 sim_major[:, :, mi] = pts
                 mi += 1
             else:
-                sim_other[:, :, oi] = pts
-                oi += 1
+                other_cols.append(pts)
 
-        # season totals: top-2 majors kept, then best TOP_N overall
         majors_all = np.concatenate(
             [np.broadcast_to(banked_majors, (c, n, banked_majors.shape[1])), sim_major], axis=2
         )
         top2 = -np.sort(-majors_all, axis=2)[:, :, : config.MAJORS_COUNTED]
-        pool = np.concatenate(
-            [np.broadcast_to(banked_arr, (c, n, max_banked)), sim_other, top2], axis=2
+        base_other = np.concatenate(
+            [np.broadcast_to(banked_arr, (c, n, max_banked))] + [x[:, :, None] for x in other_cols], axis=2
         )
-        k = config.TOP_N_FINISHES
-        best = -np.sort(-pool, axis=2)[:, :, :k]
-        totals = best.sum(axis=2)
 
-        order = np.argsort(-totals, axis=1)
-        ranks = np.empty_like(order)
-        ranks[np.arange(c)[:, None], order] = np.arange(1, n + 1)[None, :]
+        def season_totals(extra):
+            pool = np.concatenate([base_other, top2] + [x[:, :, None] for x in extra], axis=2)
+            return (-np.sort(-pool, axis=2)[:, :, :k]).sum(axis=2)
+
+        extra = []  # playoff point columns, added as we go
+        # -- Green Mountain: field = top gmc_fill in pre-GMC standings --
+        if gmc_ei is not None:
+            rank_pre_gmc = rank_of(season_totals(extra))
+            p_gmc_hits += (rank_pre_gmc <= gmc_cut).sum(axis=0)
+            gmc_plays = rank_pre_gmc <= gmc_fill
+            gmc_pts, gmc_place = draw_event(gmc_ei, gmc_plays)
+            extra.append(gmc_pts)
+
+        # -- MVP Open: top mvp_cut in pre-MVP standings + top GMC performers --
+        if mvp_ei is not None:
+            rank_pre_mvp = rank_of(season_totals(extra))
+            p_mvp_hits += (rank_pre_mvp <= mvp_cut).sum(axis=0)
+            mvp_plays = rank_pre_mvp <= mvp_cut
+            if gmc_ei is not None:  # GMC top-perf finishers outside the points cut advance
+                elig = gmc_plays & (rank_pre_mvp > mvp_cut)
+                gp = np.where(elig, gmc_place, n + 1)
+                kth = np.partition(gp, mvp_perf - 1, axis=1)[:, mvp_perf - 1]
+                mvp_plays = mvp_plays | ((gp <= kth[:, None]) & elig)
+            mvp_pts, _ = draw_event(mvp_ei, mvp_plays)
+            extra.append(mvp_pts)
+
+        totals = season_totals(extra)
+        ranks = rank_of(totals)
         total_pts[done : done + c] = totals
         total_rank[done : done + c] = ranks
 
@@ -201,6 +246,9 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         for i in range(n):
             rank_hist[i] += np.bincount(capped[:, i], minlength=MAX_HIST_RANK + 1)[1:]
         done += c
+
+    p_gmc = p_gmc_hits / n_sims
+    p_mvp = p_mvp_hits / n_sims
 
     # per-event per-player points stats (conditional on playing) from the
     # place histograms — points are a deterministic function of place.
@@ -230,13 +278,15 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         p_cut=(total_rank <= cut).mean(axis=0),
         p_field=(total_rank <= fsz).mean(axis=0),
         p_first=(total_rank == 1).mean(axis=0),
+        p_gmc=p_gmc,
+        p_mvp=p_mvp,
         rank_hist=rank_hist,
         cutline=cutline,
         cutline2=cutline2,
         att_probs=np.array(event_probs),
         events_meta=events_meta,
         banked=[
-            [(tid, pts, tid in major_tids) for tid, pts, _, _ in r["events"]]
+            [(tid, pts, tid in major_tids, place) for tid, pts, place, _ in r["events"]]
             for r in table
         ],
         ev_stats=ev_stats,

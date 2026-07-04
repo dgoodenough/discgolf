@@ -81,8 +81,9 @@ function forecastCols(meta) {
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
     { key: "mean_pts", label: "Proj. pts", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
     { key: "mean_rank", label: "Proj. rank", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
-    { key: "p_cut", label: `P(top ${meta.cut})`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
-    { key: "p_field", label: `P(top ${meta.field_size})`, num: true, get: (p) => p.p_field, cell: (p) => `<span class="${probClass(p.p_field)}">${fmtPct(p.p_field)}</span>`, dir0: "desc" },
+    { key: "p_cut", label: "Auto Bid", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
+    { key: "p_gmc", label: "GMC", title: `P(top ${meta.gmc_cut} before the Green Mountain Championship — makes the first playoff field)`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
+    { key: "p_mvp", label: "MVP", title: `P(top ${meta.mvp_cut} before the MVP Open — makes the second playoff field via points)`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
     { key: "spark", label: "Finish distribution", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
   ];
 }
@@ -103,7 +104,7 @@ function renderForecast(d) {
     const active = c.key === sort.key;
     const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
     const cls = [c.num ? "num" : "", c.sortable === false ? "" : "sortable", active ? "sorted" : ""].join(" ").trim();
-    return `<th class="${cls}" data-key="${c.key}">${c.label}${arrow}</th>`;
+    return `<th class="${cls}" data-key="${c.key}"${c.title ? ` title="${c.title}"` : ""}>${c.label}${arrow}</th>`;
   }).join("");
 
   const body = rows.map((p) =>
@@ -164,7 +165,40 @@ function toggleDetail(tr, d) {
   td.innerHTML = detailHtml(p, d);
   detail.appendChild(td);
   tr.after(detail);
+  wireWhatif(detail, p, d);
 }
+
+/* inline what-if: toggling upcoming-event attendance re-runs the cutline
+   replay and updates the scenario Auto Bid within this row only */
+function wireWhatif(detail, p, d) {
+  const cutEl = detail.querySelector("#wf-cut");
+  const swingEl = detail.querySelector("#wf-swing");
+  const recompute = () => {
+    const set = new Set([...detail.querySelectorAll(".wf-box:checked")].map((c) => +c.dataset.tid));
+    const r = replay(d, p, set);
+    cutEl.textContent = fmtPct(r.pCut);
+    cutEl.className = "stat " + probClass(r.pCut);
+    const sw = r.pCut - p.p_cut;
+    if (Math.abs(sw) < 0.005) { swingEl.textContent = ""; swingEl.className = "wf-swing"; }
+    else {
+      swingEl.textContent = (sw > 0 ? "▲ +" : "▼ −") + (Math.abs(sw) * 100).toFixed(1) + "%";
+      swingEl.className = "wf-swing " + (sw > 0 ? "pos" : "neg");
+    }
+  };
+  detail.querySelectorAll(".wf-box").forEach((c) => c.addEventListener("change", recompute));
+  detail.querySelector("#wf-reset").addEventListener("click", () => {
+    detail.querySelectorAll(".wf-box").forEach((c) => {
+      const s = p.upcoming[+c.dataset.tid];
+      c.checked = !!(s && s.play_freq >= 0.5);
+    });
+    recompute();
+  });
+  recompute();
+}
+
+// place shown next to a single event's points, small + dim
+const placeTag = (place) => (place ? ` <span class="place">${ordinal(place)}</span>` : "");
+const DOUBLES_NOTE = "Team pairings aren't modeled yet — points assume a field-average partner. TODO: use announced teams once the full list is out.";
 
 function detailHtml(p, d) {
   const meta = d.meta;
@@ -174,14 +208,17 @@ function detailHtml(p, d) {
     const drop = !counted.has(b.tid);
     return `<tr class="${drop ? "dropped" : ""}">
       <td>${eventLink(b.tid, shortName(b.event))}${b.major ? ' <span class="chip">major</span>' : ""}</td>
-      <td class="num">${fmtPts(b.pts)}</td>
+      <td class="num">${fmtPts(b.pts)}${placeTag(b.place)}</td>
       <td>${drop ? '<span class="drop-tag">dropped</span>' : '<span class="keep-tag">counts</span>'}</td></tr>`;
   }).join("");
 
   const upcoming = d.events.filter((e) => p.upcoming[e.tid]).map((e) => {
     const s = p.upcoming[e.tid];
+    const dflt = s.play_freq >= 0.5 ? "checked" : "";
+    const note = e.tid === meta.dbl_tid ? ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ teams TBD</span>` : "";
     return `<tr>
-      <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span></td>
+      <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt}></td>
+      <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
       <td class="num">${Math.round(s.play_freq * 100)}%</td>
       <td class="num">${fmtPts(s.mean)}</td>
       <td class="num dim">${fmtPts(s.p50)}</td>
@@ -192,32 +229,22 @@ function detailHtml(p, d) {
   return `<div class="detail-grid">
     <div>
       <div class="band">Season so far — best ${meta.top_n_finishes}, top ${meta.majors_counted} majors count</div>
-      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts</th><th></th></tr></thead>
+      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th></th></tr></thead>
         <tbody>${banked || '<tr><td colspan="3" class="dim">no results yet</td></tr>'}</tbody></table>
     </div>
     <div>
-      <div class="band">If they play — projected points per upcoming event</div>
+      <div class="band">What-if — check the events they'll play; projected points if they do</div>
       <table class="table-ledger detail-tbl"><thead><tr>
-        <th>Event</th><th class="num">Plays</th><th class="num">Avg</th><th class="num">Med</th><th class="num">90th</th><th class="num">Ceiling</th>
-      </tr></thead><tbody>${upcoming || '<tr><td colspan="6" class="dim">no remaining events</td></tr>'}</tbody></table>
+        <th></th><th>Event</th><th class="num">Plays</th><th class="num">Avg</th><th class="num">Med</th><th class="num">90th</th><th class="num">Ceiling</th>
+      </tr></thead><tbody>${upcoming || '<tr><td colspan="7" class="dim">no remaining events</td></tr>'}</tbody></table>
+      <div class="wf-scenario" data-pdga="${p.pdga}">
+        <span class="stat" id="wf-cut">${fmtPct(p.p_cut)}</span>
+        <span class="stat-label">scenario Auto Bid <span class="dim">(model ${fmtPct(p.p_cut)})</span></span>
+        <span id="wf-swing" class="wf-swing"></span>
+        <button class="btn" id="wf-reset">reset to model</button>
+      </div>
     </div>
-  </div>
-  ${bigHist(p, meta)}`;
-}
-
-function bigHist(p, meta) {
-  const max = Math.max(...p.hist, 1e-9);
-  const show = p.hist.length;
-  let cols = "", labels = "";
-  for (let k = 0; k < show; k++) {
-    const h = Math.max(1, Math.round((p.hist[k] / max) * 80));
-    const cls = k + 1 <= meta.cut ? "in-cut" : k === show - 1 ? "overflow" : "";
-    cols += `<div class="col ${cls}" style="height:${h}px" data-k="${k}"></div>`;
-    labels += `<span>${(k + 1) % 10 === 0 ? k + 1 : ""}</span>`;
-  }
-  return `<div class="bighist-wrap">
-    <div class="band">Finishing-position probability — green inside the top-${meta.cut} cut, red bucket = ${show}th+</div>
-    <div class="hist" data-pdga="${p.pdga}">${cols}</div><div class="hist-labels">${labels}</div></div>`;
+  </div>`;
 }
 
 /* ---------- what-if view (cutline replay) ---------- */
@@ -289,74 +316,6 @@ function replay(d, p, attendSet) {
   return { pCut: qualify / n, meanPts: sumPts / n };
 }
 
-function renderWhatif(d) {
-  const list = $("#whatif-list");
-  const players = [...d.players].filter((p) => p.rating).sort((a, b) => b.p_cut - a.p_cut || b.points - a.points).slice(0, 120);
-  const q = ($("#whatif-search").value || "").toLowerCase();
-  list.innerHTML = players
-    .filter((p) => p.name.toLowerCase().includes(q))
-    .map((p) => `<li data-pdga="${p.pdga}" class="${p.pdga === state.whatifPdga ? "active" : ""}">
-        <span>${playerLink(p)}</span><span class="dim">${fmtPct(p.p_cut)}</span></li>`)
-    .join("");
-  list.querySelectorAll("li").forEach((li) =>
-    li.addEventListener("click", (ev) => {
-      if (ev.target.closest("a")) return; // name click = PDGA profile, not select
-      state.whatifPdga = +li.dataset.pdga;
-      renderWhatif(d);
-    })
-  );
-  if (state.whatifPdga) renderWhatifDetail(d, d.players.find((p) => p.pdga === state.whatifPdga));
-}
-
-function renderWhatifDetail(d, p) {
-  const el = $("#whatif-detail");
-  const idxOf = new Map(d.events.map((e, i) => [e.tid, i]));
-  const checks = d.events
-    .map((e) => {
-      const att = p.att[idxOf.get(e.tid)];
-      const known = att === 0 || att === 1;
-      const checked = att >= 0.5 ? "checked" : "";
-      const clsLabel = { elite: "DGPT", elite_plus: "DGPT+", playoff: "playoff", major: "major", doubles: "doubles", jomez: "jomez" }[e.cls] || e.cls;
-      return `<label class="event-check">
-        <input type="checkbox" data-tid="${e.tid}" ${checked}>
-        <span class="ev-date">${e.start_date.slice(5)}</span>
-        <span class="ev-name">${eventLink(e.tid, shortName(e.name))}</span>
-        <span class="chip">${clsLabel}</span>
-        <span class="ev-att ${known ? (att ? "reg" : "noreg") : ""}">${known ? (att ? "registered" : "not registered") : "model: " + Math.round(att * 100) + "%"}</span>
-      </label>`;
-    })
-    .join("");
-  el.innerHTML = `
-    <h2 style="margin:0 0 2px">${playerLink(p)} <span class="dim" style="font-size:.85rem">#${p.rank} · ${fmtPts(p.points)} pts · ${p.rating} rated</span></h2>
-    <div class="statrow">
-      <div><div class="stat">${fmtPct(p.p_cut)}</div><div class="stat-label">model P(top ${d.meta.cut})</div></div>
-      <div><div class="stat" id="wf-scenario">–</div><div class="stat-label">scenario P(top ${d.meta.cut})</div></div>
-      <div><div class="stat" id="wf-delta">–</div><div class="stat-label">swing</div></div>
-      <div><div class="stat" id="wf-pts">–</div><div class="stat-label">scenario mean pts</div></div>
-    </div>
-    <div id="wf-checks">${checks}</div>
-    <p class="hint" style="margin-top:10px">
-      <button class="btn" id="wf-reset">reset to model</button>
-      &nbsp;Checkboxes start at the model's best guess (registered field or participation ≥50%).
-      Scenario odds condition on exactly the checked events.</p>`;
-  const recompute = () => {
-    const set = new Set([...el.querySelectorAll("input:checked")].map((c) => +c.dataset.tid));
-    const t0 = performance.now();
-    const r = replay(d, p, set);
-    const ms = (performance.now() - t0).toFixed(0);
-    const delta = r.pCut - p.p_cut;
-    $("#wf-scenario").textContent = fmtPct(r.pCut);
-    const dEl = $("#wf-delta");
-    dEl.textContent = (delta >= 0 ? "+" : "−") + fmtPct(Math.abs(delta)).replace("<", "").replace(">", "");
-    dEl.className = "stat " + (Math.abs(delta) < 0.005 ? "" : delta > 0 ? "pos" : "neg");
-    $("#wf-pts").textContent = fmtPts(r.meanPts);
-    el.querySelector(".hint").title = `replay: ${ms}ms over ${d.cutline.length.toLocaleString()} cutlines`;
-  };
-  el.querySelectorAll("input[type=checkbox]").forEach((c) => c.addEventListener("change", recompute));
-  $("#wf-reset").addEventListener("click", () => renderWhatifDetail(d, p));
-  recompute();
-}
-
 /* ---------- shell ---------- */
 
 async function render() {
@@ -368,27 +327,15 @@ async function render() {
     `Event data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
     `Player data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
     `PDGA Authorized Developer`;
-  $("#view-forecast").hidden = state.view !== "forecast";
-  $("#view-whatif").hidden = state.view !== "whatif";
-  if (state.view === "forecast") renderForecast(d);
-  if (state.view === "whatif") renderWhatif(d);
+  renderForecast(d);
 }
 
 document.querySelectorAll("#division-seg button").forEach((b) =>
   b.addEventListener("click", () => {
     state.div = b.dataset.div;
-    state.whatifPdga = null;
     document.querySelectorAll("#division-seg button").forEach((x) => x.classList.toggle("active", x === b));
     render();
   })
 );
-document.querySelectorAll("#view-seg button").forEach((b) =>
-  b.addEventListener("click", () => {
-    state.view = b.dataset.view;
-    document.querySelectorAll("#view-seg button").forEach((x) => x.classList.toggle("active", x === b));
-    render();
-  })
-);
-$("#whatif-search").addEventListener("input", () => loadDiv(state.div).then(renderWhatif));
 
 render();

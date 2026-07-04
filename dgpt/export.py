@@ -63,17 +63,18 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                         "tid": tid,
                         "pts": pts,
                         "major": major,
+                        "place": place,
                         "event": sched_by_tid[tid]["name"] if tid in sched_by_tid else str(tid),
                     }
-                    for tid, pts, major in res.banked[i]
+                    for tid, pts, major, place in res.banked[i]
                 ],
                 "p_cut": round(float(res.p_cut[i]), 4),
-                "p_field": round(float(res.p_field[i]), 4),
+                "p_gmc": round(float(res.p_gmc[i]), 4),
+                "p_mvp": round(float(res.p_mvp[i]), 4),
                 "p_first": round(float(res.p_first[i]), 4),
                 "mean_pts": round(float(res.mean_points[i]), 1),
                 "mean_rank": round(float(res.mean_rank[i]), 1),
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
-                "att": [round(float(res.att_probs[e, i]), 3) for e in range(len(res.events_meta))],
                 "upcoming": {
                     ev["tid"]: res.ev_stats[e][i]
                     for e, ev in enumerate(res.events_meta)
@@ -96,6 +97,11 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             "majors_counted": config.MAJORS_COUNTED,
             "rating_pts_per_stroke": simulate.RATING_PTS_PER_STROKE,
             "round_sd": simulate.ROUND_SD,
+            "gmc_tid": config.TID_GMC,
+            "mvp_tid": config.TID_MVP,
+            "dbl_tid": config.TID_DOUBLES,
+            "gmc_cut": config.PLAYOFF_QUAL["gmc"]["cut"][division],
+            "mvp_cut": config.PLAYOFF_QUAL["mvp"]["cut"][division],
         },
         "schedule": [
             {
