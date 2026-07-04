@@ -9,6 +9,13 @@ html, body { margin: 0; }
 #top { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; padding: 16px 0 10px; }
 #top h1 { margin: 0; font-size: 1.3rem; letter-spacing: .2px; }
 #top .sub { margin: 3px 0 0; color: var(--ink-2); font-size: var(--fs-small); }
+#live-note { margin: 5px 0 0; font-size: var(--fs-small); font-weight: 600; color: var(--neg); }
+
+/* pulsing "live" dot + badge */
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--neg); vertical-align: middle; margin-right: 5px; animation: live-pulse 1.4s ease-in-out infinite; }
+.live-badge { display: inline-block; font-size: var(--fs-caption); color: var(--neg); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.live-badge .live-dot { width: 6px; height: 6px; margin-right: 3px; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .controls { display: flex; gap: 8px; }
 
 /* segmented control (band = active, per Ledger greyscale-structure rule) */

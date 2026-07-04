@@ -76,6 +76,15 @@ function sparkCell(p, meta) {
 
 /* ---------- forecast view (standings + projections, sortable) ---------- */
 
+// events in progress today (client-side date, so it's current between refreshes)
+function liveEvents(d) {
+  const today = new Date().toISOString().slice(0, 10);
+  return (d.schedule || []).filter((e) => e.start <= today && today <= e.end);
+}
+function liveTidSet(d) {
+  return new Set(liveEvents(d).map((e) => e.tid));
+}
+
 const hasWin = (p) => p.banked.some((b) => b.place === 1);
 function nameCell(p) {
   return playerLink(p) + (hasWin(p) ? ' <span class="medal" title="Won a points event this year — event winners who miss the cut get a special Championship invite as a bottom seed">🥇</span>' : "");
@@ -94,8 +103,8 @@ function forecastCols(meta) {
     { key: "spark", label: "Finish distribution", hide: "t1", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
     { key: "p_cut", label: "Auto Bid", hide: "t2", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
     { key: "p_mvp_qual", label: "MVP Bid", hide: "t2", title: `P(earns a Cup spot via a top-${perf} MVP Open finish, outside the standings cut)`, num: true, get: (p) => p.p_mvp_qual, cell: (p) => `<span class="${probClass(p.p_mvp_qual)}">${fmtPct(p.p_mvp_qual)}</span>`, dir0: "desc" },
-    { key: "p_gmc", label: "GMC", hide: "t3", title: `P(top ${meta.gmc_cut} before the Green Mountain Championship — makes the first playoff field)`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
-    { key: "p_mvp", label: "MVP", hide: "t3", title: `P(top ${meta.mvp_cut} before the MVP Open — makes the second playoff field via points)`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
+    { key: "p_gmc", label: "GMC", hide: "t3", title: `P(top ${meta.gmc_cut} before the Green Mountain Championship — makes the first playoff field). Assumes every qualifier attends; playoff signups aren't open yet.`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
+    { key: "p_mvp", label: "MVP", hide: "t3", title: `P(top ${meta.mvp_cut} before the MVP Open — makes the second playoff field via points). Assumes every qualifier attends; playoff signups aren't open yet.`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
     { key: "rating", label: "Rating", hide: "t4", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
     { key: "starts", label: "Starts", hide: "t4", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
     { key: "mean_rank", label: "Proj. rank", hide: "t4", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
@@ -136,7 +145,8 @@ function renderForecast(d) {
       <table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event breakdown and inline what-if · hover the sparkline for exact odds · <b>Cup</b> = Auto Bid + MVP Bid + event-winner invites.
-    🥇 = won a points event this year; a DGPT Elite or Major win earns a guaranteed Cup spot via special invite (Cup = 100%), so these odds already include winning a remaining event.</p>`;
+    🥇 = won a points event this year; a DGPT Elite or Major win earns a guaranteed Cup spot via special invite (Cup = 100%), so these odds already include winning a remaining event.
+    <br><b>Playoff assumption:</b> GMC and MVP fields assume every player who qualifies will attend — signups aren't open yet, so those odds will shift once they are.</p>`;
 
   $("#cols-toggle").addEventListener("click", () => { state.colsAll = !state.colsAll; renderForecast(d); });
   el.querySelectorAll("th.sortable").forEach((th) =>
@@ -221,6 +231,7 @@ function wireWhatif(detail, p, d) {
 // place shown next to a single event's points, small + dim
 const placeTag = (place) => (place ? ` <span class="place">${ordinal(place)}</span>` : "");
 const DOUBLES_NOTE = "Team pairings aren't modeled yet — points assume a field-average partner. TODO: use announced teams once the full list is out.";
+const PLAYOFF_NOTE = "Playoff registration isn't open yet — the model assumes every player who qualifies for this field will attend. Real signups will shift these odds.";
 
 /* project a player's points if they played event e (same model as the
    replay); returns avg / median / 90th / ceiling over a quick Monte Carlo */
@@ -255,12 +266,16 @@ function detailHtml(p, d) {
   }).join("");
 
   // every remaining event — attended or not — so any can be toggled on
+  const live = liveTidSet(d);
   const upcoming = d.events.map((e) => {
     const att = attOf.get(e.tid) ?? 0;
     const s = projectPoints(d, p, e);
     const dflt = att >= 0.5 ? "checked" : "";
     const attTxt = att >= 0.999 ? "yes" : att <= 0.001 ? "—" : Math.round(att * 100) + "%";
-    const note = e.tid === meta.dbl_tid ? ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ teams TBD</span>` : "";
+    let note = "";
+    if (e.tid === meta.dbl_tid) note += ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ teams TBD</span>`;
+    if (e.cls === "playoff") note += ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ assumes qualifiers attend</span>`;
+    if (live.has(e.tid)) note += ` <span class="live-badge"><span class="live-dot"></span>live</span>`;
     return `<tr class="${att <= 0.001 ? "not-att" : ""}">
       <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt}></td>
       <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
@@ -369,9 +384,16 @@ async function render() {
     `updated ${d.meta.generated.slice(0, 10)} · ${d.meta.n_sims.toLocaleString()} sims · ` +
     `top ${d.meta.cut} qualify directly, field of ${d.meta.field_size}`;
   $("#pdga-attribution").innerHTML =
-    `Event data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
-    `Player data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
+    `Event and player data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
     `PDGA Authorized Developer`;
+  const live = liveEvents(d);
+  const note = $("#live-note");
+  if (live.length) {
+    note.innerHTML = `<span class="live-dot"></span> LIVE now: ${live.map((e) => shortName(e.name)).join(", ")} — results feed in as they finalize`;
+    note.hidden = false;
+  } else {
+    note.hidden = true;
+  }
   renderForecast(d);
 }
 
