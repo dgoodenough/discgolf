@@ -1,10 +1,9 @@
 name: Live refresh
 
-# During tournament weekends, keep the site near-real-time. Runs every 15
-# minutes but no-ops unless a points event is currently in progress, so it's
-# cheap off-weekend. (Whether an in-progress event should show provisional
-# live results or model the remaining holes is still TBD — for now this makes
-# completed events appear within ~15 min instead of waiting for the weekly run.)
+# Keep the site near-real-time during play. The cron fires every 15 minutes,
+# but a cheap change-check (no numpy, no sim) runs first and skips the heavy
+# refresh unless a live event's scores moved or an event just finalized. So
+# between rounds and overnight it idles instead of re-simulating every 15 min.
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -27,21 +26,31 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # cheap gate first (stdlib only, no pip/sim): has anything actually moved?
+      - name: Change check
+        id: check
+        run: python -m dgpt.livecheck
+
       - name: Restore results cache
+        if: steps.check.outputs.changed == 'true'
         uses: actions/cache@v4
         with:
           path: data/cache
           key: pdga-cache-2026-${{ github.run_id }}
           restore-keys: pdga-cache-2026-
       - name: Install dependencies
+        if: steps.check.outputs.changed == 'true'
         run: pip install -r requirements.txt
-      - name: Refresh only if an event is live
+      - name: Refresh
+        if: steps.check.outputs.changed == 'true'
         env:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
-        run: python -m dgpt.refresh --sims 100000 --only-if-live
+        run: python -m dgpt.refresh --sims 100000
       - name: Commit if anything changed
         id: commit
+        if: steps.check.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
