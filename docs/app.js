@@ -7,7 +7,14 @@ const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" } };
 
 const $ = (sel) => document.querySelector(sel);
 const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
-const fmtPct = (x) => (x >= 0.9995 ? ">99.9%" : x < 0.0005 ? "<0.1%" : (x * 100).toFixed(1) + "%");
+// exactly 1.0 / 0.0 in the sim (0 or all failures) reads as a hard lock;
+// values that merely round to the extremes stay as >99.9% / <0.1%
+const fmtPct = (x) =>
+  x >= 0.999995 ? "100%"
+  : x >= 0.9995 ? ">99.9%"
+  : x <= 0.000005 ? "0%"
+  : x < 0.0005 ? "<0.1%"
+  : (x * 100).toFixed(1) + "%";
 
 async function loadDiv(div) {
   if (!state.data[div]) {

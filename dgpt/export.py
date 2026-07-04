@@ -69,12 +69,14 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                     }
                     for tid, pts, major, place in res.banked[i]
                 ],
-                "p_cut": round(float(res.p_cut[i]), 4),
-                "p_gmc": round(float(res.p_gmc[i]), 4),
-                "p_mvp": round(float(res.p_mvp[i]), 4),
-                "p_mvp_qual": round(float(res.p_mvp_qual[i]), 4),
-                "p_champ": round(float(res.p_champ[i]), 4),
-                "p_first": round(float(res.p_first[i]), 4),
+                # 5 decimals so a true lock (exactly 1.0 / 0 failures) stays
+                # distinct from 0.99999 — the app shows "100%" only for the former
+                "p_cut": round(float(res.p_cut[i]), 5),
+                "p_gmc": round(float(res.p_gmc[i]), 5),
+                "p_mvp": round(float(res.p_mvp[i]), 5),
+                "p_mvp_qual": round(float(res.p_mvp_qual[i]), 5),
+                "p_champ": round(float(res.p_champ[i]), 5),
+                "p_first": round(float(res.p_first[i]), 5),
                 "mean_pts": round(float(res.mean_points[i]), 1),
                 "mean_rank": round(float(res.mean_rank[i]), 1),
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
