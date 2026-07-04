@@ -17,8 +17,24 @@ html, body { margin: 0; }
 .seg button.active { background: var(--band); color: var(--band-ink); font-weight: 700; }
 
 /* tables */
+.table-tools { display: flex; justify-content: flex-end; margin: 2px 0 6px; }
+.table-tools .btn { font-size: var(--fs-small); padding: 4px 10px; }
+.table-wrap { container-type: inline-size; overflow-x: auto; }
 .table-ledger { width: 100%; }
 .table-ledger th { position: sticky; top: 0; z-index: 2; }
+
+/* Responsive columns: hide low-priority tiers as the table narrows.
+   Order of importance is #, Player, Points, Cup (core, never hidden) →
+   Proj.pts + sparkline (t1) → Auto Bid + MVP Bid (t2) → GMC + MVP (t3) →
+   Rating + Starts + Proj.rank (t4). "All columns" overrides every hide. */
+@container (max-width: 900px) { .t4 { display: none; } }
+@container (max-width: 740px) { .t3 { display: none; } }
+@container (max-width: 640px) { .t2 { display: none; } }
+@container (max-width: 510px) { .t1 { display: none; } }
+.table-wrap.cols-all .t1, .table-wrap.cols-all .t2,
+.table-wrap.cols-all .t3, .table-wrap.cols-all .t4 { display: table-cell; }
+/* All columns: let the table exceed the wrap so it scrolls (don't cram) */
+.table-wrap.cols-all .table-ledger { width: auto; min-width: 100%; }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--pend-on-band, #ffd21e); }
 th.sorted { color: var(--pos-on-band, #7ee2a8); }

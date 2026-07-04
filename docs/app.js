@@ -77,22 +77,24 @@ function nameCell(p) {
   return playerLink(p) + (hasWin(p) ? ' <span class="medal" title="Won a points event this year — event winners who miss the cut get a special Championship invite as a bottom seed">🥇</span>' : "");
 }
 
+// Columns in priority order (left = most important). `hide` marks the tier
+// that drops out first as the screen narrows (core columns never hide).
 function forecastCols(meta) {
   const perf = meta.field_size - meta.cut; // MVP-performance championship spots
   return [
     { key: "rank", label: "#", num: true, get: (p) => p.rank, cell: (p) => `<span class="dim">${p.rank}</span>`, dir0: "asc" },
     { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: nameCell, dir0: "asc" },
-    { key: "rating", label: "Rating", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
-    { key: "starts", label: "Starts", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
-    { key: "mean_pts", label: "Proj. pts", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
-    { key: "mean_rank", label: "Proj. rank", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
-    { key: "p_gmc", label: "GMC", title: `P(top ${meta.gmc_cut} before the Green Mountain Championship — makes the first playoff field)`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
-    { key: "p_mvp", label: "MVP", title: `P(top ${meta.mvp_cut} before the MVP Open — makes the second playoff field via points)`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
-    { key: "p_cut", label: "Auto Bid", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
-    { key: "p_mvp_qual", label: "MVP Bid", title: `P(earns a Cup spot via a top-${perf} MVP Open finish, outside the standings cut)`, num: true, get: (p) => p.p_mvp_qual, cell: (p) => `<span class="${probClass(p.p_mvp_qual)}">${fmtPct(p.p_mvp_qual)}</span>`, dir0: "desc" },
     { key: "p_champ", label: "Cup", title: "P(in the Powerball Cup field) = Auto Bid + MVP Bid", num: true, get: (p) => p.p_champ, cell: (p) => `<b class="${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</b>`, dir0: "desc" },
-    { key: "spark", label: "Finish distribution", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
+    { key: "mean_pts", label: "Proj. pts", hide: "t1", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
+    { key: "spark", label: "Finish distribution", hide: "t1", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
+    { key: "p_cut", label: "Auto Bid", hide: "t2", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
+    { key: "p_mvp_qual", label: "MVP Bid", hide: "t2", title: `P(earns a Cup spot via a top-${perf} MVP Open finish, outside the standings cut)`, num: true, get: (p) => p.p_mvp_qual, cell: (p) => `<span class="${probClass(p.p_mvp_qual)}">${fmtPct(p.p_mvp_qual)}</span>`, dir0: "desc" },
+    { key: "p_gmc", label: "GMC", hide: "t3", title: `P(top ${meta.gmc_cut} before the Green Mountain Championship — makes the first playoff field)`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
+    { key: "p_mvp", label: "MVP", hide: "t3", title: `P(top ${meta.mvp_cut} before the MVP Open — makes the second playoff field via points)`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
+    { key: "rating", label: "Rating", hide: "t4", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
+    { key: "starts", label: "Starts", hide: "t4", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
+    { key: "mean_rank", label: "Proj. rank", hide: "t4", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
   ];
 }
 
@@ -111,21 +113,28 @@ function renderForecast(d) {
   const head = cols.map((c) => {
     const active = c.key === sort.key;
     const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
-    const cls = [c.num ? "num" : "", c.sortable === false ? "" : "sortable", active ? "sorted" : ""].join(" ").trim();
+    const cls = [c.num ? "num" : "", c.sortable === false ? "" : "sortable", active ? "sorted" : "", c.hide || ""].join(" ").trim();
     return `<th class="${cls}" data-key="${c.key}"${c.title ? ` title="${c.title}"` : ""}>${c.label}${arrow}</th>`;
   }).join("");
 
   const body = rows.map((p) =>
     `<tr class="expandable" data-pdga="${p.pdga}">` +
-    cols.map((c) => `<td class="${c.num ? "num" : ""}${c.key === "spark" ? " sparkcell" : ""}">${c.cell(p)}</td>`).join("") +
+    cols.map((c) => `<td class="${[c.num ? "num" : "", c.key === "spark" ? "sparkcell" : "", c.hide || ""].join(" ").trim()}">${c.cell(p)}</td>`).join("") +
     "</tr>"
   ).join("");
 
   const el = $("#view-forecast");
-  el.innerHTML = `<table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+  el.innerHTML = `
+    <div class="table-tools">
+      <button class="btn" id="cols-toggle">${state.colsAll ? "Fewer columns" : "All columns"}</button>
+    </div>
+    <div class="table-wrap${state.colsAll ? " cols-all" : ""}">
+      <table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+    </div>
     <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event breakdown and inline what-if · hover the sparkline for exact odds · <b>Cup</b> = Auto Bid + MVP Bid.
     🥇 = won a points event this year; event winners who miss every cut still receive a special Championship invite as a bottom seed (adds a spot, not modeled in these columns).</p>`;
 
+  $("#cols-toggle").addEventListener("click", () => { state.colsAll = !state.colsAll; renderForecast(d); });
   el.querySelectorAll("th.sortable").forEach((th) =>
     th.addEventListener("click", () => {
       const key = th.dataset.key;
