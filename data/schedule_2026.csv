@@ -12,7 +12,7 @@ tournament_id,name,cls,start_date,end_date,mpo,fpo,fpo_points,completed
 96410,DGPT+ Northwest Championship Presented by Latitude 64°,elite_plus,2026-06-04,2026-06-07,True,True,True,True
 97339,2026 PDGA European Open,major,2026-06-18,2026-06-21,True,True,True,True
 96411,DGPT - Swedish Open presented by Kastaplast,elite,2026-06-26,2026-06-28,True,True,True,True
-96412,DGPT - Ale Open presented by Discraft,elite,2026-07-03,2026-07-05,True,True,True,False
+96412,DGPT - Ale Open presented by Discraft,elite,2026-07-03,2026-07-05,True,True,True,True
 96413,DGPT - Heinola Open,elite,2026-07-10,2026-07-12,True,True,False,False
 97341,2026 PDGA United States Women's Disc Golf Championships,major,2026-07-16,2026-07-19,False,True,True,False
 100195,DGPT JomezPro Champions Landing Open presented by Dynamic Discs,jomez,2026-07-24,2026-07-26,True,True,True,False
