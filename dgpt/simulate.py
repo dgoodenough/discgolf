@@ -43,8 +43,10 @@ class SimResult:
     p_cut: np.ndarray        # P(final standings rank <= cut) = automatic bid
     p_field: np.ndarray      # P(rank <= championship field size)
     p_first: np.ndarray
-    p_gmc: np.ndarray        # P(makes the Green Mountain Championship field)
-    p_mvp: np.ndarray        # P(makes the MVP Open field via points)
+    p_gmc: np.ndarray        # P(top gmc_cut in standings before GMC — the points cut)
+    p_mvp: np.ndarray        # P(top mvp_cut in standings before MVP — the points cut)
+    p_gmc_field: np.ndarray  # P(actually in the GMC field, incl. fill)
+    p_mvp_field: np.ndarray  # P(actually in the MVP field, incl. GMC-performance path)
     p_mvp_qual: np.ndarray   # P(earns a championship spot via MVP-performance path)
     p_champ: np.ndarray      # P(in the championship field) = p_cut + p_mvp_qual
     # extras for the web app / what-if replay
@@ -118,9 +120,11 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     for i, b in enumerate(banked_others):
         banked_arr[i, : len(b)] = b
 
-    # already-won a DGPT/Major event (not Jomez) -> guaranteed Cup special invite
+    # already-won a DGPT/Major singles event -> guaranteed Cup special invite.
+    # Jomez Series and the doubles championship do NOT grant the invite.
+    no_invite_tids = config.JOMEZ_TIDS | {config.TID_DOUBLES}
     has_banked_win = np.array([
-        any(place == 1 and tid not in config.JOMEZ_TIDS for tid, _, place, _ in r["events"])
+        any(place == 1 and tid not in no_invite_tids for tid, _, place, _ in r["events"])
         for r in table
     ])
 
@@ -181,8 +185,10 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     att_count = np.zeros((len(remaining), n))  # realized plays per event per player
     cutline = np.zeros(n_sims)
     cutline2 = np.zeros(n_sims)
-    p_gmc_hits = np.zeros(n)       # rank before GMC within its field cut
-    p_mvp_hits = np.zeros(n)       # rank before MVP within its points cut
+    p_gmc_hits = np.zeros(n)        # rank before GMC within its points cut
+    p_mvp_hits = np.zeros(n)        # rank before MVP within its points cut
+    p_gmc_field_hits = np.zeros(n)  # actually in the GMC field (incl. fill)
+    p_mvp_field_hits = np.zeros(n)  # actually in the MVP field (incl. GMC-perf path)
     p_mvp_qual_hits = np.zeros(n)  # earns championship via MVP performance
     p_champ_hits = np.zeros(n)     # in the championship field (auto bid or MVP perf)
     events_meta = [
@@ -261,7 +267,9 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             else:
                 plays = rng.random((c, n)) < event_probs[ev_i]
             pts, place = draw_event(ev_i, plays)
-            if remaining[ev_i]["cls"] != "jomez":
+            # a singles DGPT/Major win earns the Cup special invite; Jomez and
+            # the doubles championship do not
+            if remaining[ev_i]["cls"] not in ("jomez", "doubles"):
                 sim_win |= (place == 1) & plays
             if remaining[ev_i]["cls"] == "major":
                 sim_major[:, :, mi] = pts
@@ -287,6 +295,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             rank_pre_gmc = rank_of(season_totals(extra))
             p_gmc_hits += (rank_pre_gmc <= gmc_cut).sum(axis=0)
             gmc_plays = rank_pre_gmc <= gmc_fill
+            p_gmc_field_hits += gmc_plays.sum(axis=0)
             gmc_pts, gmc_place = draw_event(gmc_ei, gmc_plays)
             sim_win |= (gmc_place == 1) & gmc_plays
             extra.append(gmc_pts)
@@ -303,6 +312,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 gp = np.where(elig, gmc_place, n + 1)
                 kth = np.partition(gp, mvp_perf - 1, axis=1)[:, mvp_perf - 1]
                 mvp_plays = mvp_plays | ((gp <= kth[:, None]) & elig)
+            p_mvp_field_hits += mvp_plays.sum(axis=0)
             mvp_pts, mvp_place = draw_event(mvp_ei, mvp_plays)
             sim_win |= (mvp_place == 1) & mvp_plays
             extra.append(mvp_pts)
@@ -338,6 +348,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     p_gmc = p_gmc_hits / n_sims
     p_mvp = p_mvp_hits / n_sims
+    p_gmc_field = p_gmc_field_hits / n_sims
+    p_mvp_field = p_mvp_field_hits / n_sims
     p_mvp_qual = p_mvp_qual_hits / n_sims
     p_champ = p_champ_hits / n_sims
     att_probs = att_count / n_sims
@@ -391,6 +403,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         p_first=(total_rank == 1).mean(axis=0),
         p_gmc=p_gmc,
         p_mvp=p_mvp,
+        p_gmc_field=p_gmc_field,
+        p_mvp_field=p_mvp_field,
         p_mvp_qual=p_mvp_qual,
         p_champ=p_champ,
         rank_hist=rank_hist,

@@ -11,7 +11,7 @@ import csv
 import datetime as dt
 import re
 
-from . import config
+from . import config, live_api
 from .pdga_api import PDGAClient
 
 SCHEDULE_CSV = config.DATA_DIR / "schedule_2026.csv"
@@ -94,8 +94,18 @@ def load() -> list[dict]:
 
 
 def _row(e: dict, cls: str, *, mpo: bool, fpo: bool, fpo_points: bool) -> dict:
+    tid = int(e["tournament_id"])
+    today = dt.date.today()
+    start = dt.date.fromisoformat(e["start_date"])
+    end = dt.date.fromisoformat(e["end_date"])
+    completed = end < today
+    if not completed and start <= today:  # in progress — may have already finished
+        try:
+            completed = live_api.event_complete(tid)
+        except Exception:
+            pass
     return {
-        "tournament_id": int(e["tournament_id"]),
+        "tournament_id": tid,
         "name": e["tournament_name"],
         "cls": cls,
         "start_date": e["start_date"],
@@ -103,5 +113,5 @@ def _row(e: dict, cls: str, *, mpo: bool, fpo: bool, fpo_points: bool) -> dict:
         "mpo": mpo,
         "fpo": fpo,
         "fpo_points": fpo_points,
-        "completed": dt.date.fromisoformat(e["end_date"]) < dt.date.today(),
+        "completed": completed,
     }

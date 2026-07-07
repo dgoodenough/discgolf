@@ -63,6 +63,39 @@ def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: boo
     return _get(url, cf)["data"]
 
 
+def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO")) -> bool:
+    """True once every (non-withdrawn) player in each relevant division has a
+    final-round score — so the event can be banked into the standings the
+    moment it finishes rather than waiting for the date to pass. Conservative:
+    if it can't confirm, returns False and the date-based fallback applies.
+
+    The event-level "HighestCompletedRound" is unreliable here (it advances
+    when the fastest division finishes, while another may still be on course),
+    so we check each division's final round directly.
+    """
+    event = fetch_event(tournament_id)
+    final = event.get("FinalRound")
+    if not final:
+        return False
+    present = {d["Division"] for d in event["Divisions"]}
+    for div in divisions:
+        if div not in present:
+            continue
+        d = next(x for x in event["Divisions"] if x["Division"] == div)
+        if d.get("LatestRound") != final:
+            return False  # not on the final round yet
+        scores = fetch_round(tournament_id, div, final).get("scores") or []
+        if not scores:
+            return False
+        for s in scores:
+            if s.get("HasRoundScore") or str(s.get("GrandTotal")) == "999":
+                continue  # finished, or withdrawn
+            if (s.get("Played") or 0) > 0:
+                return False  # mid-round — still on the course
+            # played 0 holes with no score: cut / not in the final round, ignore
+    return True
+
+
 def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     """Current standing of an in-progress event, for the remaining-holes model.
 
