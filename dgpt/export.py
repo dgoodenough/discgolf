@@ -105,6 +105,8 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             "max_hist_rank": simulate.MAX_HIST_RANK,
             "top_n_finishes": config.TOP_N_FINISHES,
             "majors_counted": config.MAJORS_COUNTED,
+            "count_dgpt": config.COUNT_DGPT,
+            "count_playoff": config.COUNT_PLAYOFF,
             "rating_pts_per_stroke": simulate.RATING_PTS_PER_STROKE,
             "round_sd": simulate.ROUND_SD,
             "gmc_tid": config.TID_GMC,

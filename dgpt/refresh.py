@@ -20,6 +20,8 @@ def main() -> None:
 
     print("building schedule from PDGA API ...")
     rows = schedule.build()
+    from . import points
+    points.refresh_classes()  # re-read event classes from the fresh schedule
     done = sum(1 for r in rows if r["completed"])
     print(f"  {len(rows)} points-relevant events, {done} completed")
 

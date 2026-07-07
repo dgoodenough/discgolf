@@ -29,9 +29,13 @@ MULTIPLIERS = {
     "championship": 0.0,   # Powerball Cup awards no points
 }
 
-# Season counting rules
-TOP_N_FINISHES = 14
-MAJORS_COUNTED = 2  # MPO: top 2 of 3 majors; FPO: top 2 of 4
+# Season counting rules (2026): per-class caps, not one pooled best-N.
+# Keep the best N of each class; JomezPro Series points are bonus (all count).
+COUNT_DGPT = 10     # best 10 of DGPT + DGPT+ (+ the doubles championship)
+COUNT_PLAYOFF = 2   # both playoff events (GMC + MVP Open)
+COUNT_MAJOR = 2     # best 2 of the division's majors (3 for MPO, 4 for FPO)
+MAJORS_COUNTED = COUNT_MAJOR
+TOP_N_FINISHES = COUNT_DGPT + COUNT_PLAYOFF + COUNT_MAJOR  # 14 counted (+ Jomez bonus)
 
 # 2026 tournament IDs with special handling
 TID_HEINOLA = 96413        # no FPO points (USWDGC travel turnaround)

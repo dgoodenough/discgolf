@@ -56,13 +56,22 @@ function shortName(name) {
 
 const CLS_LABEL = { elite: "DGPT", elite_plus: "DGPT+", playoff: "playoff", major: "major", doubles: "doubles", jomez: "jomez", championship: "cup" };
 
-/* which banked events count toward the season total (best-N, top-2 majors);
-   the rest are "dropped" and shown struck through */
+/* which banked events count toward the season total under the 2026 per-class
+   caps (best N of each class; Jomez bonus always counts). The rest are
+   "dropped" and shown struck through. */
+const POOL_BY_CLS = { elite: "dgpt", elite_plus: "dgpt", doubles: "dgpt", playoff: "playoff", major: "major", jomez: "jomez" };
 function countedTids(p, meta) {
-  const majors = p.banked.filter((b) => b.major).slice().sort((a, b) => b.pts - a.pts);
-  const countedMajors = majors.slice(0, meta.majors_counted);
-  const pool = p.banked.filter((b) => !b.major).concat(countedMajors).sort((a, b) => b.pts - a.pts);
-  return new Set(pool.slice(0, meta.top_n_finishes).map((b) => b.tid));
+  const pools = { dgpt: [], playoff: [], major: [], jomez: [] };
+  for (const b of p.banked) {
+    const pool = POOL_BY_CLS[b.cls] || "dgpt";
+    pools[pool].push(b);
+  }
+  const counted = new Set(pools.jomez.map((b) => b.tid)); // all Jomez count
+  const keepBest = (arr, n) => arr.slice().sort((a, b) => b.pts - a.pts).slice(0, n).forEach((b) => counted.add(b.tid));
+  keepBest(pools.dgpt, meta.count_dgpt);
+  keepBest(pools.playoff, meta.count_playoff);
+  keepBest(pools.major, meta.majors_counted);
+  return counted;
 }
 
 /* small inline sparkline of the finishing-rank distribution; hover shows the
@@ -308,7 +317,7 @@ function detailHtml(p, d) {
 
   return `<div class="detail-grid">
     <div>
-      <div class="band">Season so far — best ${meta.top_n_finishes}, top ${meta.majors_counted} majors count (struck through = doesn't count)</div>
+      <div class="band">Season so far — counts best ${meta.count_dgpt} DGPT/DGPT+, both playoffs, best ${meta.majors_counted} majors, all Jomez bonus (struck through = doesn't count)</div>
       <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th></th></tr></thead>
         <tbody>${banked || '<tr><td colspan="3" class="dim">no results yet</td></tr>'}</tbody></table>
     </div>
@@ -358,18 +367,16 @@ function poisson(lam) {
   return k - 1;
 }
 
-function seasonTotal(othersPts, majorPts, meta) {
-  const majors = [...majorPts].sort((a, b) => b - a).slice(0, meta.majors_counted);
-  const pool = othersPts.concat(majors).sort((a, b) => b - a);
-  let t = 0;
-  for (let i = 0; i < Math.min(meta.top_n_finishes, pool.length); i++) t += pool[i];
-  return t;
+function seasonTotal(pools, meta) {
+  const best = (arr, k) => arr.slice().sort((a, b) => b - a).slice(0, k).reduce((s, x) => s + x, 0);
+  return best(pools.dgpt, meta.count_dgpt) + best(pools.playoff, meta.count_playoff) +
+    best(pools.major, meta.majors_counted) + pools.jomez.reduce((s, x) => s + x, 0);
 }
 
 function replay(d, p, attendSet) {
-  // banked, split once
-  const bankedOthers = p.banked.filter((b) => !b.major).map((b) => b.pts);
-  const bankedMajors = p.banked.filter((b) => b.major).map((b) => b.pts);
+  // banked, split into counting pools once
+  const banked = { dgpt: [], playoff: [], major: [], jomez: [] };
+  for (const b of p.banked) banked[POOL_BY_CLS[b.cls] || "dgpt"].push(b.pts);
   const events = d.events.filter((e) => attendSet.has(e.tid));
   const n = d.cutline.length;
   // blended cutline ≈ "points of the last spot among OTHER players":
@@ -378,17 +385,16 @@ function replay(d, p, attendSet) {
   const w = p.p_cut;
   let qualify = 0, sumPts = 0;
   for (let i = 0; i < n; i++) {
-    const others = bankedOthers.slice();
-    const majors = bankedMajors.slice();
+    const pools = { dgpt: banked.dgpt.slice(), playoff: banked.playoff.slice(), major: banked.major.slice(), jomez: banked.jomez.slice() };
     for (const e of events) {
       const mu = (-(p.rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
       const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
       const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
       const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
       const pts = place <= e.curve.length ? e.curve[place - 1] : 0;
-      if (e.is_major) majors.push(pts); else others.push(pts);
+      pools[POOL_BY_CLS[e.cls] || "dgpt"].push(pts);
     }
-    const total = seasonTotal(others, majors, d.meta);
+    const total = seasonTotal(pools, d.meta);
     const cl = w * d.cutline2[i] + (1 - w) * d.cutline[i];
     if (total > cl) qualify++;
     sumPts += total;

@@ -104,21 +104,29 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     idx = {p: i for i, p in enumerate(pdga_numbers)}
 
     major_tids = config.MAJOR_TIDS_MPO if division == "MPO" else config.MAJOR_TIDS_FPO
+    # banked points split by counting pool (2026 per-class caps)
     banked_majors = np.zeros((n, len(major_tids)))
-    banked_others: list[list[float]] = [[] for _ in range(n)]
+    banked_dgpt: list[list[float]] = [[] for _ in range(n)]
+    banked_jomez_sum = np.zeros(n)    # Jomez bonus — all count
+    banked_playoff_sum = np.zeros(n)  # both playoffs count (0 until they happen)
     player_events = {r["pdga_number"]: {tid for tid, *_ in r["events"]} for r in table}
     for i, r in enumerate(table):
         m = 0
         for tid, pts, _, _ in r["events"]:
-            if tid in major_tids:
+            pool = points.event_pool(tid, division)
+            if pool == "major":
                 banked_majors[i, m] = pts
                 m += 1
-            else:
-                banked_others[i].append(pts)
-    max_banked = max(len(b) for b in banked_others)
-    banked_arr = np.zeros((n, max_banked))
-    for i, b in enumerate(banked_others):
-        banked_arr[i, : len(b)] = b
+            elif pool == "jomez":
+                banked_jomez_sum[i] += pts
+            elif pool == "playoff":
+                banked_playoff_sum[i] += pts
+            else:  # dgpt / dgpt+ / doubles
+                banked_dgpt[i].append(pts)
+    max_banked = max((len(b) for b in banked_dgpt), default=1)
+    banked_dgpt_arr = np.zeros((n, max_banked))
+    for i, b in enumerate(banked_dgpt):
+        banked_dgpt_arr[i, : len(b)] = b
 
     # already-won a DGPT/Major singles event -> guaranteed Cup special invite.
     # Jomez Series and the doubles championship do NOT grant the invite.
@@ -201,7 +209,6 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         }
         for row in remaining
     ]
-    k = config.TOP_N_FINISHES
 
     done = 0
     while done < n_sims:
@@ -256,9 +263,9 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             r[rows_ix, order] = np.arange(1, n + 1)[None, :]
             return r
 
-        # -- pre-playoff events (attendance from registrations / participation) --
-        sim_major = np.zeros((c, n, sum(1 for r in remaining if r["cls"] == "major")))
-        other_cols = []
+        # -- pre-playoff events, routed to their counting pool --
+        sim_major = np.zeros((c, n, sum(1 for i in pre_eis if remaining[i]["cls"] == "major")))
+        dgpt_cols, jomez_cols = [], []
         mi = 0
         sim_win = np.zeros((c, n), dtype=bool)  # won a DGPT/Major event this sim
         for ev_i in pre_eis:
@@ -267,27 +274,35 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             else:
                 plays = rng.random((c, n)) < event_probs[ev_i]
             pts, place = draw_event(ev_i, plays)
+            cls = remaining[ev_i]["cls"]
             # a singles DGPT/Major win earns the Cup special invite; Jomez and
             # the doubles championship do not
-            if remaining[ev_i]["cls"] not in ("jomez", "doubles"):
+            if cls not in ("jomez", "doubles"):
                 sim_win |= (place == 1) & plays
-            if remaining[ev_i]["cls"] == "major":
+            if cls == "major":
                 sim_major[:, :, mi] = pts
                 mi += 1
-            else:
-                other_cols.append(pts)
+            elif cls == "jomez":
+                jomez_cols.append(pts)
+            else:  # dgpt / dgpt+ / doubles
+                dgpt_cols.append(pts)
 
+        # 2026 per-class caps: best COUNT_DGPT DGPT, best COUNT_MAJOR majors,
+        # both playoffs, all Jomez bonus (fixed once pre-events are drawn)
         majors_all = np.concatenate(
             [np.broadcast_to(banked_majors, (c, n, banked_majors.shape[1])), sim_major], axis=2
         )
-        top2 = -np.sort(-majors_all, axis=2)[:, :, : config.MAJORS_COUNTED]
-        base_other = np.concatenate(
-            [np.broadcast_to(banked_arr, (c, n, max_banked))] + [x[:, :, None] for x in other_cols], axis=2
+        best_major = (-np.sort(-majors_all, axis=2)[:, :, : config.COUNT_MAJOR]).sum(axis=2)
+        dgpt_all = np.concatenate(
+            [np.broadcast_to(banked_dgpt_arr, (c, n, max_banked))] + [x[:, :, None] for x in dgpt_cols], axis=2
         )
+        best_dgpt = (-np.sort(-dgpt_all, axis=2)[:, :, : config.COUNT_DGPT]).sum(axis=2)
+        jomez_total = banked_jomez_sum[None, :] + sum((x for x in jomez_cols), np.zeros((c, n)))
+        base_total = best_dgpt + best_major + jomez_total + banked_playoff_sum[None, :]
 
         def season_totals(extra):
-            pool = np.concatenate([base_other, top2] + [x[:, :, None] for x in extra], axis=2)
-            return (-np.sort(-pool, axis=2)[:, :, :k]).sum(axis=2)
+            # extra = playoff point columns (GMC, then MVP) — both count
+            return base_total + sum((x for x in extra), np.zeros((c, n)))
 
         extra = []  # playoff point columns, added as we go
         # -- Green Mountain: field = top gmc_fill in pre-GMC standings --

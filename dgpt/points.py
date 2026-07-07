@@ -64,15 +64,49 @@ def assign_points(places: list[int], division: str, cls: str) -> list[float]:
     return [round(tie_points[p], 2) for p in places]
 
 
+# event class -> counting bucket
+POOL_BY_CLS = {
+    "elite": "dgpt", "elite_plus": "dgpt", "doubles": "dgpt",
+    "playoff": "playoff", "major": "major", "jomez": "jomez",
+    "championship": None,
+}
+
+_CLS_BY_TID: dict[int, str] = {}
+
+
+def _cls_by_tid() -> dict[int, str]:
+    """tid -> event class, read from the schedule CSV (authoritative, unlike
+    the runtime-populated config.JOMEZ_TIDS). Cached; call refresh_classes()
+    after rebuilding the schedule."""
+    if not _CLS_BY_TID:
+        from . import schedule
+        _CLS_BY_TID.update({r["tournament_id"]: r["cls"] for r in schedule.load()})
+    return _CLS_BY_TID
+
+
+def refresh_classes() -> None:
+    _CLS_BY_TID.clear()
+
+
+def event_pool(tid: int, division: str) -> str | None:
+    """Which counting bucket a tournament belongs to (2026 structure), or None
+    for events that award no World Standings points (the Championship)."""
+    return POOL_BY_CLS.get(_cls_by_tid().get(tid, "elite"), "dgpt")
+
+
 def season_total(event_results: list[tuple[int, float]], division: str) -> float:
-    """Season points from [(tournament_id, points)] applying counting rules:
-    best MAJORS_COUNTED majors kept, then best TOP_N_FINISHES overall."""
-    major_tids = (
-        config.MAJOR_TIDS_MPO if division == "MPO" else config.MAJOR_TIDS_FPO
+    """Season points from [(tournament_id, points)] under the 2026 per-class
+    caps: best 10 DGPT/DGPT+, best 2 playoffs, best 2 majors, plus all Jomez
+    bonus points."""
+    pools: dict[str, list[float]] = {"dgpt": [], "playoff": [], "major": [], "jomez": []}
+    for tid, pts in event_results:
+        pool = event_pool(tid, division)
+        if pool:
+            pools[pool].append(pts)
+    total = (
+        sum(sorted(pools["dgpt"], reverse=True)[: config.COUNT_DGPT])
+        + sum(sorted(pools["playoff"], reverse=True)[: config.COUNT_PLAYOFF])
+        + sum(sorted(pools["major"], reverse=True)[: config.COUNT_MAJOR])
+        + sum(pools["jomez"])
     )
-    majors = sorted(
-        (pts for tid, pts in event_results if tid in major_tids), reverse=True
-    )
-    others = [pts for tid, pts in event_results if tid not in major_tids]
-    pool = others + majors[: config.MAJORS_COUNTED]
-    return round(sum(sorted(pool, reverse=True)[: config.TOP_N_FINISHES]), 2)
+    return round(total, 2)
