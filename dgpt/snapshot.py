@@ -21,7 +21,7 @@ FIELDS = [
     "snapshot_date", "taken_at", "events_completed", "division",
     "pdga_number", "name", "rating", "cur_rank", "cur_points",
     "p_champ", "p_cut", "p_gmc", "p_mvp", "p_mvp_qual", "p_first",
-    "mean_pts", "mean_rank",
+    "mean_pts", "mean_rank", "registered",
 ]
 # columns whose change makes a snapshot "new" (exclude timestamps/names)
 _PRED_KEYS = ["pdga_number", "cur_points", "p_champ", "p_cut", "p_gmc",
@@ -30,7 +30,13 @@ _PRED_KEYS = ["pdga_number", "cur_points", "p_champ", "p_cut", "p_gmc",
 
 def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[dict]:
     rows = []
+    # remaining events each player is registered for (att prob pinned to 1),
+    # so later snapshots can explain odds moves via registration changes
+    reg_tids = [ev["tid"] for ev in res.events_meta]
     for i in range(len(res.names)):
+        registered = ";".join(
+            str(reg_tids[e]) for e in range(len(reg_tids)) if res.att_probs[e, i] >= 0.999
+        )
         rows.append({
             "snapshot_date": date,
             "taken_at": taken,
@@ -49,6 +55,7 @@ def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[d
             "p_first": round(float(res.p_first[i]), 5),
             "mean_pts": round(float(res.mean_points[i]), 1),
             "mean_rank": round(float(res.mean_rank[i]), 1),
+            "registered": registered,
         })
     rows.sort(key=lambda r: r["pdga_number"])
     return rows
@@ -71,7 +78,16 @@ def record(res, division: str) -> str:
     cur_hash = _content_hash(rows)
 
     if path.exists():
-        existing = list(csv.DictReader(open(path, newline="", encoding="utf-8")))
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            old_fields = reader.fieldnames or []
+            existing = list(reader)
+        if old_fields != FIELDS:  # schema grew: rewrite history with new columns blank
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=FIELDS)
+                w.writeheader()
+                for r in existing:
+                    w.writerow({k: r.get(k, "") for k in FIELDS})
         if existing:
             last_date = existing[-1]["snapshot_date"]
             if last_date == today:

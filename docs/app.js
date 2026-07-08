@@ -28,26 +28,36 @@ async function loadDiv(div) {
   return state.data[div];
 }
 
-/* qualitative week-over-week movers panel (from prediction snapshots) */
-function moversHtml(div) {
+/* qualitative week-over-week movers panel (from prediction snapshots), with
+   the two usual "why"s: the newest result, and registration changes */
+function moversHtml(d, div) {
   const m = state.movers && state.movers[div];
   if (!m || !m.movers.length) return "";
+  const nameOf = new Map((d.schedule || []).map((s) => [s.tid, shortName(s.name)]));
   const fmtD = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
-  const pct0 = (x) => Math.round(x * 100) + "%";  // whole percents — cleaner at a glance
+  const pct0 = (x) => Math.round(x * 100) + "%";
   const rows = m.movers.map((x) => {
     const up = x.delta > 0;
     const rank = x.rank_from ? `#${x.rank_from}→#${x.rank_to}` : `→#${x.rank_to}`;
+    const lr = x.last_result
+      ? `${nameOf.get(x.last_result.tid) || ""}: ${Math.round(x.last_result.pts)}${placeTag(x.last_result.place)}`
+      : '<span class="dim">DNP</span>';
+    const regs = [
+      ...(x.reg_added || []).map((t) => `<span class="reg-chip reg-in">+ ${nameOf.get(t) || t}</span>`),
+      ...(x.reg_removed || []).map((t) => `<span class="reg-chip reg-out">− ${nameOf.get(t) || t}</span>`),
+    ].join(" ");
     return `<tr>
       <td class="${up ? "movers-up" : "movers-down"}">${up ? "▲" : "▼"}</td>
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
       <td class="num ${up ? "movers-up" : "movers-down"}">${pct0(x.champ_from)} → ${pct0(x.champ_to)}</td>
       <td class="num dim">${(x.delta > 0 ? "+" : "−") + Math.abs(Math.round(x.delta * 100))}</td>
-      <td class="num dim">${Math.round(x.pts_from)} → ${Math.round(x.pts_to)}</td>
+      <td>${lr}</td>
+      <td>${regs}</td>
       <td class="num dim">${rank}</td></tr>`;
   }).join("");
   return `<details class="movers"><summary>Biggest movers — Cup odds since ${fmtD(m.baseline)}</summary>
     <table class="table-ledger detail-tbl"><thead><tr>
-      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th class="num">Points</th><th class="num">Rank</th>
+      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th>Last event</th><th>Registration changes</th><th class="num">Rank</th>
     </tr></thead><tbody>${rows}</tbody></table></details>`;
 }
 
@@ -193,7 +203,7 @@ function renderForecast(d) {
 
   const el = $("#view-forecast");
   el.innerHTML = `
-    ${moversHtml(state.div)}
+    ${moversHtml(d, state.div)}
     <div class="table-tools">
       <div class="seg" id="cols-seg">
         ${[["auto", "Auto"], ["all", "All columns"], ["adv", "Advanced"]].map(([k, lbl]) =>
@@ -349,8 +359,7 @@ function detailHtml(p, d) {
     return `<tr class="${drop ? "dropped" : ""}">
       <td>${eventLink(b.tid, shortName(b.event))} <span class="chip">${CLS_LABEL[b.cls] || b.cls || "?"}</span>${dtag(b.tid)}${win}</td>
       <td class="num">${fmtPts(b.pts)}${placeTag(b.place)}</td>
-      <td class="num ${pd >= 0.5 ? "drop-tag" : "dim"}">${pd > 0.001 ? Math.round(pd * 100) + "%" : ""}</td>
-      <td>${drop ? '<span class="drop-tag">dropped</span>' : ""}</td></tr>`;
+      <td class="num ${pd >= 0.5 ? "drop-hi" : "dim"}">${pd > 0.001 ? Math.round(pd * 100) + "%" : ""}</td></tr>`;
   }).join("");
 
   // every remaining event — attended or not — so any can be toggled on
@@ -383,8 +392,8 @@ function detailHtml(p, d) {
   return `<div class="detail-grid">
     <div>
       <div class="band">Season so far — counts best ${meta.count_dgpt} DGPT/DGPT+, both playoffs, best ${meta.majors_counted} majors, all Jomez bonus (struck through = doesn't count)</div>
-      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th class="num" title="chance this finish ends up not counting by season's end">Drop odds</th><th></th></tr></thead>
-        <tbody>${banked || '<tr><td colspan="4" class="dim">no results yet</td></tr>'}</tbody></table>
+      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th class="num" title="chance this finish ends up not counting by season's end">Drop odds</th></tr></thead>
+        <tbody>${banked || '<tr><td colspan="3" class="dim">no results yet</td></tr>'}</tbody></table>
     </div>
     <div>
       <div class="band">What-if — check the events they'll play; projected points if they do</div>

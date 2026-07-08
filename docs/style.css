@@ -82,6 +82,7 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
 .detail-tbl td { font-size: var(--fs-small); }
 tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--neg); }
 .drop-tag { color: var(--neg); font-size: var(--fs-caption); text-decoration: none; display: inline-block; }
+.drop-hi { color: var(--neg); font-weight: 600; }  /* high drop odds, plain td text */
 .keep-tag { color: var(--pos); font-size: var(--fs-caption); }
 .detail-grid .band { font-size: var(--fs-caption); margin-bottom: 2px; }
 /* placement shown after a single event's points — smaller, quieter */
@@ -124,6 +125,9 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .movers .table-ledger { margin: 0; }
 .movers-up { color: var(--pos); font-weight: 600; }
 .movers-down { color: var(--neg); font-weight: 600; }
+.reg-chip { display: inline-block; font-size: var(--fs-caption); padding: 0 5px; border-radius: var(--radius); border: 1px solid var(--grid); white-space: nowrap; }
+.reg-chip.reg-in { color: var(--pos); background: var(--pos-fill); }
+.reg-chip.reg-out { color: var(--neg); background: var(--neg-fill); }
 
 /* explainer / static pages */
 .page { max-width: 780px; margin: 0 auto; padding: 0 16px 40px; }

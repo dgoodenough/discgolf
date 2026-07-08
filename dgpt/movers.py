@@ -13,9 +13,24 @@ import json
 from . import config
 
 OUT = config.REPO_ROOT / "docs" / "data" / "movers.json"
+APP_DATA = config.REPO_ROOT / "docs" / "data"
 MIN_DELTA = 0.02   # ignore noise-level changes
 TOP_N = 12
 BASELINE_MIN_AGE_DAYS = 5
+
+
+def _context(division: str, baseline: str) -> tuple[dict, dict]:
+    """Per-player 'why' context from the app bundle (written just before us):
+    the most recent banked result since the baseline, and the schedule."""
+    bundle = json.loads((APP_DATA / f"{division.lower()}.json").read_text(encoding="utf-8"))
+    end_of = {s["tid"]: s["end"] for s in bundle.get("schedule", [])}
+    last_result: dict[int, dict] = {}
+    for p in bundle["players"]:
+        recent = [b for b in p["banked"] if end_of.get(b["tid"], "") > baseline]
+        if recent:
+            b = max(recent, key=lambda b: end_of.get(b["tid"], ""))
+            last_result[p["pdga"]] = {"tid": b["tid"], "pts": b["pts"], "place": b["place"]}
+    return last_result, end_of
 
 
 def _division_movers(division: str) -> dict | None:
@@ -36,6 +51,7 @@ def _division_movers(division: str) -> dict | None:
         return {int(r["pdga_number"]): r for r in rows if r["snapshot_date"] == date}
 
     base, cur = by_pdga(baseline), by_pdga(latest)
+    last_result, _ = _context(division, baseline)
     movers = []
     for pdga, c in cur.items():
         b = base.get(pdga)
@@ -44,16 +60,27 @@ def _division_movers(division: str) -> dict | None:
         d = p_to - p_from
         if abs(d) < MIN_DELTA:
             continue
+        # registration changes since baseline (why #2) — only when the
+        # baseline actually recorded registrations (blank = pre-schema rows,
+        # unknowable; showing everything as "added" would be fabrication)
+        reg_added: list[int] = []
+        reg_removed: list[int] = []
+        if b and b.get("registered") and c.get("registered") is not None:
+            rb = {int(t) for t in b["registered"].split(";") if t}
+            rc = {int(t) for t in c["registered"].split(";") if t}
+            reg_added = sorted(rc - rb)
+            reg_removed = sorted(rb - rc)
         movers.append({
             "pdga": pdga,
             "name": c["name"],
             "champ_from": round(p_from, 4),
             "champ_to": round(p_to, 4),
             "delta": round(d, 4),
-            "pts_from": float(b["cur_points"]) if b else 0.0,
-            "pts_to": float(c["cur_points"]),
             "rank_from": int(b["cur_rank"]) if b else None,
             "rank_to": int(c["cur_rank"]),
+            "last_result": last_result.get(pdga),  # why #1: newest result since baseline
+            "reg_added": reg_added,
+            "reg_removed": reg_removed,
         })
     movers.sort(key=lambda m: -abs(m["delta"]))
     return {"baseline": baseline, "latest": latest, "movers": movers[:TOP_N]}
