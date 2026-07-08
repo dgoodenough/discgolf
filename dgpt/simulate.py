@@ -447,9 +447,10 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         sorted_totals = -np.sort(-totals, axis=1)
         cutline[done : done + c] = sorted_totals[:, cut_n - 1]
         cutline2[done : done + c] = sorted_totals[:, cut_n]
-        capped = np.minimum(ranks, MAX_HIST_RANK)
-        for i in range(n):
-            rank_hist[i] += np.bincount(capped[:, i], minlength=MAX_HIST_RANK + 1)[1:]
+        capped = np.minimum(ranks, MAX_HIST_RANK)  # one bincount for all players
+        stride = MAX_HIST_RANK + 1
+        flat = capped + (np.arange(n) * stride)[None, :]
+        rank_hist += np.bincount(flat.ravel(), minlength=n * stride).reshape(n, stride)[:, 1:]
         done += c
 
     p_gmc = p_gmc_hits / n_sims

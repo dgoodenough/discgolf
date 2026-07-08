@@ -42,10 +42,17 @@ html, body { margin: 0; }
 @media (max-width: 790px) { .t3 { display: none; } }
 @media (max-width: 690px) { .t2 { display: none; } }
 @media (max-width: 560px) { .t1 { display: none; } }
-.table-wrap.cols-all { overflow-x: auto; }
+/* All/Advanced: break out of the content column to the full viewport so the
+   wide table uses the whole screen before it needs to scroll (the movers box
+   and header stay at content width) */
+.table-wrap.cols-all {
+  overflow-x: auto;
+  width: calc(100vw - 32px);
+  margin-left: calc(50% - 50vw + 16px);
+}
 .table-wrap.cols-all .t1, .table-wrap.cols-all .t2,
 .table-wrap.cols-all .t3, .table-wrap.cols-all .t4 { display: table-cell; }
-/* All columns: let the table exceed the wrap so it scrolls (don't cram) */
+/* let the table exceed the wrap so it scrolls (don't cram) */
 .table-wrap.cols-all .table-ledger { width: auto; min-width: 100%; }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: var(--pend-on-band, #ffd21e); }
@@ -59,12 +66,13 @@ tbody tr.detail > td { background: var(--chrome-2, var(--paper-2)) !important; p
 a.plink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
 a.plink:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* in-row sparkline of the finishing-position distribution */
+/* in-row sparkline of the finishing-position distribution (3 SVG paths) */
 td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
-.spark { display: flex; align-items: flex-end; gap: 1px; height: 22px; width: 120px; cursor: crosshair; }
-.spark .col { flex: 1; min-width: 1px; background: var(--grid-strong); }
-.spark .col.in-cut { background: var(--pos); }
-.spark .col.overflow { background: var(--neg); opacity: .7; }
+.spark { height: 22px; width: 120px; cursor: crosshair; }
+.spark svg { width: 100%; height: 100%; display: block; }
+.spark .sp-in { fill: var(--pos); }
+.spark .sp-out { fill: var(--grid-strong); }
+.spark .sp-over { fill: var(--neg); opacity: .7; }
 
 /* floating tooltip (immediate, no native-title delay) */
 #spark-tip {

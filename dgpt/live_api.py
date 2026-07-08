@@ -22,12 +22,18 @@ RESULTS_CACHE = config.CACHE_DIR / "results"
 
 _MIN_INTERVAL = 0.5  # be polite: max ~2 req/s
 _last_request = 0.0
+# per-process memo: registration/live lookups hit the same round-1 URLs from
+# several places in one refresh (fields, roster, doubles) — fetch each once.
+# A refresh is a fresh process, so this never serves stale data across runs.
+_memo: dict[str, dict] = {}
 
 
 def _get(url: str, cache_file: Path | None = None) -> dict:
     global _last_request
     if cache_file and cache_file.exists():
         return json.loads(cache_file.read_text(encoding="utf-8"))
+    if url in _memo:
+        return _memo[url]
     for backoff in (0, 5, 15, 45):
         if backoff:
             time.sleep(backoff)
@@ -49,6 +55,7 @@ def _get(url: str, cache_file: Path | None = None) -> dict:
     if cache_file:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(data), encoding="utf-8")
+    _memo[url] = data
     return data
 
 

@@ -112,19 +112,23 @@ function countedTids(p, meta) {
 }
 
 /* small inline sparkline of the finishing-rank distribution; hover shows the
-   exact place + probability immediately via a shared floating tooltip */
+   exact place + probability immediately via a shared floating tooltip.
+   Drawn as 3 SVG paths (in-cut / beyond / overflow) instead of ~50 bar
+   divs — cuts the table from ~28k spark nodes to ~3 per row. */
 const sparkStore = new Map(); // pdga -> hist array
 function sparkCell(p, meta) {
   sparkStore.set(p.pdga, p.hist);
+  const H = 22, W = 120, n = p.hist.length;
   const max = Math.max(...p.hist, 1e-9);
-  const show = p.hist.length;
-  let cols = "";
-  for (let k = 0; k < show; k++) {
-    const h = Math.max(1, Math.round((p.hist[k] / max) * 100));
-    const cls = k + 1 <= meta.cut ? "in-cut" : k === show - 1 ? "overflow" : "";
-    cols += `<i class="col ${cls}" style="height:${h}%"></i>`;
+  const bw = W / n, gap = bw * 0.15;
+  const d = { in: "", out: "", over: "" };
+  for (let k = 0; k < n; k++) {
+    const h = Math.max(1, (p.hist[k] / max) * H);
+    const key = k + 1 <= meta.cut ? "in" : k === n - 1 ? "over" : "out";
+    d[key] += `M${(k * bw).toFixed(1)} ${H}h${(bw - gap).toFixed(1)}v-${h.toFixed(1)}h-${(bw - gap).toFixed(1)}z`;
   }
-  return `<div class="spark" data-pdga="${p.pdga}">${cols}</div>`;
+  return `<div class="spark" data-pdga="${p.pdga}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path class="sp-in" d="${d.in}"/><path class="sp-out" d="${d.out}"/><path class="sp-over" d="${d.over}"/></svg></div>`;
 }
 
 /* ---------- forecast view (standings + projections, sortable) ---------- */
