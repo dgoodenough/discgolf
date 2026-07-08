@@ -57,6 +57,7 @@ class SimResult:
     events_meta: list[dict]  # remaining events: id/name/cls/rounds/major + score stats
     banked: list[list]       # per player: [(tid, points, is_major, place), ...]
     live_stats: dict         # {tid: {pdga: {cur, rem, win, mean_place, p10/p50/p90, mean_pts}}}
+    dbl_info: dict           # {pdga: {partner_name, team_rating}} for the doubles championship
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
@@ -156,6 +157,44 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     # live events in progress: model each player's current score plus a
     # rating-based projection of the holes they have left, instead of
     # simulating the whole event from scratch
+    # doubles championship: simulate at TEAM level, team rating = mean of the
+    # two players' ratings (no doubles-play priors). Pairings come from
+    # live_api.doubles_teams (PDGA Live once staged, DGS registration until
+    # then — re-fetched every refresh so new teams appear automatically).
+    # Registered players without a listed partner get a field-average partner.
+    dbl_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_DOUBLES), None)
+    dbl_teams = None
+    dbl_info: dict[int, dict] = {}
+    player_names_by_i = {i: r["name"] for i, r in enumerate(table)}
+    if dbl_ei is not None:
+        pairing = live_api.doubles_teams(config.TID_DOUBLES, division)
+        registered = [i for i in range(n) if event_probs[dbl_ei][i] >= 0.999]
+        favg_players = float(ratings[registered].mean()) if registered else 1000.0
+        seen: set[int] = set()
+        pairs: list[tuple[int, int]] = []
+        solos: list[int] = []
+        for i in registered:
+            if i in seen:
+                continue
+            partner = pairing.get(pdga_numbers[i], {}).get("partner")
+            j = idx.get(partner) if partner else None
+            if j is not None and j in set(registered) and j not in seen:
+                pairs.append((i, j))
+                seen.update((i, j))
+            else:
+                solos.append(i)
+                seen.add(i)
+        team_ratings = np.array(
+            [(ratings[i] + ratings[j]) / 2 for i, j in pairs]
+            + [(ratings[i] + favg_players) / 2 for i in solos]
+        )
+        dbl_teams = (pairs, solos, team_ratings)
+        for t, (i, j) in enumerate(pairs):
+            dbl_info[pdga_numbers[i]] = {"partner_name": player_names_by_i.get(j), "team_rating": round(float(team_ratings[t]), 1)}
+            dbl_info[pdga_numbers[j]] = {"partner_name": player_names_by_i.get(i), "team_rating": round(float(team_ratings[t]), 1)}
+        for t2, i in enumerate(solos):
+            dbl_info[pdga_numbers[i]] = {"partner_name": None, "team_rating": round(float(team_ratings[len(pairs) + t2]), 1)}
+
     live_tids = {r["tournament_id"] for r in live_now}
     live_data: dict[int, tuple] = {}
     for ev_i, row in enumerate(remaining):
@@ -218,6 +257,33 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         def draw_event(ev_i, plays):
             """Draw one event's points + place (c, n); update place-hist + meta."""
             row = remaining[ev_i]
+            if ev_i == dbl_ei and dbl_teams is not None:
+                # team-level doubles: one score per team, both members share it
+                pairs, solos, team_ratings = dbl_teams
+                T = len(team_ratings)
+                n_rounds = ROUNDS.get(row["cls"], 3)
+                tavg = team_ratings.mean() if T else 1000.0
+                mu_t = -(team_ratings - tavg) / RATING_PTS_PER_STROKE * n_rounds
+                tscores = mu_t[None, :] + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, T))
+                torder = np.argsort(tscores, axis=1)
+                tplace = np.empty_like(torder)
+                tplace[rows_ix, torder] = np.arange(1, T + 1)[None, :]
+                place = np.full((c, n), n + 1, dtype=np.int64)
+                plays = np.zeros((c, n), dtype=bool)
+                for t, (i2, j2) in enumerate(pairs):
+                    place[:, i2] = place[:, j2] = tplace[:, t]
+                    plays[:, i2] = plays[:, j2] = True
+                for t2, i2 in enumerate(solos):
+                    place[:, i2] = tplace[:, len(pairs) + t2]
+                    plays[:, i2] = True
+                if done == 0:
+                    events_meta[ev_i]["field_avg_rating"] = round(float(tavg), 1)
+                    events_meta[ev_i]["opp_score_sd"] = round(float(np.std(tscores)), 2)
+                    events_meta[ev_i]["field_size"] = float(T)
+                att_count[ev_i] += plays.sum(axis=0)
+                pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
+                pts[~plays] = 0.0
+                return pts, place
             if ev_i in live_data:
                 # in progress: lock in the score so far, project the holes left
                 cur, rem, in_field, favg = live_data[ev_i]
@@ -432,6 +498,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             for r in table
         ],
         live_stats=live_stats,
+        dbl_info=dbl_info,
     )
 
 

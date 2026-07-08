@@ -30,12 +30,10 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
         cls = ev["cls"]
         if cls == "jomez":
             vec = [points.jomez_bonus(p) for p in range(1, 151)]
-        elif cls == "doubles":
-            # index by INDIVIDUAL place so the client replay can use one code
-            # path: individual rank r -> implied team place ceil(r/2)
-            curve = points.event_curve(division, cls)
-            vec = [curve.get((p + 1) // 2, 0.0) for p in range(1, 151)]
         else:
+            # doubles is TEAM-place indexed: the sim runs it at team level and
+            # exports field_size as the team count, so client draws index it
+            # directly like any other event
             curve = points.event_curve(division, cls)
             vec = [curve.get(p, 0.0) for p in range(1, 151)]
         curves[ev["tid"]] = vec
@@ -90,6 +88,8 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                     for tid, stats in res.live_stats.items()
                     if res.pdga_numbers[i] in stats
                 },
+                # doubles championship pairing (None partner = solo, avg-partner model)
+                "dbl": res.dbl_info.get(res.pdga_numbers[i]),
             }
         )
     players.sort(key=lambda p: (-p["points"], p["rank"]))

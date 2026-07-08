@@ -96,6 +96,65 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
     return True
 
 
+def doubles_teams(tournament_id: int, division: str) -> dict[int, dict]:
+    """Team pairings for the doubles championship: {pdga: {partner, partner_name}}.
+
+    Prefers PDGA Live's team fields (authoritative once the event is staged
+    for live scoring); until those populate, parses the Disc Golf Scene
+    registration page, which lists teams as they register. Both sources are
+    fetched fresh on every refresh, so new teams appear automatically.
+    Players registered without a listed partner are omitted (the sim pairs
+    them with a field-average partner).
+    """
+    import re
+
+    out: dict[int, dict] = {}
+
+    # 1) PDGA Live (empty until event week, then authoritative)
+    try:
+        scores = fetch_round(tournament_id, division, 1).get("scores") or []
+        for s in scores:
+            mates = s.get("Teammates") or []
+            me = s.get("PDGANum")
+            for m in mates:
+                mp = m.get("PDGANum") if isinstance(m, dict) else None
+                if me and mp and mp != me:
+                    out[me] = {"partner": mp, "partner_name": m.get("Name")}
+        if out:
+            return out
+    except Exception:
+        pass
+
+    # 2) DGS registration page fallback
+    try:
+        req = urllib.request.Request(config.DOUBLES_REG_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read().decode("utf-8", "replace")
+    except Exception:
+        return out
+    i = raw.find(f'id="tournament-registration-players-{division}"')
+    if i < 0:
+        return out
+    j = raw.find('id="tournament-registration-players-', i + 10)
+    seg = raw[i: j if j > 0 else len(raw)]
+
+    team: list[tuple[int, str]] = []
+    for row in re.findall(r"<tr[^>]*>.*?</tr>", seg, re.S):
+        if 'class="team-name"' in row:  # first member row starts a team
+            team = []
+        m = re.search(r'profile/\d+">([^<]+)</a>.*?pdga\.com/player/(\d+)', row, re.S)
+        if not m:
+            m = re.search(r"<td>([^<]+?)\s*</td>\s*<td><a[^>]*pdga\.com/player/(\d+)", row, re.S)
+        if m:
+            team.append((int(m.group(2)), m.group(1).strip()))
+        if len(team) == 2:
+            (a, an), (b, bn) = team
+            out[a] = {"partner": b, "partner_name": bn}
+            out[b] = {"partner": a, "partner_name": an}
+            team = []
+    return out
+
+
 def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     """Current standing of an in-progress event, for the remaining-holes model.
 

@@ -248,7 +248,7 @@ function wireWhatif(detail, p, d) {
 
 // place shown next to a single event's points, small + dim
 const placeTag = (place) => (place ? ` <span class="place">${ordinal(place)}</span>` : "");
-const DOUBLES_NOTE = "Team pairings aren't modeled yet — points assume a field-average partner. TODO: use announced teams once the full list is out.";
+const DOUBLES_NOTE = "No partner listed yet — projected with a field-average partner. Teams refresh automatically from registration.";
 const PLAYOFF_NOTE = "Playoff registration isn't open yet — the model assumes every player who qualifies for this field will attend. Real signups will shift these odds.";
 
 /* projection of a player's finish if they played event e; live events use the
@@ -259,14 +259,16 @@ function eventProj(d, p, e) {
     const l = p.live[e.tid];
     return { win: l.win, p10: l.p10, p50: l.p50, p90: l.p90, live: l };
   }
-  return projectPoints(d, p, e);
+  // doubles: project the TEAM (avg rating) against the team field
+  const rating = e.tid === d.meta.dbl_tid && p.dbl ? p.dbl.team_rating : p.rating;
+  return projectPoints(d, p, e, 2500, rating);
 }
 
-function projectPoints(d, p, e, draws = 2500) {
+function projectPoints(d, p, e, draws = 2500, rating = p.rating) {
   const out = new Float64Array(draws);
   let wins = 0;
   for (let i = 0; i < draws; i++) {
-    const mu = (-(p.rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
+    const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
     const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
     const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
     const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
@@ -301,7 +303,11 @@ function detailHtml(p, d) {
     const dflt = (isLive || att >= 0.5) ? "checked" : "";
     const attTxt = isLive ? "playing" : att >= 0.999 ? "yes" : att <= 0.001 ? "—" : Math.round(att * 100) + "%";
     let note = "";
-    if (e.tid === meta.dbl_tid) note += ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ teams TBD</span>`;
+    if (e.tid === meta.dbl_tid) {
+      note += p.dbl && p.dbl.partner_name
+        ? ` <span class="chip" title="Doubles team — projected with the averaged team rating (${p.dbl.team_rating})">w/ ${p.dbl.partner_name}</span>`
+        : ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ ${p.dbl ? "partner TBD" : "teams TBD"}</span>`;
+    }
     if (e.cls === "playoff") note += ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ assumes qualifiers attend</span>`;
     if (isLive) note += ` <span class="live-badge"><span class="live-dot"></span>live · now ${s.live.cur >= 0 ? "+" : ""}${s.live.cur}, proj ${ordinal(Math.round(s.live.mean_place))}</span>`;
     // live events are locked in (player is in the field) → checkbox disabled

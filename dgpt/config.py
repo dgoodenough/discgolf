@@ -39,11 +39,12 @@ TOP_N_FINISHES = COUNT_DGPT + COUNT_PLAYOFF + COUNT_MAJOR  # 14 counted (+ Jomez
 
 # 2026 tournament IDs with special handling
 TID_HEINOLA = 96413        # no FPO points (USWDGC travel turnaround)
-# TODO(doubles teams): the Preserve is a doubles event scored with a team
-# curve, but we currently model each player solo vs a field-average partner.
-# Some pairings have been announced; once the full team list is public, join
-# partners so a player's projected Preserve points reflect their actual team.
 TID_DOUBLES = 96416        # Doubles Championship at The Preserve
+# Team pairings: PDGA Live's Team/Teammates fields are empty until the event
+# is staged for live scoring, so until then teams are read from the DGS
+# registration page (re-fetched every refresh, so new teams appear
+# automatically). live_api.doubles_teams prefers PDGA Live once populated.
+DOUBLES_REG_URL = "https://www.discgolfscene.com/tournaments/DGPT_Doubles_Championship_at_The_Preserve_2026/registration"
 TID_GMC = 96418            # Green Mountain Championship (playoff 1)
 TID_MVP = 96419            # MVP Open x OTB (playoff 2)
 TID_CHAMPIONSHIP = 96421   # DGPT Powerball Cup (no points)
