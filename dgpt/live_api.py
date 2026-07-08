@@ -155,6 +155,21 @@ def doubles_teams(tournament_id: int, division: str) -> dict[int, dict]:
     return out
 
 
+def registered_roster(tournament_id: int, division: str) -> dict[int, dict]:
+    """Name + rating for everyone on an event's registration list (PDGA Live
+    preloads rosters well before play). Used to give first-start players a
+    row before their debut event."""
+    try:
+        scores = fetch_round(tournament_id, division, 1).get("scores") or []
+    except (urllib.error.HTTPError, KeyError):
+        return {}
+    return {
+        s["PDGANum"]: {"name": s.get("Name"), "rating": s.get("Rating")}
+        for s in scores
+        if s.get("PDGANum")
+    }
+
+
 def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     """Current standing of an in-progress event, for the remaining-holes model.
 

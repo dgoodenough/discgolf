@@ -83,13 +83,18 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     # players: anyone with a start this season and a known rating
     table = [r for r in table if r["rating"]]
 
-    # add players making their first start at a live event (no standings row yet)
+    # add players with no standings row yet who are registered for any
+    # remaining event (or playing a live one) so first-timers get rows
     live_now = schedule.live_events(sched)
     have = {r["pdga_number"] for r in table}
     max_rank = max((r["rank"] for r in table), default=0)
-    for ev in live_now:
-        field = live_api.live_field(ev["tournament_id"], division)
-        for pdga, info in (field or {}).items():
+    upcoming_rows = [
+        r for r in sched
+        if not r["completed"] and r[division.lower()] and r["cls"] not in ("championship", "playoff")
+    ]
+    for ev in upcoming_rows:
+        roster = live_api.registered_roster(ev["tournament_id"], division)
+        for pdga, info in roster.items():
             if pdga in have or not info.get("rating"):
                 continue
             have.add(pdga)

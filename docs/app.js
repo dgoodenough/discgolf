@@ -133,7 +133,9 @@ function renderForecast(d) {
   const sort = state.sort;
   const col = cols.find((c) => c.key === sort.key) || cols[0];
   const rows = [...d.players].filter(
-    (p) => p.points > 0 || p.p_field >= 0.0005 || (p.live && Object.keys(p.live).length)
+    (p) => p.points > 0 || p.p_field >= 0.0005
+      || (p.live && Object.keys(p.live).length)
+      || (p.att && p.att.some((a) => a >= 0.999))  // registered for a future event
   );
   rows.sort((a, b) => {
     const av = col.get(a), bv = col.get(b);
@@ -257,7 +259,7 @@ const PLAYOFF_NOTE = "Playoff registration isn't open yet — the model assumes 
 function eventProj(d, p, e) {
   if (p.live && p.live[e.tid]) {
     const l = p.live[e.tid];
-    return { win: l.win, p10: l.p10, p50: l.p50, p90: l.p90, live: l };
+    return { win: l.win, p10: l.p10, p50: l.p50, p90: l.p90, pl50: Math.round(l.mean_place), live: l };
   }
   // doubles: project the TEAM (avg rating) against the team field
   const rating = e.tid === d.meta.dbl_tid && p.dbl ? p.dbl.team_rating : p.rating;
@@ -266,6 +268,7 @@ function eventProj(d, p, e) {
 
 function projectPoints(d, p, e, draws = 2500, rating = p.rating) {
   const out = new Float64Array(draws);
+  const places = new Float64Array(draws);
   let wins = 0;
   for (let i = 0; i < draws; i++) {
     const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
@@ -273,23 +276,29 @@ function projectPoints(d, p, e, draws = 2500, rating = p.rating) {
     const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
     const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
     if (place === 1) wins++;
+    places[i] = place;
     out[i] = place <= e.curve.length ? e.curve[place - 1] : 0;
   }
   out.sort();
+  places.sort();
   const q = (f) => out[Math.min(draws - 1, Math.floor(f * draws))];
-  return { win: wins / draws, p10: q(0.1), p50: q(0.5), p90: q(0.9) };
+  const qp = (f) => Math.round(places[Math.min(draws - 1, Math.floor(f * draws))]);
+  // points percentile q pairs with place percentile (1-q): low points = high place
+  return { win: wins / draws, p10: q(0.1), p50: q(0.5), p90: q(0.9), pl90: qp(0.9), pl50: qp(0.5), pl10: qp(0.1) };
 }
 
 function detailHtml(p, d) {
   const meta = d.meta;
   const counted = countedTids(p, meta);
   const attOf = new Map(d.events.map((e, i) => [e.tid, p.att[i]]));
+  const dateOf = new Map((d.schedule || []).map((s) => [s.tid, s.start]));
+  const dtag = (tid) => { const s = dateOf.get(tid); return s ? `<span class="ev-date">${s.slice(5)}</span> ` : ""; };
 
   const banked = [...p.banked].sort((a, b) => b.pts - a.pts).map((b) => {
     const drop = !counted.has(b.tid);
     const win = b.place === 1 ? ' <span class="win-medal" title="Event win">🥇</span>' : "";
     return `<tr class="${drop ? "dropped" : ""}">
-      <td>${eventLink(b.tid, shortName(b.event))} <span class="chip">${CLS_LABEL[b.cls] || b.cls || "?"}</span>${win}</td>
+      <td>${dtag(b.tid)}${eventLink(b.tid, shortName(b.event))} <span class="chip">${CLS_LABEL[b.cls] || b.cls || "?"}</span>${win}</td>
       <td class="num">${fmtPts(b.pts)}${placeTag(b.place)}</td>
       <td>${drop ? '<span class="drop-tag">dropped</span>' : ""}</td></tr>`;
   }).join("");
@@ -313,11 +322,11 @@ function detailHtml(p, d) {
     // live events are locked in (player is in the field) → checkbox disabled
     return `<tr class="${att <= 0.001 && !isLive ? "not-att" : ""}">
       <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt} ${isLive ? "disabled" : ""}></td>
-      <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
+      <td>${dtag(e.tid)}${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
       <td class="num ${att >= 0.999 || isLive ? "pos" : ""}">${attTxt}</td>
-      <td class="num dim">${fmtPts(s.p10)}</td>
-      <td class="num">${fmtPts(s.p50)}</td>
-      <td class="num">${fmtPts(s.p90)}</td>
+      <td class="num dim">${fmtPts(s.p10)}${placeTag(s.pl90)}</td>
+      <td class="num">${fmtPts(s.p50)}${placeTag(s.pl50)}</td>
+      <td class="num">${fmtPts(s.p90)}${placeTag(s.pl10)}</td>
       <td class="num ${s.win >= 0.1 ? "pos" : "dim"}">${fmtPct(s.win)}</td></tr>`;
   }).join("");
 

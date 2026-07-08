@@ -86,6 +86,7 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .detail-grid .band { font-size: var(--fs-caption); margin-bottom: 2px; }
 /* placement shown after a single event's points — smaller, quieter */
 .place { color: var(--ink-3); font-size: var(--fs-caption); }
+.ev-date { color: var(--ink-3); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; }
 .note-flag { color: var(--pend); font-size: var(--fs-caption); cursor: help; }
 .medal { cursor: help; }
 .detail-tbl input[type="checkbox"] { width: 14px; height: 14px; vertical-align: middle; }
