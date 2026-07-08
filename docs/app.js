@@ -21,7 +21,33 @@ async function loadDiv(div) {
     const resp = await fetch(`data/${div}.json`);
     state.data[div] = await resp.json();
   }
+  if (state.movers === undefined) {
+    try { state.movers = await (await fetch("data/movers.json")).json(); }
+    catch { state.movers = null; }
+  }
   return state.data[div];
+}
+
+/* qualitative week-over-week movers panel (from prediction snapshots) */
+function moversHtml(div) {
+  const m = state.movers && state.movers[div];
+  if (!m || !m.movers.length) return "";
+  const fmtD = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
+  const rows = m.movers.map((x) => {
+    const up = x.delta > 0;
+    const rank = x.rank_from ? `#${x.rank_from}→#${x.rank_to}` : `→#${x.rank_to}`;
+    return `<tr>
+      <td class="${up ? "movers-up" : "movers-down"}">${up ? "▲" : "▼"}</td>
+      <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
+      <td class="num ${up ? "movers-up" : "movers-down"}">${fmtPct(x.champ_from)} → ${fmtPct(x.champ_to)}</td>
+      <td class="num dim">${(x.delta > 0 ? "+" : "") + (x.delta * 100).toFixed(1)}</td>
+      <td class="num dim">${fmtPts(x.pts_from)} → ${fmtPts(x.pts_to)}</td>
+      <td class="num dim">${rank}</td></tr>`;
+  }).join("");
+  return `<details class="movers"><summary>Biggest movers — Cup odds since ${fmtD(m.baseline)}</summary>
+    <table class="table-ledger detail-tbl"><thead><tr>
+      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th class="num">Points</th><th class="num">Rank</th>
+    </tr></thead><tbody>${rows}</tbody></table></details>`;
 }
 
 /* ---------- shared bits ---------- */
@@ -158,6 +184,7 @@ function renderForecast(d) {
 
   const el = $("#view-forecast");
   el.innerHTML = `
+    ${moversHtml(state.div)}
     <div class="table-tools">
       <button class="btn" id="cols-toggle">${state.colsAll ? "Fewer columns" : "All columns"}</button>
     </div>
@@ -291,14 +318,21 @@ function detailHtml(p, d) {
   const meta = d.meta;
   const counted = countedTids(p, meta);
   const attOf = new Map(d.events.map((e, i) => [e.tid, p.att[i]]));
-  const dateOf = new Map((d.schedule || []).map((s) => [s.tid, s.start]));
-  const dtag = (tid) => { const s = dateOf.get(tid); return s ? `<span class="ev-date">${s.slice(5)}</span> ` : ""; };
+  const dateOf = new Map((d.schedule || []).map((s) => [s.tid, [s.start, s.end]]));
+  const dtag = (tid) => {
+    const se = dateOf.get(tid);
+    if (!se) return "";
+    const [ms, ds] = se[0].slice(5).split("-").map(Number);
+    const [me, de] = se[1].slice(5).split("-").map(Number);
+    const range = ms === me ? (ds === de ? `${ms}/${ds}` : `${ms}/${ds}-${de}`) : `${ms}/${ds}-${me}/${de}`;
+    return ` <span class="ev-date">${range}</span>`;
+  };
 
   const banked = [...p.banked].sort((a, b) => b.pts - a.pts).map((b) => {
     const drop = !counted.has(b.tid);
     const win = b.place === 1 ? ' <span class="win-medal" title="Event win">🥇</span>' : "";
     return `<tr class="${drop ? "dropped" : ""}">
-      <td>${dtag(b.tid)}${eventLink(b.tid, shortName(b.event))} <span class="chip">${CLS_LABEL[b.cls] || b.cls || "?"}</span>${win}</td>
+      <td>${eventLink(b.tid, shortName(b.event))} <span class="chip">${CLS_LABEL[b.cls] || b.cls || "?"}</span>${dtag(b.tid)}${win}</td>
       <td class="num">${fmtPts(b.pts)}${placeTag(b.place)}</td>
       <td>${drop ? '<span class="drop-tag">dropped</span>' : ""}</td></tr>`;
   }).join("");
@@ -322,7 +356,7 @@ function detailHtml(p, d) {
     // live events are locked in (player is in the field) → checkbox disabled
     return `<tr class="${att <= 0.001 && !isLive ? "not-att" : ""}">
       <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt} ${isLive ? "disabled" : ""}></td>
-      <td>${dtag(e.tid)}${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${note}</td>
+      <td>${eventLink(e.tid, shortName(e.name))} <span class="chip">${CLS_LABEL[e.cls] || e.cls}</span>${dtag(e.tid)}${note}</td>
       <td class="num ${att >= 0.999 || isLive ? "pos" : ""}">${attTxt}</td>
       <td class="num dim">${fmtPts(s.p10)}${placeTag(s.pl90)}</td>
       <td class="num">${fmtPts(s.p50)}${placeTag(s.pl50)}</td>

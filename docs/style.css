@@ -118,4 +118,21 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .stat-label { font-size: var(--fs-caption); color: var(--ink-2); text-transform: uppercase; letter-spacing: .6px; }
 .hint { color: var(--ink-2); font-size: var(--fs-small); }
 
+/* week-over-week movers panel */
+.movers { margin: 0 0 10px; border: 1px solid var(--grid); background: var(--paper); }
+.movers summary { cursor: pointer; padding: 7px 10px; font-weight: 700; font-size: var(--fs-small); background: var(--band); color: var(--band-ink); }
+.movers .table-ledger { margin: 0; }
+.movers-up { color: var(--pos); font-weight: 600; }
+.movers-down { color: var(--neg); font-weight: 600; }
+
+/* explainer / static pages */
+.page { max-width: 780px; margin: 0 auto; padding: 0 16px 40px; }
+.page h1 { font-size: 1.3rem; margin: 18px 0 4px; }
+.page .band { margin: 22px 0 8px; }
+.page p, .page li { font-size: var(--fs-body); line-height: 1.5; color: var(--ink); }
+.page li { margin: 3px 0; }
+.page .table-ledger { margin: 8px 0; }
+.page .table-ledger td, .page .table-ledger th { font-size: var(--fs-small); }
+.changelog-date { color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 10px; }
+
 footer { margin-top: 22px; color: var(--ink-3); font-size: var(--fs-small); }

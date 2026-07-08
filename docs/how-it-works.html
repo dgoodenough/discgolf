@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How the DGPT points system works</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<script data-goatcounter="https://dgoodenough.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</head>
+<body class="ledger">
+<div class="page">
+  <h1>How the DGPT points system works</h1>
+  <p class="hint"><a href="index.html">← back to the forecast</a></p>
+  <p>The Disc Golf Pro Tour crowns its season champion at the <b>Powerball Cup</b>
+  (the DGPT Championship). Who gets to play in it is decided by the
+  <b>Powerball DGPT World Standings</b> — a season-long points race. This page
+  explains how the points work, what counts, and how a player gets in.</p>
+
+  <div class="band">1 · Every event pays points by finishing place</div>
+  <p>Each points event pays out on a fixed curve: the winner gets the most,
+  and every place after that gets a bit less, paying deep into the field
+  (MPO past 140th place, FPO to about 50th). Bigger events pay more —
+  the same curve is scaled up by event class:</p>
+  <table class="table-ledger">
+    <thead><tr><th>Event class</th><th class="num">Win pays</th><th>Scale</th></tr></thead>
+    <tbody>
+      <tr><td>DGPT (Elite Series)</td><td class="num">150</td><td>base curve</td></tr>
+      <tr><td>DGPT+</td><td class="num">200</td><td>base × 4⁄3</td></tr>
+      <tr><td>DGPT Playoffs</td><td class="num">250</td><td>base × 5⁄3</td></tr>
+      <tr><td>PDGA Major</td><td class="num">300</td><td>base × 2</td></tr>
+      <tr><td>Doubles Championship</td><td class="num">137.5</td><td>each partner gets half the combined points of the two singles places their team finish spans</td></tr>
+      <tr><td>JomezPro Series</td><td class="num">20</td><td>flat bonus: 20 for a win, 10 for top 5, 5 for top 10</td></tr>
+    </tbody>
+  </table>
+  <p><b>Ties</b> split the pot: everyone in a tie gets the average of the
+  points for the places the tie covers (two players tied 2nd each get the
+  average of 2nd- and 3rd-place points).</p>
+
+  <div class="band">2 · Not every finish counts</div>
+  <p>A player's season total isn't everything they earned — each class of
+  event has its own cap, so skipping events (or having a bad one) eventually
+  stops hurting:</p>
+  <table class="table-ledger">
+    <thead><tr><th>Class</th><th>What counts</th></tr></thead>
+    <tbody>
+      <tr><td>DGPT + DGPT+ (incl. doubles)</td><td>best <b>10</b> finishes (of ~15 events)</td></tr>
+      <tr><td>Playoffs (GMC + MVP Open)</td><td><b>both</b> count, always</td></tr>
+      <tr><td>Majors</td><td>best <b>2</b> — MPO has 3 eligible majors, FPO has 4</td></tr>
+      <tr><td>JomezPro bonus</td><td>all of it, on top</td></tr>
+    </tbody>
+  </table>
+  <p>That's 14 counted finishes plus bonus, for a theoretical maximum of
+  <b>2,800 points</b>. Wrinkles: the Heinola Open awards <b>no FPO points</b>
+  (it ends four days before the U.S. Women's Championship), and the
+  <b>USDGC pays nothing</b> because it falls after the points season ends at
+  the MVP Open. In the forecast's expanded player view, finishes that don't
+  count are struck through.</p>
+
+  <div class="band">3 · How you make the Powerball Cup</div>
+  <p>The Cup field is <b>32 MPO / 20 FPO</b>. Three ways in:</p>
+  <ul>
+    <li><b>Automatic bid</b> — finish the season top <b>28</b> MPO / top <b>18</b> FPO in the standings.</li>
+    <li><b>Playoff run</b> — the top <b>4</b> MPO / <b>2</b> FPO finishers at the MVP Open who missed the standings cut take the last spots.</li>
+    <li><b>Winner's invite</b> — win any DGPT Elite or Major singles event and you're in regardless, added as a bottom seed without bumping anyone (doubles and Jomez wins don't qualify).</li>
+  </ul>
+  <p>The playoffs themselves are gated by the standings: the <b>Green
+  Mountain Championship</b> field is the top 100 MPO / 50 FPO after Worlds
+  (expanding to 120/60 if it doesn't fill), and the <b>MVP Open</b> field is
+  the top 72/36 after GMC plus the top 8/4 GMC finishers from outside that
+  line. So a hot September can carry a player from 90th place all the way
+  into the Cup.</p>
+
+  <div class="band">4 · What the forecast does with all this</div>
+  <p>The forecast simulates the rest of the season 100,000 times: each
+  player's scores are drawn from their PDGA rating, fields come from real
+  registration lists (or participation patterns where registration isn't
+  open), live events are projected from the holes actually remaining, and
+  every rule above is applied to every simulated season. The percentages you
+  see are just how often each outcome happened. Full methodology and source:
+  <a href="https://github.com/dgoodenough/discgolf">github.com/dgoodenough/discgolf</a>.</p>
+
+  <div class="band">Changelog</div>
+  <table class="table-ledger">
+    <tbody>
+      <tr><td class="changelog-date">Jul 7</td><td>Counting fixed to per-class caps (best 10 DGPT, both playoffs, best 2 majors). Doubles teams pulled from registration with team-level projections. Rows for every registrant, dates and places throughout, weekly movers panel, this page.</td></tr>
+      <tr><td class="changelog-date">Jul 5</td><td>Ale Open banked the moment it finished. GMC/MVP columns now mean "makes the field". Winner's-invite path folded into Cup odds (100% for winners).</td></tr>
+      <tr><td class="changelog-date">Jul 4</td><td>Live events: results feed in near-real-time (15-min refresh during play) and in-progress events are projected from the remaining holes. Prediction snapshots recorded for end-of-season scoring.</td></tr>
+      <tr><td class="changelog-date">Jul 3</td><td>Launch: 100k-run forecast, sortable table with finish-distribution sparklines, inline what-if, playoff-field odds, dark Ledger theme.</td></tr>
+      <tr><td class="changelog-date">Jul 2</td><td>Points engine validated exactly against official StatMando standings (0 diffs, both divisions).</td></tr>
+    </tbody>
+  </table>
+
+  <footer>
+    <p>Event and player data © 2026 <a href="https://www.pdga.com">PDGA</a> · PDGA Authorized Developer</p>
+    <p><a href="index.html">← back to the forecast</a></p>
+  </footer>
+</div>
+</body>
+</html>
