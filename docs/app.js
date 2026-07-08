@@ -3,7 +3,7 @@
    a single player against frozen per-sim cutlines ("cutline replay"). */
 "use strict";
 
-const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" } };
+const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" }, colsMode: "auto" };
 
 const $ = (sel) => document.querySelector(sel);
 const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
@@ -33,15 +33,16 @@ function moversHtml(div) {
   const m = state.movers && state.movers[div];
   if (!m || !m.movers.length) return "";
   const fmtD = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
+  const pct0 = (x) => Math.round(x * 100) + "%";  // whole percents — cleaner at a glance
   const rows = m.movers.map((x) => {
     const up = x.delta > 0;
     const rank = x.rank_from ? `#${x.rank_from}→#${x.rank_to}` : `→#${x.rank_to}`;
     return `<tr>
       <td class="${up ? "movers-up" : "movers-down"}">${up ? "▲" : "▼"}</td>
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
-      <td class="num ${up ? "movers-up" : "movers-down"}">${fmtPct(x.champ_from)} → ${fmtPct(x.champ_to)}</td>
-      <td class="num dim">${(x.delta > 0 ? "+" : "") + (x.delta * 100).toFixed(1)}</td>
-      <td class="num dim">${fmtPts(x.pts_from)} → ${fmtPts(x.pts_to)}</td>
+      <td class="num ${up ? "movers-up" : "movers-down"}">${pct0(x.champ_from)} → ${pct0(x.champ_to)}</td>
+      <td class="num dim">${(x.delta > 0 ? "+" : "−") + Math.abs(Math.round(x.delta * 100))}</td>
+      <td class="num dim">${Math.round(x.pts_from)} → ${Math.round(x.pts_to)}</td>
       <td class="num dim">${rank}</td></tr>`;
   }).join("");
   return `<details class="movers"><summary>Biggest movers — Cup odds since ${fmtD(m.baseline)}</summary>
@@ -134,8 +135,15 @@ function nameCell(p) {
 
 // Columns in priority order (left = most important). `hide` marks the tier
 // that drops out first as the screen narrows (core columns never hide).
-function forecastCols(meta) {
+// `adv` columns only exist in the Advanced view.
+function forecastCols(meta, adv = false) {
   const perf = meta.field_size - meta.cut; // MVP-performance championship spots
+  const advCols = !adv ? [] : [
+    { key: "p_gmc_cut", label: "GMC pts cut", title: `P(top ${meta.gmc_cut} on points before GMC — inside the primary window, before the field expands to fill)`, num: true, get: (p) => p.p_gmc_cut ?? 0, cell: (p) => `<span class="dim">${fmtPct(p.p_gmc_cut ?? 0)}</span>`, dir0: "desc" },
+    { key: "p_mvp_cut", label: "MVP pts cut", title: `P(top ${meta.mvp_cut} on points before the MVP Open — qualifying without needing the GMC-performance path)`, num: true, get: (p) => p.p_mvp_cut ?? 0, cell: (p) => `<span class="dim">${fmtPct(p.p_mvp_cut ?? 0)}</span>`, dir0: "desc" },
+    { key: "exp_starts", label: "Proj. starts", title: "Projected remaining events played (sum of attendance odds, playoff gating included)", num: true, get: (p) => p.exp_starts ?? 0, cell: (p) => `<span class="dim">${(p.exp_starts ?? 0).toFixed(1)}</span>`, dir0: "desc" },
+    { key: "proj_dropped", label: "Proj. dropped", title: "Expected points from already-banked finishes that end up not counting under the per-class caps", num: true, get: (p) => p.proj_dropped ?? 0, cell: (p) => `<span class="dim">${fmtPts(p.proj_dropped ?? 0)}</span>`, dir0: "desc" },
+  ];
   return [
     { key: "rank", label: "#", num: true, get: (p) => p.rank, cell: (p) => `<span class="dim">${p.rank}</span>`, dir0: "asc" },
     { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: nameCell, dir0: "asc" },
@@ -150,12 +158,13 @@ function forecastCols(meta) {
     { key: "rating", label: "Rating", hide: "t4", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
     { key: "starts", label: "Starts", hide: "t4", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
     { key: "mean_rank", label: "Proj. rank", hide: "t4", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
+    ...advCols,
   ];
 }
 
 function renderForecast(d) {
   const meta = d.meta;
-  const cols = forecastCols(meta);
+  const cols = forecastCols(meta, state.colsMode === "adv");
   const sort = state.sort;
   const col = cols.find((c) => c.key === sort.key) || cols[0];
   const rows = [...d.players].filter(
@@ -186,16 +195,21 @@ function renderForecast(d) {
   el.innerHTML = `
     ${moversHtml(state.div)}
     <div class="table-tools">
-      <button class="btn" id="cols-toggle">${state.colsAll ? "Fewer columns" : "All columns"}</button>
+      <div class="seg" id="cols-seg">
+        ${[["auto", "Auto"], ["all", "All columns"], ["adv", "Advanced"]].map(([k, lbl]) =>
+          `<button data-mode="${k}" class="${state.colsMode === k ? "active" : ""}">${lbl}</button>`).join("")}
+      </div>
     </div>
-    <div class="table-wrap${state.colsAll ? " cols-all" : ""}">
+    <div class="table-wrap${state.colsMode !== "auto" ? " cols-all" : ""}">
       <table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event breakdown and inline what-if · hover the sparkline for exact odds · <b>Cup</b> = Auto Bid + MVP Bid + event-winner invites.
     🥇 = won a points event this year; a DGPT Elite or Major win earns a guaranteed Cup spot via special invite (Cup = 100%), so these odds already include winning a remaining event.
     <br><b>Playoff assumption:</b> GMC and MVP fields assume every player who qualifies will attend — signups aren't open yet, so those odds will shift once they are.</p>`;
 
-  $("#cols-toggle").addEventListener("click", () => { state.colsAll = !state.colsAll; renderForecast(d); });
+  el.querySelectorAll("#cols-seg button").forEach((b) =>
+    b.addEventListener("click", () => { state.colsMode = b.dataset.mode; renderForecast(d); })
+  );
   el.querySelectorAll("th.sortable").forEach((th) =>
     th.addEventListener("click", () => {
       const key = th.dataset.key;
@@ -331,9 +345,11 @@ function detailHtml(p, d) {
   const banked = [...p.banked].sort((a, b) => b.pts - a.pts).map((b) => {
     const drop = !counted.has(b.tid);
     const win = b.place === 1 ? ' <span class="win-medal" title="Event win">🥇</span>' : "";
+    const pd = b.p_drop ?? 0;
     return `<tr class="${drop ? "dropped" : ""}">
       <td>${eventLink(b.tid, shortName(b.event))} <span class="chip">${CLS_LABEL[b.cls] || b.cls || "?"}</span>${dtag(b.tid)}${win}</td>
       <td class="num">${fmtPts(b.pts)}${placeTag(b.place)}</td>
+      <td class="num ${pd >= 0.5 ? "drop-tag" : "dim"}">${pd > 0.001 ? Math.round(pd * 100) + "%" : ""}</td>
       <td>${drop ? '<span class="drop-tag">dropped</span>' : ""}</td></tr>`;
   }).join("");
 
@@ -367,8 +383,8 @@ function detailHtml(p, d) {
   return `<div class="detail-grid">
     <div>
       <div class="band">Season so far — counts best ${meta.count_dgpt} DGPT/DGPT+, both playoffs, best ${meta.majors_counted} majors, all Jomez bonus (struck through = doesn't count)</div>
-      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th></th></tr></thead>
-        <tbody>${banked || '<tr><td colspan="3" class="dim">no results yet</td></tr>'}</tbody></table>
+      <table class="table-ledger detail-tbl"><thead><tr><th>Event</th><th class="num">Pts (place)</th><th class="num" title="chance this finish ends up not counting by season's end">Drop odds</th><th></th></tr></thead>
+        <tbody>${banked || '<tr><td colspan="4" class="dim">no results yet</td></tr>'}</tbody></table>
     </div>
     <div>
       <div class="band">What-if — check the events they'll play; projected points if they do</div>

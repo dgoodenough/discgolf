@@ -62,10 +62,11 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                         "pts": pts,
                         "major": major,
                         "place": place,
+                        "p_drop": p_drop,
                         "cls": sched_by_tid[tid]["cls"] if tid in sched_by_tid else "",
                         "event": sched_by_tid[tid]["name"] if tid in sched_by_tid else str(tid),
                     }
-                    for tid, pts, major, place in res.banked[i]
+                    for tid, pts, major, place, p_drop in res.banked[i]
                 ],
                 # 5 decimals so a true lock (exactly 1.0 / 0 failures) stays
                 # distinct from 0.99999 — the app shows "100%" only for the former
@@ -79,6 +80,9 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 "p_first": round(float(res.p_first[i]), 5),
                 "mean_pts": round(float(res.mean_points[i]), 1),
                 "mean_rank": round(float(res.mean_rank[i]), 1),
+                # projected remaining starts + expected banked points that get dropped
+                "exp_starts": round(float(res.att_probs[:, i].sum()), 1),
+                "proj_dropped": round(sum(pts * pd for _, pts, _, _, pd in res.banked[i]), 1),
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
                 # realized attendance per remaining event (playoffs reflect gating)
                 "att": [round(float(res.att_probs[e, i]), 3) for e in range(len(res.events_meta))],

@@ -116,12 +116,16 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     banked_jomez_sum = np.zeros(n)    # Jomez bonus — all count
     banked_playoff_sum = np.zeros(n)  # both playoffs count (0 until they happen)
     player_events = {r["pdga_number"]: {tid for tid, *_ in r["events"]} for r in table}
+    # which banked event fills each pool slot (for per-event drop odds)
+    banked_dgpt_tids: list[list[int]] = [[] for _ in range(n)]
+    banked_major_tids: list[list[int]] = [[] for _ in range(n)]
     for i, r in enumerate(table):
         m = 0
         for tid, pts, _, _ in r["events"]:
             pool = points.event_pool(tid, division)
             if pool == "major":
                 banked_majors[i, m] = pts
+                banked_major_tids[i].append(tid)
                 m += 1
             elif pool == "jomez":
                 banked_jomez_sum[i] += pts
@@ -129,6 +133,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 banked_playoff_sum[i] += pts
             else:  # dgpt / dgpt+ / doubles
                 banked_dgpt[i].append(pts)
+                banked_dgpt_tids[i].append(tid)
     max_banked = max((len(b) for b in banked_dgpt), default=1)
     banked_dgpt_arr = np.zeros((n, max_banked))
     for i, b in enumerate(banked_dgpt):
@@ -243,6 +248,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     p_mvp_field_hits = np.zeros(n)  # actually in the MVP field (incl. GMC-perf path)
     p_mvp_qual_hits = np.zeros(n)  # earns championship via MVP performance
     p_champ_hits = np.zeros(n)     # in the championship field (auto bid or MVP perf)
+    drop_dgpt_hits = np.zeros((n, max_banked))               # banked DGPT slot fell outside top-10
+    drop_major_hits = np.zeros((n, banked_majors.shape[1]))  # banked major slot fell outside top-2
     events_meta = [
         {
             "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
@@ -363,11 +370,24 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         majors_all = np.concatenate(
             [np.broadcast_to(banked_majors, (c, n, banked_majors.shape[1])), sim_major], axis=2
         )
-        best_major = (-np.sort(-majors_all, axis=2)[:, :, : config.COUNT_MAJOR]).sum(axis=2)
+        sorted_major = -np.sort(-majors_all, axis=2)
+        best_major = sorted_major[:, :, : config.COUNT_MAJOR].sum(axis=2)
         dgpt_all = np.concatenate(
             [np.broadcast_to(banked_dgpt_arr, (c, n, max_banked))] + [x[:, :, None] for x in dgpt_cols], axis=2
         )
-        best_dgpt = (-np.sort(-dgpt_all, axis=2)[:, :, : config.COUNT_DGPT]).sum(axis=2)
+        sorted_dgpt = -np.sort(-dgpt_all, axis=2)
+        best_dgpt = sorted_dgpt[:, :, : config.COUNT_DGPT].sum(axis=2)
+
+        # per-banked-event drop odds: dropped when strictly below the pool's
+        # k-th largest value (an event holding the k-th slot still counts)
+        if dgpt_all.shape[2] > config.COUNT_DGPT:
+            thr_d = sorted_dgpt[:, :, config.COUNT_DGPT - 1]
+            for j in range(max_banked):
+                drop_dgpt_hits[:, j] += (banked_dgpt_arr[None, :, j] < thr_d).sum(axis=0)
+        if majors_all.shape[2] > config.COUNT_MAJOR:
+            thr_m = sorted_major[:, :, config.COUNT_MAJOR - 1]
+            for j in range(banked_majors.shape[1]):
+                drop_major_hits[:, j] += (banked_majors[None, :, j] < thr_m).sum(axis=0)
         jomez_total = banked_jomez_sum[None, :] + sum((x for x in jomez_cols), np.zeros((c, n)))
         base_total = best_dgpt + best_major + jomez_total + banked_playoff_sum[None, :]
 
@@ -437,6 +457,14 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     p_gmc_field = p_gmc_field_hits / n_sims
     p_mvp_field = p_mvp_field_hits / n_sims
     p_mvp_qual = p_mvp_qual_hits / n_sims
+
+    # per-banked-event P(dropped by season end); playoff/jomez never drop
+    p_drop: list[dict[int, float]] = [{} for _ in range(n)]
+    for i in range(n):
+        for j, tid in enumerate(banked_dgpt_tids[i]):
+            p_drop[i][tid] = round(float(drop_dgpt_hits[i, j] / n_sims), 4)
+        for j, tid in enumerate(banked_major_tids[i]):
+            p_drop[i][tid] = round(float(drop_major_hits[i, j] / n_sims), 4)
     p_champ = p_champ_hits / n_sims
     att_probs = att_count / n_sims
 
@@ -499,8 +527,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         att_probs=att_probs,
         events_meta=events_meta,
         banked=[
-            [(tid, pts, tid in major_tids, place) for tid, pts, place, _ in r["events"]]
-            for r in table
+            [(tid, pts, tid in major_tids, place, p_drop[i].get(tid, 0.0)) for tid, pts, place, _ in r["events"]]
+            for i, r in enumerate(table)
         ],
         live_stats=live_stats,
         dbl_info=dbl_info,
