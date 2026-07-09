@@ -3,7 +3,13 @@
    a single player against frozen per-sim cutlines ("cutline replay"). */
 "use strict";
 
-const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" }, colsMode: "auto" };
+const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" }, colsMode: "auto", permalink: null };
+
+// player permalinks: #mpo-75412 opens that division with the player expanded
+{
+  const m = location.hash.match(/^#(mpo|fpo)-(\d+)$/);
+  if (m) { state.div = m[1]; state.permalink = +m[2]; }
+}
 
 const $ = (sel) => document.querySelector(sel);
 const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
@@ -262,8 +268,13 @@ function ordinal(n) {
 
 function toggleDetail(tr, d) {
   const next = tr.nextElementSibling;
-  if (next && next.classList.contains("detail")) { next.remove(); return; }
+  if (next && next.classList.contains("detail")) {
+    next.remove();
+    history.replaceState(null, "", location.pathname + location.search);
+    return;
+  }
   tr.parentElement.querySelectorAll("tr.detail").forEach((x) => x.remove());
+  history.replaceState(null, "", `#${state.div}-${tr.dataset.pdga}`);
   const p = d.players.find((x) => x.pdga === +tr.dataset.pdga);
   const detail = document.createElement("tr");
   detail.className = "detail";
@@ -499,14 +510,25 @@ async function render() {
     note.hidden = true;
   }
   renderForecast(d);
+  if (state.permalink) {  // deep link: expand + scroll to the player once
+    const pdga = state.permalink;
+    state.permalink = null;
+    const tr = document.querySelector(`#forecast-table tr[data-pdga="${pdga}"]`);
+    if (tr) {
+      toggleDetail(tr, d);
+      tr.scrollIntoView({ block: "center" });
+    }
+  }
 }
 
-document.querySelectorAll("#division-seg button").forEach((b) =>
+document.querySelectorAll("#division-seg button").forEach((b) => {
+  b.classList.toggle("active", b.dataset.div === state.div);  // honor a deep link's division
   b.addEventListener("click", () => {
     state.div = b.dataset.div;
+    history.replaceState(null, "", location.pathname + location.search);
     document.querySelectorAll("#division-seg button").forEach((x) => x.classList.toggle("active", x === b));
     render();
-  })
-);
+  });
+});
 
 render();

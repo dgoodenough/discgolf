@@ -84,7 +84,14 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
 
 /* expanded detail: two-column breakdown + big histogram */
 .detail-grid { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
-.detail-grid > div { flex: 1; min-width: 300px; }
+.detail-grid > div { flex: 1; min-width: 300px; max-width: 100%; overflow-x: auto; }
+/* the 7-column what-if table scrolls inside its panel on phones */
+.detail-grid > div:nth-child(2) .detail-tbl { min-width: 520px; }
+@media (max-width: 700px) {
+  /* cap the panels to the screen so their tables scroll internally instead
+     of stretching the whole forecast table */
+  .detail-grid > div { max-width: calc(100vw - 56px); }
+}
 .detail-tbl { margin-top: 4px; }
 .detail-tbl th { position: static; font-size: var(--fs-caption); }
 .detail-tbl td { font-size: var(--fs-small); }
@@ -128,7 +135,8 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .hint { color: var(--ink-2); font-size: var(--fs-small); }
 
 /* week-over-week movers panel */
-.movers { margin: 0 0 10px; border: 1px solid var(--grid); background: var(--paper); }
+.movers { margin: 0 0 10px; border: 1px solid var(--grid); background: var(--paper); overflow-x: auto; }
+.movers .table-ledger { min-width: 560px; }  /* scroll inside the panel on phones, don't cram */
 .movers summary { cursor: pointer; padding: 7px 10px; font-weight: 700; font-size: var(--fs-small); background: var(--band); color: var(--band-ink); }
 .movers .table-ledger { margin: 0; }
 .movers-up { color: var(--pos); font-weight: 600; }
