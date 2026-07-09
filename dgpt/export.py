@@ -12,7 +12,7 @@ import json
 
 import numpy as np
 
-from . import config, points, schedule, simulate
+from . import config, fields, points, schedule, simulate
 
 DOCS_DATA = config.REPO_ROOT / "docs" / "data"
 CUTLINE_SAMPLE = 25_000
@@ -46,6 +46,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
         cutline, cutline2 = res.cutline, res.cutline2
 
     hist_frac = res.rank_hist / res.n_sims
+    countries = fields.load_countries()  # pdga -> ISO-3166 alpha-2 (blank if unknown)
 
     players = []
     for i in range(n):
@@ -53,6 +54,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             {
                 "name": res.names[i],
                 "pdga": res.pdga_numbers[i],
+                "country": countries.get(res.pdga_numbers[i], ""),
                 "rating": res.ratings[i],
                 "rank": res.current_rank[i],
                 "points": res.current_points[i],

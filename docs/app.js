@@ -12,6 +12,12 @@ const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" }, col
 }
 
 const $ = (sel) => document.querySelector(sel);
+// ISO-3166 alpha-2 -> regional-indicator flag emoji (renders as boxed letters
+// on Windows, which have no flag glyphs — an acceptable country-code fallback)
+const flagEmoji = (cc) =>
+  (cc && cc.length === 2)
+    ? String.fromCodePoint(...[...cc.toUpperCase()].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65))
+    : "";
 const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
 // exactly 1.0 / 0.0 in the sim (0 or all failures) reads as a hard lock;
 // values that merely round to the extremes stay as >99.9% / <0.1%
@@ -164,8 +170,11 @@ function forecastCols(meta, adv = false) {
     { key: "exp_starts", label: "Proj. starts", title: "Projected remaining events played (sum of attendance odds, playoff gating included)", num: true, get: (p) => p.exp_starts ?? 0, cell: (p) => `<span class="dim">${(p.exp_starts ?? 0).toFixed(1)}</span>`, dir0: "desc" },
     { key: "proj_dropped", label: "Proj. dropped", title: "Expected points from already-banked finishes that end up not counting under the per-class caps", num: true, get: (p) => p.proj_dropped ?? 0, cell: (p) => `<span class="dim">${fmtPts(p.proj_dropped ?? 0)}</span>`, dir0: "desc" },
   ];
+  const flagCol = { key: "country", label: "Nat.", num: false, get: (p) => p.country || "zz",
+    cell: (p) => p.country ? `<span class="flag" title="${p.country}">${flagEmoji(p.country)}</span>` : "", dir0: "asc" };
   return [
     { key: "rank", label: "#", num: true, get: (p) => p.rank, cell: (p) => `<span class="dim">${p.rank}</span>`, dir0: "asc" },
+    ...(adv ? [flagCol] : []),
     { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: nameCell, dir0: "asc" },
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
     { key: "p_champ", label: "Cup", title: "P(in the Powerball Cup field): automatic bid, MVP-performance qualifier, or a DGPT/Major event win (special invite — 100% if already won)", num: true, get: (p) => p.p_champ, cell: (p) => `<b class="${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</b>`, dir0: "desc" },
@@ -207,7 +216,7 @@ function renderForecast(d) {
 
   const body = rows.map((p) =>
     `<tr class="expandable" data-pdga="${p.pdga}">` +
-    cols.map((c) => `<td class="${[c.num ? "num" : "", c.key === "spark" ? "sparkcell" : "", c.hide || ""].join(" ").trim()}">${c.cell(p)}</td>`).join("") +
+    cols.map((c) => `<td class="${[c.num ? "num" : "", c.key === "spark" ? "sparkcell" : "", c.key === "country" ? "flagcell" : "", c.hide || ""].join(" ").trim()}">${c.cell(p)}</td>`).join("") +
     "</tr>"
   ).join("");
 
