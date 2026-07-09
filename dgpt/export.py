@@ -111,7 +111,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             "majors_counted": config.MAJORS_COUNTED,
             "count_dgpt": config.COUNT_DGPT,
             "count_playoff": config.COUNT_PLAYOFF,
-            "rating_pts_per_stroke": simulate.RATING_PTS_PER_STROKE,
+            "rating_pts_per_stroke": simulate.RATING_PTS_PER_STROKE[division],
             "round_sd": simulate.ROUND_SD,
             "gmc_tid": config.TID_GMC,
             "mvp_tid": config.TID_MVP,

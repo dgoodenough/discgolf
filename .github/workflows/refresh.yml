@@ -63,6 +63,12 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # After the commit: a failure here marks the run failed (owner gets
+      # notified) without blocking the data publish. Runs weekly rather than
+      # in the live cron because StatMando can lag right after events.
+      - name: Validate standings against StatMando
+        run: python -m dgpt.validate
+
       - name: Trigger Pages build (retry on transient deploy failure)
         if: steps.commit.outputs.changed == 'true'
         env:

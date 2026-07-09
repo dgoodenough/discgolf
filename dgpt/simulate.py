@@ -15,8 +15,15 @@ import numpy as np
 
 from . import config, fields, live_api, points, schedule, standings
 
-RATING_PTS_PER_STROKE = 6.0   # from DGPTModelV2
-ROUND_SD = 6.82               # strokes per round, from DGPTModelV2
+# Score-model constants, recalibrated against all completed 2026 rounds
+# (94 rounds / 6,667 player-rounds; see dgpt/calibrate.py). The 2021 values
+# were 6.0 / 6.82: the MPO rating slope was spot-on (fit 6.01) but FPO
+# rating gaps are worth fewer strokes (fit 7.34), and the old SD nearly
+# doubled the real per-round noise. 4.2 is the event-level figure (pure
+# round noise is 3.65; the extra is within-event form correlation, which
+# matters because the sim draws event totals in one shot).
+RATING_PTS_PER_STROKE = {"MPO": 6.0, "FPO": 7.3}
+ROUND_SD = 4.2
 ROUNDS = {"major": 4}         # default 3 regular rounds otherwise
 DEFAULT_SIMS = 10_000
 
@@ -77,6 +84,7 @@ def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
 def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         chunk: int = 500) -> SimResult:
     rng = np.random.default_rng(seed)
+    rpps = RATING_PTS_PER_STROKE[division]
     sched = schedule.load()
     table = standings.compute(division)
 
@@ -275,7 +283,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 T = len(team_ratings)
                 n_rounds = ROUNDS.get(row["cls"], 3)
                 tavg = team_ratings.mean() if T else 1000.0
-                mu_t = -(team_ratings - tavg) / RATING_PTS_PER_STROKE * n_rounds
+                mu_t = -(team_ratings - tavg) / rpps * n_rounds
                 tscores = mu_t[None, :] + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, T))
                 torder = np.argsort(tscores, axis=1)
                 tplace = np.empty_like(torder)
@@ -300,7 +308,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 # in progress: lock in the score so far, project the holes left
                 cur, rem, in_field, favg = live_data[ev_i]
                 plays = np.broadcast_to(in_field, (c, n))
-                mu = cur[None, :] - (ratings[None, :] - favg) / RATING_PTS_PER_STROKE * rem[None, :]
+                mu = cur[None, :] - (ratings[None, :] - favg) / rpps * rem[None, :]
                 sd = ROUND_SD * np.sqrt(np.maximum(rem, 1e-9))
                 scores = mu + rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
                 scores = np.where(in_field[None, :], scores, np.inf)
@@ -309,7 +317,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 fsum = (plays * ratings).sum(axis=1)
                 fcnt = plays.sum(axis=1)
                 avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
-                mu = -(ratings[None, :] - avg[:, None]) / RATING_PTS_PER_STROKE * n_rounds
+                mu = -(ratings[None, :] - avg[:, None]) / rpps * n_rounds
                 scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
                 scores[~plays] = np.inf
             if done == 0:
