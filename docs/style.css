@@ -7,8 +7,13 @@ html, body { margin: 0; }
 
 /* header */
 #top { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; padding: 16px 0 10px; }
-#top h1 { margin: 0; font-size: 1.3rem; letter-spacing: .2px; }
-#top .sub { margin: 3px 0 0; color: var(--ink-2); font-size: var(--fs-small); }
+#top .kicker { margin: 0 0 2px; color: var(--ink-3); font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; }
+#top h1 { margin: 0; font-size: 1.75rem; line-height: 1.1; letter-spacing: -.3px; }
+#top .stakes { margin: 6px 0 0; font-size: var(--fs-body); color: var(--ink); font-variant-numeric: tabular-nums; }
+#top .stakes b { font-weight: 700; }
+#top .stakes .lk { color: var(--pos); }   /* locked in = have (green) */
+#top .stakes .al { color: var(--pend); }  /* still contested = pending (yellow) */
+#top .sub { margin: 5px 0 0; color: var(--ink-2); font-size: var(--fs-small); }
 #live-note { margin: 5px 0 0; font-size: var(--fs-small); font-weight: 600; color: var(--neg); }
 
 /* pulsing "live" dot + badge */

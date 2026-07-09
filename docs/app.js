@@ -498,6 +498,17 @@ async function render() {
   $("#meta-line").textContent =
     `updated ${d.meta.generated.slice(0, 10)} · ${d.meta.n_sims.toLocaleString()} sims · ` +
     `top ${d.meta.cut} qualify directly, field of ${d.meta.field_size}`;
+  // live "state of the race" hook: how much is decided vs still being fought over
+  {
+    const spots = d.meta.field_size;
+    const locked = d.players.filter((p) => p.p_champ >= 0.99).length;
+    const alive = d.players.filter((p) => p.p_champ > 0.02 && p.p_champ < 0.99).length;
+    const DIV = state.div.toUpperCase();
+    $("#stakes-line").innerHTML = alive === 0
+      ? `The ${DIV} field is set — all ${spots} spots decided.`
+      : `<b class="lk">${locked}</b> of ${spots} ${DIV} spots effectively locked · ` +
+        `<b class="al">${alive}</b> still in contention for the rest`;
+  }
   $("#pdga-attribution").innerHTML =
     `Event and player data © ${d.meta.season} <a href="https://www.pdga.com">PDGA</a> · ` +
     `PDGA Authorized Developer`;
