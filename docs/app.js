@@ -401,7 +401,16 @@ function detailHtml(p, d) {
         : ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ ${p.dbl ? "partner TBD" : "teams TBD"}</span>`;
     }
     if (e.cls === "playoff") note += ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ assumes qualifiers attend</span>`;
-    if (isLive) note += ` <span class="live-badge"><span class="live-dot"></span>live · now ${s.live.cur >= 0 ? "+" : ""}${s.live.cur}, proj ${ordinal(Math.round(s.live.mean_place))}</span>`;
+    if (isLive) {
+      // rem carries rounds left, so (rounds - rem) * 18 = holes played. A
+      // player still on their pre-tournament even par with a full slate left
+      // hasn't teed off yet — show that instead of a misleading "now +0".
+      const thru = Math.round((e.rounds - s.live.rem) * 18);
+      const pos = thru <= 0
+        ? "yet to tee off"
+        : `now ${s.live.cur >= 0 ? "+" : ""}${s.live.cur} thru ${thru}`;
+      note += ` <span class="live-badge"><span class="live-dot"></span>live · ${pos}, proj ${ordinal(Math.round(s.live.mean_place))}</span>`;
+    }
     // live events are locked in (player is in the field) → checkbox disabled
     return `<tr class="${att <= 0.001 && !isLive ? "not-att" : ""}">
       <td><input type="checkbox" class="wf-box" data-tid="${e.tid}" ${dflt} ${isLive ? "disabled" : ""}></td>
