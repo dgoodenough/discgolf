@@ -181,8 +181,16 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     """Current standing of an in-progress event, for the remaining-holes model.
 
     Returns {pdga_number: {name, rating, cur (to-par), rem (rounds left)}} for
-    players with posted scores (excluding withdrawals), or None if nothing has
-    been posted yet (fall back to the from-scratch simulation).
+    every player in the field (excluding withdrawals), or None if the round
+    isn't loaded yet (fall back to the from-scratch simulation).
+
+    Registered players who have not teed off in round 1 yet carry a null ToPar
+    in PDGA Live but are still in the field — they must be seeded from scratch
+    (even par, all rounds remaining). Dropping them would collapse an early-
+    morning field to the handful already on the course and hand those few the
+    whole win-probability mass. The DGPT has no cut in regular rounds, so a
+    null total in a later round means not-in-round (withdrawn) rather than
+    not-started, and we leave those out.
     """
     event = fetch_event(tournament_id)
     total_rounds = event.get("FinalRound")
@@ -195,7 +203,17 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     out: dict[int, dict] = {}
     for s in scores:
         pdga, topar = s.get("PDGANum"), s.get("ToPar")
-        if not pdga or topar is None or str(s.get("GrandTotal")) == "999":
+        if not pdga or str(s.get("GrandTotal")) == "999":
+            continue
+        if topar is None:
+            if latest != 1:
+                continue  # not started this round with prior rounds banked / withdrawn
+            out[pdga] = {  # registered for round 1 but not yet teed off
+                "name": s.get("Name"),
+                "rating": s.get("Rating"),
+                "cur": 0.0,
+                "rem": float(total_rounds),
+            }
             continue
         holes_played = (latest - 1) * 18 + (s.get("Played") or 0)
         out[pdga] = {
