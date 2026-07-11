@@ -48,6 +48,27 @@ and No.1-seed numbers.
 - Firmer: regress `log(residual^2)` on `rating` (Breusch–Pagan-style) for a slope + significance, pooled within-event so course/conditions difference out (the regression is already de-meaned within each event-round).
 - Cross-check with the existing PIT diagnostic: if the pooled SD is ~right on average but the tails are miscalibrated *asymmetrically by tier* — elite totals landing too near their predicted median (peaked PIT for high-rating), field totals too fat in the ends — that's the signature of a rating-varying SD the single constant can't capture. Worth adding a per-tier PIT table to `calibrate.py` to see this directly.
 
+**First look (2026-07, mid-season cache — 94 rounds, 6,667 player-rounds).**
+Ran `calibrate --by-rating`. The hunch holds and is material — round-SD falls
+~0.8 strokes (~20% relative) from the bottom to the top rating bucket in both
+divisions, well past the materiality gate below.
+
+```
+MPO (pooled round-SD 3.62)         FPO (pooled round-SD 3.67)
+ 928-996    sd 4.10                 810-913    sd 4.03
+ 996-1009   sd 3.85                 913-931    sd 4.07
+1009-1020   sd 3.58                 931-948    sd 3.53
+1020-1028   sd 3.37                 948-959    sd 3.66
+1028-1034   sd 3.46                 959-966    sd 3.30
+1034-1062   sd 3.29                 966-990    sd 3.32
+```
+
+MPO declines smoothly / ~monotonically; FPO looks more like a threshold (flat
+~4.05 below ~930, then a step down) — though FPO buckets hold ~325 rounds vs
+MPO's ~785, so FPO estimates are ~1.6x noisier. Offseason: fit both a linear
+slope (likely MPO) and a two-tier step (likely FPO), cross-validate across
+events, and re-run the PIT check split by tier.
+
 **Confounds to rule out.**
 - *Withdrawals truncate blow-ups.* DNF/999 rounds are dropped from the fit
   (`collect_rounds` filters `GrandTotal==999`), so the worst rounds are missing —
