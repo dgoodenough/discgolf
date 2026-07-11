@@ -1,0 +1,34 @@
+name: Variance analysis (one-shot)
+
+# Ad-hoc probe: run `calibrate --by-rating` where the cached rounds live (the
+# refresh workflows accumulate them under data/cache on main). Read-only — no
+# PDGA API calls, no secrets, no commits. Triggered by pushing this file; also
+# dispatchable once it's on the default branch.
+on:
+  push:
+    branches: [claude/standings-attendance-bug-8j9c7k]
+    paths: ['.github/workflows/analyze-variance.yml']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore PDGA round cache (from main's refresh runs)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cache
+          key: pdga-cache-2026-analysis
+          restore-keys: pdga-cache-2026-
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Round-SD by rating
+        run: python -m dgpt.calibrate --by-rating
