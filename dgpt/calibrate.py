@@ -97,11 +97,73 @@ def pit_table(values: list[float], bins: int = 10) -> list[tuple[str, float]]:
     return [(f"{i/bins:.0%}-{(i+1)/bins:.0%}", c / len(values)) for i, c in enumerate(counts)]
 
 
+def residuals_by_rating(rounds: list[dict], nbuckets: int = 6) -> list[dict]:
+    """Round-score residual SD in equal-count rating buckets, for one division.
+
+    Uses the division's own within-round slope to strip the rating-expected mean
+    (and the field mean, which absorbs course/conditions), then reports the SD of
+    what's left within each rating band. If the offseason hunch holds — better
+    players are more consistent — SD should fall as the bucket rating rises.
+    Equal-count buckets keep every SD estimate on the same footing.
+    """
+    b = fit(rounds)["slope"]
+    obs: list[tuple[float, float]] = []  # (rating, residual)
+    for r in rounds:
+        ratings = [x[0] for x in r["pairs"]]
+        scores = [x[1] for x in r["pairs"]]
+        mr, ms = sum(ratings) / len(ratings), sum(scores) / len(scores)
+        obs += [(rat, (sc - ms) - b * (rat - mr)) for rat, sc in r["pairs"]]
+    obs.sort(key=lambda t: t[0])
+    n = len(obs)
+    out = []
+    for i in range(nbuckets):
+        lo, hi = i * n // nbuckets, (i + 1) * n // nbuckets
+        chunk = obs[lo:hi]
+        if len(chunk) < 2:
+            continue
+        res = [t[1] for t in chunk]
+        m = sum(res) / len(res)
+        sd = math.sqrt(sum((x - m) ** 2 for x in res) / (len(res) - 1))
+        out.append({
+            "lo_rating": chunk[0][0], "hi_rating": chunk[-1][0],
+            "n": len(chunk), "sd": sd,
+        })
+    return out
+
+
+def print_variance_by_rating(rounds: list[dict]) -> None:
+    """Text histogram of round-score SD by rating bucket, per division."""
+    print("\nROUND-SCORE SD BY RATING BUCKET "
+          "(equal-count buckets; hunch: SD falls as rating rises)")
+    for div in ("MPO", "FPO"):
+        sub = [r for r in rounds if r["div"] == div]
+        if not sub:
+            continue
+        buckets = residuals_by_rating(sub)
+        overall = fit(sub)["round_sd"]
+        print(f"\n  {div}  (pooled SD {overall:.2f}, {sum(len(r['pairs']) for r in sub)} player-rounds)")
+        hi = max((bk["sd"] for bk in buckets), default=1.0)
+        for bk in buckets:
+            bar = "█" * round(bk["sd"] / hi * 40)
+            print(f"    {bk['lo_rating']:>4.0f}-{bk['hi_rating']:<4.0f}  "
+                  f"n={bk['n']:>4}  sd={bk['sd']:5.2f}  {bar}")
+
+
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(description="Recalibrate / probe the score model.")
+    ap.add_argument("--by-rating", action="store_true",
+                    help="only print the round-SD-by-rating-bucket histogram (MPO + FPO)")
+    args = ap.parse_args()
+
     rounds = collect_rounds()
     divs = sorted({r["div"] for r in rounds})
     print(f"completed 2026 rounds in cache: {len(rounds)} "
           f"({sum(len(r['pairs']) for r in rounds)} player-rounds)\n")
+
+    if args.by_rating:
+        print_variance_by_rating(rounds)
+        return
 
     print(f"current constants: RATING_PTS_PER_STROKE={simulate.RATING_PTS_PER_STROKE}  ROUND_SD={simulate.ROUND_SD}")
     overall = fit(rounds)

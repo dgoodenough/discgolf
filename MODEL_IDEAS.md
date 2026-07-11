@@ -40,7 +40,11 @@ win odds overstated. Net effect concentrates most on marquee players' event-win
 and No.1-seed numbers.
 
 **How to test (cached rounds already have what we need).**
-- `calibrate.fit()` already produces per-player-round residuals `(score - field_mean) - b*(rating - field_mean)`. Bin those residuals by rating (e.g. 970/990/1010/1030+ buckets) and compute residual SD per bucket. A clean downward trend across buckets is the first-order confirmation.
+- First look is already wired up: `python -m dgpt.calibrate --by-rating` prints a
+  round-SD-by-rating histogram (equal-count buckets) for MPO and FPO straight
+  from the cached rounds. A clean downward trend across buckets is the
+  first-order confirmation. (It reuses `calibrate.fit()`'s per-player-round
+  residuals `(score - field_mean) - b*(rating - field_mean)`.)
 - Firmer: regress `log(residual^2)` on `rating` (Breusch–Pagan-style) for a slope + significance, pooled within-event so course/conditions difference out (the regression is already de-meaned within each event-round).
 - Cross-check with the existing PIT diagnostic: if the pooled SD is ~right on average but the tails are miscalibrated *asymmetrically by tier* — elite totals landing too near their predicted median (peaked PIT for high-rating), field totals too fat in the ends — that's the signature of a rating-varying SD the single constant can't capture. Worth adding a per-tier PIT table to `calibrate.py` to see this directly.
 
