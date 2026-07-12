@@ -1,8 +1,14 @@
 """Week-over-week movers from the prediction snapshots.
 
-Compares the latest snapshot against a baseline (the most recent snapshot at
-least 5 days older, else the earliest) and emits the biggest Cup-odds movers
-per division to docs/data/movers.json for the app's "Biggest movers" panel.
+Emits the biggest Cup-odds movers per division to docs/data/movers.json for the
+app's "Biggest movers" panel.
+
+Cadence is weekly, anchored on Mondays: both endpoints are pinned to the most
+recent snapshot on-or-before a Monday — the current week's Monday for "now" and
+the prior week's for the baseline. That means the panel reflects "change from
+last Monday to this Monday" (i.e. the weekend's results, which finalize Sunday),
+stays fixed Monday through Sunday, and only rolls over on Mondays — regardless
+of how often the refresh runs during live play.
 """
 from __future__ import annotations
 
@@ -16,17 +22,18 @@ OUT = config.REPO_ROOT / "docs" / "data" / "movers.json"
 APP_DATA = config.REPO_ROOT / "docs" / "data"
 MIN_DELTA = 0.02   # ignore noise-level changes
 TOP_N = 12
-BASELINE_MIN_AGE_DAYS = 5
 
 
-def _context(division: str, baseline: str) -> tuple[dict, dict]:
+def _context(division: str, baseline: str, latest: str) -> tuple[dict, dict]:
     """Per-player 'why' context from the app bundle (written just before us):
-    the most recent banked result since the baseline, and the schedule."""
+    the most recent banked result within the (baseline, latest] window, and the
+    schedule. Bounding at `latest` keeps the explanation frozen through the week
+    even as new events finalize before the next Monday roll-over."""
     bundle = json.loads((APP_DATA / f"{division.lower()}.json").read_text(encoding="utf-8"))
     end_of = {s["tid"]: s["end"] for s in bundle.get("schedule", [])}
     last_result: dict[int, dict] = {}
     for p in bundle["players"]:
-        recent = [b for b in p["banked"] if end_of.get(b["tid"], "") > baseline]
+        recent = [b for b in p["banked"] if baseline < end_of.get(b["tid"], "") <= latest]
         if recent:
             b = max(recent, key=lambda b: end_of.get(b["tid"], ""))
             last_result[p["pdga"]] = {"tid": b["tid"], "pts": b["pts"], "place": b["place"]}
@@ -42,16 +49,32 @@ def _division_movers(division: str) -> dict | None:
     dates = sorted({r["snapshot_date"] for r in rows})
     if len(dates) < 2:
         return None
-    latest = dates[-1]
-    latest_d = dt.date.fromisoformat(latest)
-    old_enough = [d for d in dates[:-1] if (latest_d - dt.date.fromisoformat(d)).days >= BASELINE_MIN_AGE_DAYS]
-    baseline = old_enough[-1] if old_enough else dates[0]
+
+    # Anchor both endpoints to Mondays so the panel only rolls over weekly.
+    today = dt.date.today()
+    this_monday = (today - dt.timedelta(days=today.weekday())).isoformat()
+    prev_monday = (today - dt.timedelta(days=today.weekday() + 7)).isoformat()
+
+    def newest_on_or_before(cutoff: str) -> str | None:
+        older = [d for d in dates if d <= cutoff]
+        return older[-1] if older else None
+
+    latest = newest_on_or_before(this_monday)
+    baseline = newest_on_or_before(prev_monday)
+    if latest is None or baseline is None or baseline >= latest:
+        # Early season: not two Mondays of snapshots yet, so there's no clean
+        # week-over-week window. Degrade to the widest available span so the
+        # panel still shows something; it snaps to Monday anchoring (and its
+        # stable-through-the-week behavior) as soon as the history is deep enough.
+        latest, baseline = dates[-1], dates[0]
+        if baseline >= latest:
+            return None
 
     def by_pdga(date: str) -> dict[int, dict]:
         return {int(r["pdga_number"]): r for r in rows if r["snapshot_date"] == date}
 
     base, cur = by_pdga(baseline), by_pdga(latest)
-    last_result, _ = _context(division, baseline)
+    last_result, _ = _context(division, baseline, latest)
     movers = []
     for pdga, c in cur.items():
         b = base.get(pdga)
