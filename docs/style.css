@@ -105,8 +105,8 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
 .detail-tbl th { position: static; font-size: var(--fs-caption); }
 .detail-tbl td { font-size: var(--fs-small); }
 tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--ink-3); }
-.drop-tag { color: var(--neg); font-size: var(--fs-caption); text-decoration: none; display: inline-block; }
-.drop-hi { color: var(--neg); font-weight: 600; }  /* high drop odds, plain td text */
+.drop-tag { color: var(--ink-3); font-size: var(--fs-caption); text-decoration: none; display: inline-block; }
+.drop-hi { color: var(--ink-2); font-weight: 600; }  /* high drop odds: still bold, but muted */
 .keep-tag { color: var(--pos); font-size: var(--fs-caption); }
 .detail-grid .band { font-size: var(--fs-caption); margin-bottom: 2px; }
 /* placement shown after a single event's points — smaller, quieter */
