@@ -16,6 +16,7 @@ from __future__ import annotations
 import html
 import re
 import sys
+import time
 import urllib.request
 
 from . import standings
@@ -23,6 +24,9 @@ from . import standings
 STATMANDO = "https://statmando.com/rankings/dgpt/{div}"
 UA = {"User-Agent": "Mozilla/5.0 (dgpt-forecast validation; github.com/dgoodenough/discgolf)"}
 TOLERANCE = 0.02  # points; StatMando displays 2 decimals
+MIN_ROWS = 50      # fewer parsed rows than this = page empty / mid-update / reshaped
+FETCH_ATTEMPTS = 4
+FETCH_RETRY_WAIT = 120  # seconds; rankings pages are briefly empty while they ingest
 
 
 def statmando_totals(division: str) -> dict[str, float]:
@@ -41,9 +45,22 @@ def statmando_totals(division: str) -> dict[str, float]:
 
 def check(division: str) -> tuple[list[str], list[str]]:
     """Returns (errors, warnings) for one division."""
-    official = statmando_totals(division)
-    if len(official) < 50:  # page shape changed or partial load
-        return [f"{division}: StatMando parse produced only {len(official)} rows — page layout may have changed"], []
+    # Retry a thin parse: the Monday run lands while StatMando ingests the
+    # weekend's results, and a division's page can be briefly empty (observed
+    # 2026-07-13: MPO parsed fine while FPO returned 0 rows minutes after the
+    # weekend finished). Only a *persistently* thin page is an error — that's
+    # the signal the layout actually changed.
+    for attempt in range(FETCH_ATTEMPTS):
+        official = statmando_totals(division)
+        if len(official) >= MIN_ROWS:
+            break
+        if attempt < FETCH_ATTEMPTS - 1:
+            print(f"  {division}: parse returned {len(official)} rows — "
+                  f"retrying in {FETCH_RETRY_WAIT}s (their site may be mid-update)")
+            time.sleep(FETCH_RETRY_WAIT)
+    if len(official) < MIN_ROWS:  # page shape changed or persistently empty
+        return [f"{division}: StatMando parse produced only {len(official)} rows "
+                f"after {FETCH_ATTEMPTS} attempts — page layout may have changed"], []
     ours = {r["name"]: r["points"] for r in standings.compute(division)}
 
     errors, warnings = [], []
@@ -65,7 +82,7 @@ def main() -> None:
     all_errors: list[str] = []
     for division in ("MPO", "FPO"):
         errors, warnings = check(division)
-        matched_msg = "OK" if not errors else f"{len(errors)} POINT DIFFS"
+        matched_msg = "OK" if not errors else f"{len(errors)} ISSUE(S)"
         print(f"{division}: {matched_msg}")
         for w in warnings[:10]:
             print(f"  warn: {w}")

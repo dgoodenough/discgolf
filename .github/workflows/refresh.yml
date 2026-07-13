@@ -63,12 +63,12 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # After the commit: a failure here marks the run failed (owner gets
-      # notified) without blocking the data publish. Runs weekly rather than
-      # in the live cron because StatMando can lag right after events.
-      - name: Validate standings against StatMando
-        run: python -m dgpt.validate
-
+      # Deploy BEFORE validating: a validate failure must mark the run red
+      # (owner gets notified) without blocking the publish. With the deploy
+      # after it, a validate failure skipped this step and left the site
+      # serving stale data (observed 2026-07-13: StatMando's FPO page was
+      # mid-update, validate exited 1, and with no live event to push again
+      # the site would have sat stale until Thursday's refresh).
       - name: Trigger Pages build (retry on transient deploy failure)
         if: steps.commit.outputs.changed == 'true'
         env:
@@ -88,3 +88,9 @@ jobs:
             done
           done
           echo "::warning::Pages did not reach 'built' after 3 attempts (data commit still landed)"
+
+      # Last step: a failure here fails the run (owner gets notified) after
+      # the data commit and deploy have already gone out. Runs weekly rather
+      # than in the live cron because StatMando can lag right after events.
+      - name: Validate standings against StatMando
+        run: python -m dgpt.validate
