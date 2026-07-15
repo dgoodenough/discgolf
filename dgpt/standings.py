@@ -4,7 +4,7 @@ from __future__ import annotations
 import csv
 from collections import defaultdict
 
-from . import config, live_api, points, schedule
+from . import config, live_api, points, ratings, schedule
 
 
 def event_points(row: dict, division: str) -> dict[int, dict]:
@@ -45,6 +45,11 @@ def compute(division: str) -> list[dict]:
             if rec["rating"]:
                 p["rating"] = rec["rating"]  # most recent event rating
 
+    # Event results carry the rating a player held WHEN THEY PLAYED, which
+    # goes stale the moment PDGA publishes the monthly ratings update. Prefer
+    # the current official rating wherever we have it ({} without API creds).
+    official = ratings.current(division)
+
     table = []
     for pdga, p in per_player.items():
         total = points.season_total([(tid, pts) for tid, pts, _, _ in p["events"]], division)
@@ -52,7 +57,7 @@ def compute(division: str) -> list[dict]:
             {
                 "pdga_number": pdga,
                 "name": p["name"],
-                "rating": p["rating"],
+                "rating": official.get(pdga) or p["rating"],
                 "starts": len(p["events"]),
                 "points": total,
                 "events": p["events"],
