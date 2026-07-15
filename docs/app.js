@@ -341,15 +341,54 @@ function eventProj(d, p, e) {
   return projectPoints(d, p, e, 2500, rating);
 }
 
+/* Everyone (other than `selfPdga`) expected at event e: {r: rating, a: P(plays)}.
+   The bundle's per-player att arrays share d.events' ordering. */
+function eventField(d, e, selfPdga) {
+  const ei = d.events.findIndex((x) => x.tid === e.tid);
+  const out = [];
+  if (ei < 0) return out;
+  for (const q of d.players) {
+    if (q.pdga !== selfPdga && q.rating && q.att[ei] > 0.001) out.push({ r: q.rating, a: q.att[ei] });
+  }
+  return out;
+}
+
+/* One draw of finishing place for `rating` against the event's real field:
+   sample who shows up, give everyone a rating-based score, count who beat you.
+   This replaces a one-Gaussian summary of the field (field_avg_rating /
+   opp_score_sd), which broke on bimodal open fields — at the USWDGC the club-
+   level entrants doubled opp_score_sd, and the model concluded the 990-rated
+   favorites were beatable by anyone, crushing their win odds ~5x. Only the
+   score DIFFERENCES matter for ranking, so the field-average offset cancels. */
+function drawPlace(d, e, rating, field) {
+  const k = d.meta.rating_pts_per_stroke;
+  const sd = d.meta.round_sd * Math.sqrt(e.rounds);
+  const mine = (-rating / k) * e.rounds + sd * randn();
+  let beat = 0;
+  for (const q of field) {
+    if (q.a < 1 && Math.random() >= q.a) continue;
+    if ((-q.r / k) * e.rounds + sd * randn() < mine) beat++;
+  }
+  return 1 + beat;
+}
+
 function projectPoints(d, p, e, draws = 2500, rating = p.rating) {
+  // doubles stays on the Gaussian shortcut: its curve is TEAM-place indexed
+  // and the team field is unimodal tour pairs, where the summary holds up
+  const field = e.tid === d.meta.dbl_tid ? null : eventField(d, e, p.pdga);
   const out = new Float64Array(draws);
   const places = new Float64Array(draws);
   let wins = 0;
   for (let i = 0; i < draws; i++) {
-    const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
-    const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
-    const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
-    const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
+    let place;
+    if (field) {
+      place = drawPlace(d, e, rating, field);
+    } else {
+      const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
+      const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
+      const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
+      place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
+    }
     if (place === 1) wins++;
     places[i] = place;
     out[i] = place <= e.curve.length ? e.curve[place - 1] : 0;
@@ -486,6 +525,30 @@ function replay(d, p, attendSet) {
   for (const b of p.banked) banked[POOL_BY_CLS[b.cls] || "dgpt"].push(b.pts);
   const events = d.events.filter((e) => attendSet.has(e.tid));
   const n = d.cutline.length;
+  // Pre-sample each event's points distribution against its REAL field (same
+  // model as projectPoints — the one-Gaussian shortcut broke on bimodal open
+  // fields like the USWDGC), then draw by index inside the hot loop so the
+  // replay stays under its time budget. Doubles keeps the Gaussian shortcut
+  // (team-indexed curve, unimodal team field).
+  const SAMPLES = 1500;
+  const ptsSamples = events.map((e) => {
+    const rating = e.tid === d.meta.dbl_tid && p.dbl ? p.dbl.team_rating : p.rating;
+    const field = e.tid === d.meta.dbl_tid ? null : eventField(d, e, p.pdga);
+    const arr = new Float64Array(SAMPLES);
+    for (let i = 0; i < SAMPLES; i++) {
+      let place;
+      if (field) {
+        place = drawPlace(d, e, rating, field);
+      } else {
+        const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
+        const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
+        const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
+        place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
+      }
+      arr[i] = place <= e.curve.length ? e.curve[place - 1] : 0;
+    }
+    return arr;
+  });
   // blended cutline ≈ "points of the last spot among OTHER players":
   // if this player was probably inside the cut in the base sim, the true
   // exclusive cutline is closer to the (cut+1)-th total.
@@ -493,13 +556,9 @@ function replay(d, p, attendSet) {
   let qualify = 0, sumPts = 0;
   for (let i = 0; i < n; i++) {
     const pools = { dgpt: banked.dgpt.slice(), playoff: banked.playoff.slice(), major: banked.major.slice(), jomez: banked.jomez.slice() };
-    for (const e of events) {
-      const mu = (-(p.rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
-      const s = mu + d.meta.round_sd * Math.sqrt(e.rounds) * randn();
-      const lam = Math.min(e.field_size, e.field_size * PHI(s / e.opp_score_sd));
-      const place = 1 + Math.min(poisson(lam), Math.round(e.field_size));
-      const pts = place <= e.curve.length ? e.curve[place - 1] : 0;
-      pools[POOL_BY_CLS[e.cls] || "dgpt"].push(pts);
+    for (let ev = 0; ev < events.length; ev++) {
+      const pts = ptsSamples[ev][(Math.random() * SAMPLES) | 0];
+      pools[POOL_BY_CLS[events[ev].cls] || "dgpt"].push(pts);
     }
     const total = seasonTotal(pools, d.meta);
     const cl = w * d.cutline2[i] + (1 - w) * d.cutline[i];
