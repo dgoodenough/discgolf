@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import config, fields, live_api, points, schedule, standings
+from . import config, fields, live_api, points, ratings, schedule, standings
 
 # Score-model constants, recalibrated against all completed 2026 rounds
 # (94 rounds / 6,667 player-rounds; see dgpt/calibrate.py). The 2021 values
@@ -100,15 +100,17 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         r for r in sched
         if not r["completed"] and r[division.lower()] and r["cls"] not in ("championship", "playoff")
     ]
+    official = ratings.current(division)  # standings rows are already overlaid
     for ev in upcoming_rows:
         roster = live_api.registered_roster(ev["tournament_id"], division)
         for pdga, info in roster.items():
-            if pdga in have or not info.get("rating"):
+            if pdga in have or not (official.get(pdga) or info.get("rating")):
                 continue
             have.add(pdga)
             max_rank += 1
             table.append({
-                "pdga_number": pdga, "name": info["name"], "rating": info["rating"],
+                "pdga_number": pdga, "name": info["name"],
+                "rating": official.get(pdga) or info["rating"],
                 "rank": max_rank, "points": 0.0, "events": [],
             })
 

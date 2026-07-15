@@ -16,17 +16,19 @@ import hashlib
 import os
 import sys
 
-from . import config, live_api, schedule
+from . import config, live_api, ratings, schedule
 
 STATE_SIG = config.DATA_DIR / "live_signature.txt"
 
 
 def signature() -> str:
     """Fingerprint of what would change the forecast: each event's
-    completed/live status plus every live player's current score."""
+    completed/live status, every live player's current score, and the
+    current official ratings snapshot (PDGA updates it ~monthly; the
+    fetch behind it is TTL-throttled so this check stays cheap)."""
     rows = schedule.load()
     today = dt.date.today()
-    parts: list[str] = []
+    parts: list[str] = [f"ratings:{ratings.signature_component()}"]
     for r in rows:
         start = dt.date.fromisoformat(r["start_date"])
         end = dt.date.fromisoformat(r["end_date"])
