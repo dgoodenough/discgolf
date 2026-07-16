@@ -200,11 +200,47 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     latest = div.get("LatestRound")
     scores = fetch_round(tournament_id, division, latest).get("scores") or []
 
+    # Two payload shapes exist. DGPT events populate the running-total "ToPar".
+    # Some PDGA majors (observed: USWDGC 2026) leave ToPar null for everyone
+    # and only carry the per-round "RoundtoPar" — reading ToPar alone froze the
+    # forecast mid-round with all 78 players "not started". In that shape the
+    # running total is the sum of earlier rounds' RoundtoPar plus the current
+    # one, and activity must be gated on Played/HasRoundScore because a
+    # not-started row shows RoundtoPar 0, not null.
+    uses_topar = any(s.get("ToPar") is not None for s in scores)
+
+    prior: dict[int, float] | None = None  # per-player total of rounds 1..latest-1
+
+    def prior_total(pdga: int) -> float:
+        nonlocal prior
+        if prior is None:
+            prior = {}
+            for rnd in range(1, latest):
+                for s2 in fetch_round(tournament_id, division, rnd).get("scores") or []:
+                    p2, rtp2 = s2.get("PDGANum"), s2.get("RoundtoPar")
+                    if p2 and rtp2 is not None and (s2.get("HasRoundScore") or (s2.get("Played") or 0) > 0):
+                        prior[p2] = prior.get(p2, 0.0) + float(rtp2)
+        return prior.get(pdga, 0.0)
+
     out: dict[int, dict] = {}
     for s in scores:
         pdga, topar = s.get("PDGANum"), s.get("ToPar")
         if not pdga or str(s.get("GrandTotal")) == "999":
             continue
+        played = s.get("Played") or 0
+        active = bool(s.get("HasRoundScore")) or played > 0
+        if not uses_topar:
+            rtp = s.get("RoundtoPar")
+            if active and rtp is not None:
+                topar = prior_total(pdga) + float(rtp)
+            else:  # not started this round: carry the earlier rounds' total
+                out[pdga] = {
+                    "name": s.get("Name"),
+                    "rating": s.get("Rating"),
+                    "cur": prior_total(pdga) if latest > 1 else 0.0,
+                    "rem": max(total_rounds - (latest - 1), 0.0) * 1.0,
+                }
+                continue
         if topar is None:
             if latest != 1:
                 continue  # not started this round with prior rounds banked / withdrawn
@@ -215,7 +251,7 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
                 "rem": float(total_rounds),
             }
             continue
-        holes_played = (latest - 1) * 18 + (s.get("Played") or 0)
+        holes_played = (latest - 1) * 18 + played
         out[pdga] = {
             "name": s.get("Name"),
             "rating": s.get("Rating"),
