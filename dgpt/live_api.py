@@ -198,65 +198,72 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     if div is None or not total_rounds:
         return None
     latest = div.get("LatestRound")
-    scores = fetch_round(tournament_id, division, latest).get("scores") or []
+    if not latest:
+        return None
 
-    # Two payload shapes exist. DGPT events populate the running-total "ToPar".
-    # Some PDGA majors (observed: USWDGC 2026) leave ToPar null for everyone
-    # and only carry the per-round "RoundtoPar" — reading ToPar alone froze the
-    # forecast mid-round with all 78 players "not started". In that shape the
-    # running total is the sum of earlier rounds' RoundtoPar plus the current
-    # one, and activity must be gated on Played/HasRoundScore because a
-    # not-started row shows RoundtoPar 0, not null.
-    uses_topar = any(s.get("ToPar") is not None for s in scores)
-
-    prior: dict[int, float] | None = None  # per-player total of rounds 1..latest-1
-
-    def prior_total(pdga: int) -> float:
-        nonlocal prior
-        if prior is None:
-            prior = {}
-            for rnd in range(1, latest):
-                for s2 in fetch_round(tournament_id, division, rnd).get("scores") or []:
-                    p2, rtp2 = s2.get("PDGANum"), s2.get("RoundtoPar")
-                    if p2 and rtp2 is not None and (s2.get("HasRoundScore") or (s2.get("Played") or 0) > 0):
-                        prior[p2] = prior.get(p2, 0.0) + float(rtp2)
-        return prior.get(pdga, 0.0)
+    # Accumulate each player's state across ALL round sheets 1..latest rather
+    # than reading the latest sheet alone. Weather suspensions leave players
+    # mid-round or a full round behind while the event's sheet pointer
+    # advances (USWDGC 2026: 38 players suspended mid-R1 — the co-leader
+    # among them — while LatestRound moved to 2); judging by the latest sheet
+    # dropped them all as withdrawn. A player leaves the field only on the
+    # explicit withdrawal marker (GrandTotal 999) or by never having played
+    # once the event is past its first round.
+    #
+    # Per-round score fields vary: DGPT populates the running "ToPar" live
+    # mid-round; some majors backfill it only when a round completes and
+    # carry it forward on later sheets, with the live score in per-round
+    # "RoundtoPar" (0 = not started, so activity is gated on Played /
+    # HasRoundScore). A mid-round row can carry BOTH a stale carried ToPar
+    # and a live RoundtoPar; since a live ToPar always equals prior + round
+    # score, "ToPar unchanged from the prior total while the round is
+    # active" identifies the stale case exactly, and the round score is
+    # added on top.
+    state: dict[int, dict] = {}
+    for rnd in range(1, latest + 1):
+        try:
+            scores = fetch_round(tournament_id, division, rnd).get("scores") or []
+        except urllib.error.HTTPError:
+            if rnd == latest:
+                raise
+            continue  # earlier sheet missing (restructured schedule) — skip it
+        for s in scores:
+            pdga = s.get("PDGANum")
+            if not pdga:
+                continue
+            rec = state.setdefault(pdga, {"name": None, "rating": None, "cur": None, "holes": 0, "wd": False})
+            rec["name"] = s.get("Name") or rec["name"]
+            rec["rating"] = s.get("Rating") or rec["rating"]
+            if str(s.get("GrandTotal")) == "999":
+                rec["wd"] = True
+            played = s.get("Played") or (18 if s.get("HasRoundScore") else 0)
+            active = bool(s.get("HasRoundScore")) or played > 0
+            topar, rtp = s.get("ToPar"), s.get("RoundtoPar")
+            if topar is not None:
+                t = float(topar)
+                if (active and not s.get("HasRoundScore") and rtp is not None
+                        and rec["cur"] is not None and t == rec["cur"]):
+                    t += float(rtp)  # stale carried total mid-round: add the live round score
+                rec["cur"] = t
+                rec["holes"] = (rnd - 1) * 18 + played
+            elif active and rtp is not None:
+                rec["cur"] = (rec["cur"] or 0.0) + float(rtp)
+                rec["holes"] += played
 
     out: dict[int, dict] = {}
-    for s in scores:
-        pdga, topar = s.get("PDGANum"), s.get("ToPar")
-        if not pdga or str(s.get("GrandTotal")) == "999":
+    for pdga, r in state.items():
+        if r["wd"]:
             continue
-        played = s.get("Played") or 0
-        active = bool(s.get("HasRoundScore")) or played > 0
-        if not uses_topar:
-            rtp = s.get("RoundtoPar")
-            if active and rtp is not None:
-                topar = prior_total(pdga) + float(rtp)
-            else:  # not started this round: carry the earlier rounds' total
-                out[pdga] = {
-                    "name": s.get("Name"),
-                    "rating": s.get("Rating"),
-                    "cur": prior_total(pdga) if latest > 1 else 0.0,
-                    "rem": max(total_rounds - (latest - 1), 0.0) * 1.0,
-                }
-                continue
-        if topar is None:
-            if latest != 1:
-                continue  # not started this round with prior rounds banked / withdrawn
-            out[pdga] = {  # registered for round 1 but not yet teed off
-                "name": s.get("Name"),
-                "rating": s.get("Rating"),
-                "cur": 0.0,
-                "rem": float(total_rounds),
-            }
-            continue
-        holes_played = (latest - 1) * 18 + played
+        cur, holes = r["cur"], r["holes"]
+        if cur is None:  # no activity on any sheet
+            if latest > 1:
+                continue  # mid-event never-started: not playing (DNS)
+            cur, holes = 0.0, 0  # round 1 loaded, not yet teed off: seed from scratch
         out[pdga] = {
-            "name": s.get("Name"),
-            "rating": s.get("Rating"),
-            "cur": float(topar),
-            "rem": max(total_rounds * 18 - holes_played, 0) / 18.0,
+            "name": r["name"],
+            "rating": r["rating"],
+            "cur": float(cur),
+            "rem": max(total_rounds * 18 - holes, 0) / 18.0,
         }
     return out or None
 
