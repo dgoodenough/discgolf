@@ -23,6 +23,18 @@ APP_DATA = config.REPO_ROOT / "docs" / "data"
 MIN_DELTA = 0.02   # ignore noise-level changes
 TOP_N = 12
 
+# Attendance for these classes is gated by standings qualification, not a
+# registration list, so a player crossing the ~100% attendance threshold there
+# is a projected-qualification change, not a sign-up — it must NOT appear in the
+# "Registration changes" column (that signal already lives in the GMC/MVP % ).
+# RE-ADD WHEN PLAYOFF REGISTRATION OPENS: once the model consumes the real
+# playoff roster (simulate.run gating the GMC/MVP field on registered_field
+# instead of standings rank), drop the relevant class here so genuine playoff
+# sign-ups/withdrawals show again. Do NOT auto-lift on roster existence alone —
+# that would re-expose standings gating as registration until the model change
+# lands. See MODEL_IDEAS.md.
+REG_GATED_CLASSES = ("playoff", "championship")
+
 
 def _context(division: str, baseline: str, latest: str) -> tuple[dict, set[int]]:
     """Per-player 'why' context from the app bundle (written just before us):
@@ -33,13 +45,14 @@ def _context(division: str, baseline: str, latest: str) -> tuple[dict, set[int]]
     bundle = json.loads((APP_DATA / f"{division.lower()}.json").read_text(encoding="utf-8"))
     end_of = {s["tid"]: s["end"] for s in bundle.get("schedule", [])}
     completed = {s["tid"] for s in bundle.get("schedule", []) if s.get("completed")}
+    gated = {s["tid"] for s in bundle.get("schedule", []) if s.get("cls") in REG_GATED_CLASSES}
     last_result: dict[int, dict] = {}
     for p in bundle["players"]:
         recent = [b for b in p["banked"] if baseline < end_of.get(b["tid"], "") <= latest]
         if recent:
             b = max(recent, key=lambda b: end_of.get(b["tid"], ""))
             last_result[p["pdga"]] = {"tid": b["tid"], "pts": b["pts"], "place": b["place"]}
-    return last_result, completed
+    return last_result, completed, gated
 
 
 def _division_movers(division: str) -> dict | None:
@@ -76,7 +89,7 @@ def _division_movers(division: str) -> dict | None:
         return {int(r["pdga_number"]): r for r in rows if r["snapshot_date"] == date}
 
     base, cur = by_pdga(baseline), by_pdga(latest)
-    last_result, completed_tids = _context(division, baseline, latest)
+    last_result, completed_tids, gated_tids = _context(division, baseline, latest)
     movers = []
     for pdga, c in cur.items():
         b = base.get(pdga)
@@ -93,13 +106,15 @@ def _division_movers(division: str) -> dict | None:
         if b and b.get("registered") and c.get("registered") is not None:
             rb = {int(t) for t in b["registered"].split(";") if t}
             rc = {int(t) for t in c["registered"].split(";") if t}
-            reg_added = sorted(rc - rb)
-            # An event leaves the registered set either because the player
-            # de-registered (a real drop) or because it COMPLETED and is no
-            # longer a remaining event. Only the former is a registration
-            # change — exclude finished events so a played major (USWDGC)
-            # doesn't read as a dropped registration.
-            reg_removed = sorted(t for t in (rb - rc) if t not in completed_tids)
+            # Exclude standings-gated fields (playoffs, Cup): a change there is a
+            # qualification swing, not a sign-up. And a removal that's really a
+            # COMPLETED event (the player played it) isn't a dropped registration
+            # either. What remains: genuine sign-ups/withdrawals for still-open,
+            # registration-based events.
+            reg_added = sorted(t for t in (rc - rb) if t not in gated_tids)
+            reg_removed = sorted(
+                t for t in (rb - rc) if t not in gated_tids and t not in completed_tids
+            )
         # rating move over the window (why #3): PDGA's monthly ratings update
         # can shift Cup odds with no event played — often the whole story for a
         # quiet week. Snapshots record the rating in force at each date.
