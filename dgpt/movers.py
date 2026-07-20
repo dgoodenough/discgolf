@@ -23,21 +23,36 @@ APP_DATA = config.REPO_ROOT / "docs" / "data"
 MIN_DELTA = 0.02   # ignore noise-level changes
 TOP_N = 12
 
+# Attendance for these classes is gated by standings qualification, not a
+# registration list, so a player crossing the ~100% attendance threshold there
+# is a projected-qualification change, not a sign-up — it must NOT appear in the
+# "Registration changes" column (that signal already lives in the GMC/MVP % ).
+# RE-ADD WHEN PLAYOFF REGISTRATION OPENS: once the model consumes the real
+# playoff roster (simulate.run gating the GMC/MVP field on registered_field
+# instead of standings rank), drop the relevant class here so genuine playoff
+# sign-ups/withdrawals show again. Do NOT auto-lift on roster existence alone —
+# that would re-expose standings gating as registration until the model change
+# lands. See MODEL_IDEAS.md.
+REG_GATED_CLASSES = ("playoff", "championship")
 
-def _context(division: str, baseline: str, latest: str) -> tuple[dict, dict]:
+
+def _context(division: str, baseline: str, latest: str) -> tuple[dict, set[int]]:
     """Per-player 'why' context from the app bundle (written just before us):
-    the most recent banked result within the (baseline, latest] window, and the
-    schedule. Bounding at `latest` keeps the explanation frozen through the week
-    even as new events finalize before the next Monday roll-over."""
+    the most recent banked result within the (baseline, latest] window, plus the
+    set of events already completed. Bounding at `latest` keeps the explanation
+    frozen through the week even as new events finalize before the next Monday
+    roll-over."""
     bundle = json.loads((APP_DATA / f"{division.lower()}.json").read_text(encoding="utf-8"))
     end_of = {s["tid"]: s["end"] for s in bundle.get("schedule", [])}
+    completed = {s["tid"] for s in bundle.get("schedule", []) if s.get("completed")}
+    gated = {s["tid"] for s in bundle.get("schedule", []) if s.get("cls") in REG_GATED_CLASSES}
     last_result: dict[int, dict] = {}
     for p in bundle["players"]:
         recent = [b for b in p["banked"] if baseline < end_of.get(b["tid"], "") <= latest]
         if recent:
             b = max(recent, key=lambda b: end_of.get(b["tid"], ""))
             last_result[p["pdga"]] = {"tid": b["tid"], "pts": b["pts"], "place": b["place"]}
-    return last_result, end_of
+    return last_result, completed, gated
 
 
 def _division_movers(division: str) -> dict | None:
@@ -74,7 +89,7 @@ def _division_movers(division: str) -> dict | None:
         return {int(r["pdga_number"]): r for r in rows if r["snapshot_date"] == date}
 
     base, cur = by_pdga(baseline), by_pdga(latest)
-    last_result, _ = _context(division, baseline, latest)
+    last_result, completed_tids, gated_tids = _context(division, baseline, latest)
     movers = []
     for pdga, c in cur.items():
         b = base.get(pdga)
@@ -91,8 +106,25 @@ def _division_movers(division: str) -> dict | None:
         if b and b.get("registered") and c.get("registered") is not None:
             rb = {int(t) for t in b["registered"].split(";") if t}
             rc = {int(t) for t in c["registered"].split(";") if t}
-            reg_added = sorted(rc - rb)
-            reg_removed = sorted(rb - rc)
+            # Exclude standings-gated fields (playoffs, Cup): a change there is a
+            # qualification swing, not a sign-up. And a removal that's really a
+            # COMPLETED event (the player played it) isn't a dropped registration
+            # either. What remains: genuine sign-ups/withdrawals for still-open,
+            # registration-based events.
+            reg_added = sorted(t for t in (rc - rb) if t not in gated_tids)
+            reg_removed = sorted(
+                t for t in (rb - rc) if t not in gated_tids and t not in completed_tids
+            )
+        # rating move over the window (why #3): PDGA's monthly ratings update
+        # can shift Cup odds with no event played — often the whole story for a
+        # quiet week. Snapshots record the rating in force at each date.
+        def _rating(r: dict | None) -> int | None:
+            try:
+                return int(r["rating"]) if r and r.get("rating") not in (None, "") else None
+            except (ValueError, TypeError):
+                return None
+        r_from, r_to = _rating(b), _rating(c)
+        rating_delta = (r_to - r_from) if (r_from is not None and r_to is not None) else None
         movers.append({
             "pdga": pdga,
             "name": c["name"],
@@ -104,6 +136,9 @@ def _division_movers(division: str) -> dict | None:
             "last_result": last_result.get(pdga),  # why #1: newest result since baseline
             "reg_added": reg_added,
             "reg_removed": reg_removed,
+            "rating_from": r_from,          # why #3: monthly ratings move
+            "rating_to": r_to,
+            "rating_delta": rating_delta,
         })
     movers.sort(key=lambda m: -abs(m["delta"]))
     return {"baseline": baseline, "latest": latest, "movers": movers[:TOP_N]}
