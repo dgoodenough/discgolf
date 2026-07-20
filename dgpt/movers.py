@@ -24,20 +24,22 @@ MIN_DELTA = 0.02   # ignore noise-level changes
 TOP_N = 12
 
 
-def _context(division: str, baseline: str, latest: str) -> tuple[dict, dict]:
+def _context(division: str, baseline: str, latest: str) -> tuple[dict, set[int]]:
     """Per-player 'why' context from the app bundle (written just before us):
-    the most recent banked result within the (baseline, latest] window, and the
-    schedule. Bounding at `latest` keeps the explanation frozen through the week
-    even as new events finalize before the next Monday roll-over."""
+    the most recent banked result within the (baseline, latest] window, plus the
+    set of events already completed. Bounding at `latest` keeps the explanation
+    frozen through the week even as new events finalize before the next Monday
+    roll-over."""
     bundle = json.loads((APP_DATA / f"{division.lower()}.json").read_text(encoding="utf-8"))
     end_of = {s["tid"]: s["end"] for s in bundle.get("schedule", [])}
+    completed = {s["tid"] for s in bundle.get("schedule", []) if s.get("completed")}
     last_result: dict[int, dict] = {}
     for p in bundle["players"]:
         recent = [b for b in p["banked"] if baseline < end_of.get(b["tid"], "") <= latest]
         if recent:
             b = max(recent, key=lambda b: end_of.get(b["tid"], ""))
             last_result[p["pdga"]] = {"tid": b["tid"], "pts": b["pts"], "place": b["place"]}
-    return last_result, end_of
+    return last_result, completed
 
 
 def _division_movers(division: str) -> dict | None:
@@ -74,7 +76,7 @@ def _division_movers(division: str) -> dict | None:
         return {int(r["pdga_number"]): r for r in rows if r["snapshot_date"] == date}
 
     base, cur = by_pdga(baseline), by_pdga(latest)
-    last_result, _ = _context(division, baseline, latest)
+    last_result, completed_tids = _context(division, baseline, latest)
     movers = []
     for pdga, c in cur.items():
         b = base.get(pdga)
@@ -92,7 +94,12 @@ def _division_movers(division: str) -> dict | None:
             rb = {int(t) for t in b["registered"].split(";") if t}
             rc = {int(t) for t in c["registered"].split(";") if t}
             reg_added = sorted(rc - rb)
-            reg_removed = sorted(rb - rc)
+            # An event leaves the registered set either because the player
+            # de-registered (a real drop) or because it COMPLETED and is no
+            # longer a remaining event. Only the former is a registration
+            # change — exclude finished events so a played major (USWDGC)
+            # doesn't read as a dropped registration.
+            reg_removed = sorted(t for t in (rb - rc) if t not in completed_tids)
         # rating move over the window (why #3): PDGA's monthly ratings update
         # can shift Cup odds with no event played — often the whole story for a
         # quiet week. Snapshots record the rating in force at each date.
