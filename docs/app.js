@@ -28,13 +28,21 @@ const fmtPct = (x) =>
   : x < 0.0005 ? "<0.1%"
   : (x * 100).toFixed(1) + "%";
 
+// GitHub Pages serves data/*.json with Cache-Control: max-age=600 and caches
+// it at the CDN edge, so a fresh refresh could sit up to 10 min behind its own
+// data — and a browser hard-refresh can't force past the edge. A per-load
+// query string makes every page load a URL the edge has never cached, so the
+// site always shows the newest published data. (These files re-fetch only on
+// page load; within a session state.data/state.movers cache them in memory.)
+const bust = (path) => `${path}?t=${Date.now()}`;
+
 async function loadDiv(div) {
   if (!state.data[div]) {
-    const resp = await fetch(`data/${div}.json`);
+    const resp = await fetch(bust(`data/${div}.json`));
     state.data[div] = await resp.json();
   }
   if (state.movers === undefined) {
-    try { state.movers = await (await fetch("data/movers.json")).json(); }
+    try { state.movers = await (await fetch(bust("data/movers.json"))).json(); }
     catch { state.movers = null; }
   }
   return state.data[div];
