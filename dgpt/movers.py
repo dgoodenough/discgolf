@@ -93,6 +93,16 @@ def _division_movers(division: str) -> dict | None:
             rc = {int(t) for t in c["registered"].split(";") if t}
             reg_added = sorted(rc - rb)
             reg_removed = sorted(rb - rc)
+        # rating move over the window (why #3): PDGA's monthly ratings update
+        # can shift Cup odds with no event played — often the whole story for a
+        # quiet week. Snapshots record the rating in force at each date.
+        def _rating(r: dict | None) -> int | None:
+            try:
+                return int(r["rating"]) if r and r.get("rating") not in (None, "") else None
+            except (ValueError, TypeError):
+                return None
+        r_from, r_to = _rating(b), _rating(c)
+        rating_delta = (r_to - r_from) if (r_from is not None and r_to is not None) else None
         movers.append({
             "pdga": pdga,
             "name": c["name"],
@@ -104,6 +114,9 @@ def _division_movers(division: str) -> dict | None:
             "last_result": last_result.get(pdga),  # why #1: newest result since baseline
             "reg_added": reg_added,
             "reg_removed": reg_removed,
+            "rating_from": r_from,          # why #3: monthly ratings move
+            "rating_to": r_to,
+            "rating_delta": rating_delta,
         })
     movers.sort(key=lambda m: -abs(m["delta"]))
     return {"baseline": baseline, "latest": latest, "movers": movers[:TOP_N]}

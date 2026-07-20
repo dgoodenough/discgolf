@@ -49,7 +49,8 @@ async function loadDiv(div) {
 }
 
 /* qualitative week-over-week movers panel (from prediction snapshots), with
-   the two usual "why"s: the newest result, and registration changes */
+   three "why"s: the newest result, the monthly ratings move, and registration
+   changes. A ratings shift alone can drive the Cup odds with no event played. */
 function moversHtml(d, div) {
   const m = state.movers && state.movers[div];
   if (!m || !m.movers.length) return "";
@@ -62,6 +63,14 @@ function moversHtml(d, div) {
     const lr = x.last_result
       ? `${nameOf.get(x.last_result.tid) || ""}: ${Math.round(x.last_result.pts)}${placeTag(x.last_result.place)}`
       : '<span class="dim">DNP</span>';
+    // rating move: signed + coloured when it changed, "—" when flat, blank when
+    // unknown (a pre-ratings-snapshot baseline can't be compared)
+    const rd = x.rating_delta;
+    const ratingCell = rd == null
+      ? '<span class="dim"></span>'
+      : rd === 0
+        ? '<span class="dim">—</span>'
+        : `<span class="${rd > 0 ? "movers-up" : "movers-down"}" title="${x.rating_from} → ${x.rating_to}">${rd > 0 ? "+" : "−"}${Math.abs(rd)}</span>`;
     const regs = [
       ...(x.reg_added || []).map((t) => `<span class="reg-chip reg-in">+ ${nameOf.get(t) || t}</span>`),
       ...(x.reg_removed || []).map((t) => `<span class="reg-chip reg-out">− ${nameOf.get(t) || t}</span>`),
@@ -71,13 +80,14 @@ function moversHtml(d, div) {
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
       <td class="num ${up ? "movers-up" : "movers-down"}">${pct0(x.champ_from)} → ${pct0(x.champ_to)}</td>
       <td class="num dim">${(x.delta > 0 ? "+" : "−") + Math.abs(Math.round(x.delta * 100))}</td>
+      <td class="num">${ratingCell}</td>
       <td>${lr}</td>
       <td>${regs}</td>
       <td class="num dim">${rank}</td></tr>`;
   }).join("");
   return `<details class="movers"><summary>Biggest movers — Cup odds since ${fmtD(m.baseline)}</summary>
     <table class="table-ledger detail-tbl"><thead><tr>
-      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th>Last event</th><th>Registration changes</th><th class="num">Rank</th>
+      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th><th>Last event</th><th>Registration changes</th><th class="num">Rank</th>
     </tr></thead><tbody>${rows}</tbody></table></details>`;
 }
 
