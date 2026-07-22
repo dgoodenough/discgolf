@@ -359,12 +359,32 @@ function eventProj(d, p, e) {
   return projectPoints(d, p, e, 2500, rating);
 }
 
-/* Everyone (other than `selfPdga`) expected at event e: {r: rating, a: P(plays)}.
-   The bundle's per-player att arrays share d.events' ordering. */
+/* Unordered key for a doubles team, so both members map to one entry (a solo
+   with no listed partner is its own team). */
+const teamKey = (q) => JSON.stringify([q.name, (q.dbl && q.dbl.partner_name) || null].sort());
+
+/* Everyone (other than `selfPdga`'s entry) expected at event e: {r: rating,
+   a: P(plays)}. The bundle's per-player att arrays share d.events' ordering.
+   For the doubles championship the field is TEAMS, not players — one entry per
+   distinct team at its team rating — so the win odds are computed against ~half
+   as many opponents, as they should be. */
 function eventField(d, e, selfPdga) {
   const ei = d.events.findIndex((x) => x.tid === e.tid);
   const out = [];
   if (ei < 0) return out;
+  if (e.tid === d.meta.dbl_tid) {
+    const self = d.players.find((q) => q.pdga === selfPdga);
+    const selfKey = self && self.dbl ? teamKey(self) : null;
+    const seen = new Set();
+    for (const q of d.players) {
+      if (!q.dbl || q.att[ei] <= 0.001) continue;
+      const key = teamKey(q);
+      if (key === selfKey || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ r: q.dbl.team_rating, a: q.att[ei] });
+    }
+    return out;
+  }
   for (const q of d.players) {
     if (q.pdga !== selfPdga && q.rating && q.att[ei] > 0.001) out.push({ r: q.rating, a: q.att[ei] });
   }
@@ -391,15 +411,17 @@ function drawPlace(d, e, rating, field) {
 }
 
 function projectPoints(d, p, e, draws = 2500, rating = p.rating) {
-  // doubles stays on the Gaussian shortcut: its curve is TEAM-place indexed
-  // and the team field is unimodal tour pairs, where the summary holds up
-  const field = e.tid === d.meta.dbl_tid ? null : eventField(d, e, p.pdga);
+  // Draw against the real field (players, or TEAMS for the doubles
+  // championship — its curve is team-place indexed and drawPlace ranks the
+  // team rating against the other teams). Fall back to the one-Gaussian
+  // summary only when we have no field to sample (e.g. no attendees yet).
+  const field = eventField(d, e, p.pdga);
   const out = new Float64Array(draws);
   const places = new Float64Array(draws);
   let wins = 0;
   for (let i = 0; i < draws; i++) {
     let place;
-    if (field) {
+    if (field.length) {
       place = drawPlace(d, e, rating, field);
     } else {
       const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
@@ -546,16 +568,16 @@ function replay(d, p, attendSet) {
   // Pre-sample each event's points distribution against its REAL field (same
   // model as projectPoints — the one-Gaussian shortcut broke on bimodal open
   // fields like the USWDGC), then draw by index inside the hot loop so the
-  // replay stays under its time budget. Doubles keeps the Gaussian shortcut
-  // (team-indexed curve, unimodal team field).
+  // replay stays under its time budget. Doubles draws against the team field
+  // (eventField returns one entry per team for the doubles championship).
   const SAMPLES = 1500;
   const ptsSamples = events.map((e) => {
     const rating = e.tid === d.meta.dbl_tid && p.dbl ? p.dbl.team_rating : p.rating;
-    const field = e.tid === d.meta.dbl_tid ? null : eventField(d, e, p.pdga);
+    const field = eventField(d, e, p.pdga);
     const arr = new Float64Array(SAMPLES);
     for (let i = 0; i < SAMPLES; i++) {
       let place;
-      if (field) {
+      if (field.length) {
         place = drawPlace(d, e, rating, field);
       } else {
         const mu = (-(rating - e.field_avg_rating) / d.meta.rating_pts_per_stroke) * e.rounds;
