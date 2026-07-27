@@ -192,7 +192,6 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     if dbl_ei is not None:
         pairing = live_api.doubles_teams(config.TID_DOUBLES, division)
         registered = [i for i in range(n) if event_probs[dbl_ei][i] >= 0.999]
-        favg_players = float(ratings[registered].mean()) if registered else 1000.0
         seen: set[int] = set()
         pairs: list[tuple[int, int]] = []
         solos: list[int] = []
@@ -201,12 +200,23 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 continue
             partner = pairing.get(pdga_numbers[i], {}).get("partner")
             j = idx.get(partner) if partner else None
-            if j is not None and j in set(registered) and j not in seen:
+            # Pair on the roster's own Teammates data alone. Do NOT also
+            # require the partner to appear in the registered list: PDGA Live
+            # lists ONE row per team (the entrant of record), so the partner
+            # is usually absent from it — requiring both collapsed every team
+            # into a "solo" with a phantom field-average partner and halved
+            # the field. A partner with no row in our table (unrated/am) still
+            # falls through to the solo model, which is what it's for.
+            if j is not None and j != i and j not in seen:
                 pairs.append((i, j))
                 seen.update((i, j))
             else:
                 solos.append(i)
                 seen.add(i)
+        # field average over everyone actually playing (both team members),
+        # not just the entrants of record — it stands in for a solo's partner
+        involved = sorted({i for pr in pairs for i in pr} | set(solos))
+        favg_players = float(ratings[involved].mean()) if involved else 1000.0
         team_ratings = np.array(
             [(ratings[i] + ratings[j]) / 2 for i, j in pairs]
             + [(ratings[i] + favg_players) / 2 for i in solos]
