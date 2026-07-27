@@ -89,7 +89,12 @@ jobs:
           }
 
           while :; do
-            is_live; live_rc=$?
+            # GitHub's default run shell is `bash -e`: a bare `is_live` that
+            # returns 3 (nothing live) would kill the script instantly with
+            # no output (observed 2026-07-27, first quiet night after this
+            # loop shipped). Capture the code in a condition context, which
+            # errexit exempts.
+            live_rc=0; is_live || live_rc=$?
             if [ "$live_rc" = 3 ]; then
               echo "No points event live — exiting (cron will restart when one is)."
               break
