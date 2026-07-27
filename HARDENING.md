@@ -67,8 +67,9 @@ published number.
 *Items 1-5 shipped mid-season (2026-07): the fixture corpus + suite live in
 `tests/` (gated by `.github/workflows/tests.yml`), the flight recorder in
 `dgpt/live_api.py`, the invariant checks in `dgpt/invariants.py`, and the
-failure posture in `.github/workflows/live-refresh.yml`. Items 6-8 remain
-offseason work.*
+failure posture in `.github/workflows/live-refresh.yml`. Items 6-7 and 9
+are offseason work; item 8's first two pieces (a resnapshot command, the
+invariant gate on recording) are in-season safe and still open.*
 
 ### 1. Commit the regression corpus; make it a test suite *(shipped 2026-07)*
 
