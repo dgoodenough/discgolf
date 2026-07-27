@@ -10,6 +10,9 @@ Each entry: the hypothesis, why it would move the forecast, how the model treats
 it today, how to test it against cached rounds, the confounds to rule out, and a
 rough gate for "is it worth the added complexity."
 
+Engineering hardening (pipeline robustness, testing, alerting — changes that
+*don't* alter published odds) has its own backlog in [HARDENING.md](HARDENING.md).
+
 ---
 
 ## 1. Rating-dependent round-score variance (heteroskedasticity)
