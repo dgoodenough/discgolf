@@ -47,6 +47,15 @@ def main() -> None:
     if not args.skip_sim:
         movers.write_movers()
 
+    # Publish-gate invariants (flag-only): the refresh must still succeed —
+    # the workflows read the marker file after committing and turn violations
+    # into a red run, so bad-looking data alerts without the site going stale.
+    try:
+        from . import invariants
+        invariants.run_checks()
+    except Exception as e:
+        print(f"  invariant checks skipped ({e})")
+
 
 if __name__ == "__main__":
     main()

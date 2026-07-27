@@ -48,6 +48,18 @@ jobs:
           key: pdga-cache-2026-${{ github.run_id }}
           restore-keys: pdga-cache-2026-
 
+      # Failure posture (added after a season of silent failure modes): any
+      # step that throws counts a consecutive failure; three in a row fail the
+      # RUN so the owner is notified, and the cron restarts the loop within
+      # 15 minutes — a persistent crash during play is loud, not a quietly
+      # stale site. A failed refresh also restores the committed livecheck
+      # signature, because livecheck advances it at gate time: without the
+      # restore, a crash after the last score change of the night would read
+      # "unchanged" forever and never retry. Invariant violations (see
+      # dgpt/invariants.py) fail the run AFTER the data commit and push, and
+      # only when the violation set is new (data/cache/invariant_alerted.txt
+      # de-duplicates), so a persistent mismatch doesn't spam a red run every
+      # six minutes.
       - name: Drive the live refresh loop
         env:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
@@ -60,27 +72,63 @@ jobs:
 
           BUDGET=$(( $(date +%s) + 330 * 60 ))   # ~5.5h, then yield to the successor
           deps_ready=0
+          failures=0
 
+          # 0 = live, 3 = clean "nothing live", 1 = crashed (traceback shows)
           is_live() {
-            python -c "import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 1)"
+            python -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)'
+          }
+
+          fail_step() {
+            failures=$((failures + 1))
+            echo "::warning::$1 (consecutive failures: $failures)"
+            if [ "$failures" -ge 3 ]; then
+              echo "::error::Three consecutive live-refresh failures — failing the run so it gets seen. The cron restarts the loop."
+              exit 1
+            fi
           }
 
           while :; do
-            if ! is_live; then
+            is_live; live_rc=$?
+            if [ "$live_rc" = 3 ]; then
               echo "No points event live — exiting (cron will restart when one is)."
               break
+            elif [ "$live_rc" != 0 ]; then
+              fail_step "is_live check crashed"
+              sleep 300; continue
             fi
 
             # cheap gate (stdlib only): does anything actually need re-simulating?
-            status=$(env -u GITHUB_OUTPUT python -m dgpt.livecheck | tail -n1)
+            if out=$(env -u GITHUB_OUTPUT python -m dgpt.livecheck 2>&1); then
+              status=$(printf '%s\n' "$out" | tail -n1)
+            else
+              printf '%s\n' "$out" | tail -n5
+              fail_step "livecheck crashed"
+              sleep 300; continue
+            fi
             echo "change-check: $status"
 
+            if [ "$status" != "changed" ]; then
+              failures=0   # a clean idle iteration = the pipeline is healthy
+            fi
             if [ "$status" = "changed" ]; then
               if [ "$deps_ready" = "0" ]; then
-                pip install -r requirements.txt
-                deps_ready=1
+                if pip install -r requirements.txt; then
+                  deps_ready=1
+                else
+                  fail_step "pip install failed"
+                  sleep 300; continue
+                fi
               fi
-              python -m dgpt.refresh --sims 100000
+              if python -m dgpt.refresh --sims 100000; then
+                failures=0
+              else
+                # livecheck already advanced the signature; restore it so the
+                # next iteration re-detects the change and retries the refresh
+                git checkout -- data/live_signature.txt || true
+                fail_step "refresh crashed"
+                sleep 300; continue
+              fi
               git add data docs/data results predictions
               if git diff --cached --quiet -I'"generated":'; then
                 echo "nothing to commit after refresh"
@@ -90,6 +138,14 @@ jobs:
                 git push || { git pull --rebase --autostash && git push; }
                 # nudge Pages (best-effort; data commit has already landed)
                 gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || true
+              fi
+              # publish-gate invariants: alert on NEW violations, after the push
+              viol=data/cache/invariant_violations.txt
+              if [ -s "$viol" ] && ! cmp -s "$viol" data/cache/invariant_alerted.txt; then
+                cp "$viol" data/cache/invariant_alerted.txt
+                echo "::error::Live data failed invariant checks (data still published — see dgpt/invariants.py):"
+                cat "$viol"
+                exit 1
               fi
             fi
 

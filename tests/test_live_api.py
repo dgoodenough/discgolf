@@ -1,0 +1,182 @@
+"""Regression tests for live_api against captured payloads + synthetic shapes.
+
+The captured payloads in tests/fixtures/payloads/ are the real API responses
+behind this season's live-scoring incidents (see each test's docstring). When
+the next shape variant bites, add the failing payload with
+tests/fixtures/capture.py and start from a red test here — not from a one-shot
+probe workflow.
+"""
+from __future__ import annotations
+
+import pytest
+
+from dgpt import live_api
+from .conftest import event_payload, load_payload, round_payload, row
+
+JOMEZ = 100195   # DGPT JomezPro Champions Landing Open 2026 (multi-layout)
+USWDGC = 97341   # USWDGC 2026 (FPO major; finals sheet id 12, playoff sheet 13)
+
+
+def serve_jomez(fake_api):
+    fake_api.event(JOMEZ, load_payload(f"event_{JOMEZ}"))
+    for rnd in (1, 2, 3):
+        fake_api.round(JOMEZ, "MPO", rnd, load_payload(f"round_{JOMEZ}_MPO_{rnd}"))
+
+
+def serve_uswdgc(fake_api):
+    fake_api.event(USWDGC, load_payload(f"event_{USWDGC}"))
+    for rnd in (1, 2, 3, 12, 13):
+        fake_api.round(USWDGC, "FPO", rnd, load_payload(f"round_{USWDGC}_FPO_{rnd}"))
+
+
+# ------------------------------------------------------------ Jomez (b4cfb56)
+
+def test_jomez_live_field_sums_roundtopar(fake_api):
+    """The multi-layout regression: per-sheet ToPar reads -16/-11/-10 for the
+    winner because each sheet reports it against its own layout's par. Summing
+    RoundtoPar reconstructs the true totals (model had Buhr 100% to finish 2nd
+    in an event he won)."""
+    serve_jomez(fake_api)
+    field = live_api.live_field(JOMEZ, "MPO")
+    assert field is not None
+    buhr = next(v for v in field.values() if v["name"] == "Gannon Buhr")
+    orum = next(v for v in field.values() if v["name"] == "Matthew Orum")
+    assert buhr["cur"] == -10.0 and buhr["rem"] == 0.0
+    assert orum["cur"] == -8.0
+    assert min(v["cur"] for v in field.values()) == buhr["cur"]  # Buhr leads
+
+
+def test_jomez_live_field_order_matches_running_place(fake_api):
+    """Our reconstructed totals must never invert the sheet's own leaderboard:
+    a strictly worse total may not hold a strictly better RunningPlace."""
+    serve_jomez(fake_api)
+    field = live_api.live_field(JOMEZ, "MPO")
+    sheet = load_payload(f"round_{JOMEZ}_MPO_3")["scores"]
+    place = {s["PDGANum"]: s["RunningPlace"] for s in sheet if s.get("RunningPlace")}
+    rows = sorted(
+        (rec["cur"], place[p]) for p, rec in field.items() if p in place
+    )
+    for (ca, pa), (cb, pb) in zip(rows, rows[1:]):
+        if cb > ca + 1e-9:
+            assert pb >= pa, f"total {cb:+g} placed {pb}, ahead of {ca:+g} at {pa}"
+
+
+def test_jomez_final_results(fake_api):
+    serve_jomez(fake_api)
+    results = live_api.final_results(JOMEZ, "MPO", use_cache=False)
+    assert results[0]["name"] == "Gannon Buhr" and results[0]["place"] == 1
+    assert results[1]["name"] == "Matthew Orum" and results[1]["place"] == 2
+    assert [r["place"] for r in results] == sorted(r["place"] for r in results)
+    # DGPT points go to finishers only: every result posted every round
+    r2_posted = {s["PDGANum"] for s in load_payload(f"round_{JOMEZ}_MPO_2")["scores"]
+                 if s.get("HasRoundScore")}
+    assert all(r["pdga_number"] in r2_posted for r in results)
+
+
+def test_jomez_event_complete(fake_api):
+    serve_jomez(fake_api)
+    assert live_api.event_complete(JOMEZ, divisions=("MPO",)) is True
+
+
+# --------------------------------------------------- USWDGC (6e99dd4/5094f16)
+
+def test_uswdgc_final_results_survive_finals_round_ids(fake_api):
+    """Finals live on sheet id 12 (no round 4, no round 11) and round 13 is a
+    one-row sudden-death playoff sheet. final_results must ride the 404s and
+    read the finishing order off the finals sheet."""
+    serve_uswdgc(fake_api)
+    results = live_api.final_results(USWDGC, "FPO", use_cache=False)
+    assert len(results) == 77            # finals non-qualifiers still finished
+    assert results[0]["place"] == 1
+    assert [r["place"] for r in results] == sorted(r["place"] for r in results)
+
+
+def test_uswdgc_live_field_keeps_non_finalists(fake_api):
+    """Only 44 of 77 played the finals sheet; the other 33 must keep their
+    three-round totals rather than vanish as withdrawals (the weather-delay
+    failure mode: judging the field by the latest sheet alone)."""
+    serve_uswdgc(fake_api)
+    field = live_api.live_field(USWDGC, "FPO")
+    assert field is not None and len(field) == 77
+    sheets = [load_payload(f"round_{USWDGC}_FPO_{r}")["scores"] for r in (1, 2, 3)]
+    non_finalist = next(
+        s["PDGANum"] for s in load_payload(f"round_{USWDGC}_FPO_12")["scores"]
+        if not s.get("HasRoundScore") and not (s.get("Played") or 0)
+    )
+    three_round_total = sum(
+        float(next(x for x in sheet if x["PDGANum"] == non_finalist)["RoundtoPar"])
+        for sheet in sheets
+    )
+    assert field[non_finalist]["cur"] == pytest.approx(three_round_total)
+
+
+# ------------------------------------------------------- synthetic shapes
+
+def _mini_event(fake_api, latest: int, sheets: dict[int, list[dict]], final_round: int = 3):
+    fake_api.event(1, event_payload("Mini", final_round, [("MPO", latest)]))
+    for rnd, rows in sheets.items():
+        fake_api.round(1, "MPO", rnd, round_payload(rows))
+
+
+def test_not_yet_started_players_stay_in_the_field(fake_api):
+    """Round 1 loaded, nobody teed off: the field must not collapse to the
+    few with scores (08d1e53) — everyone seeds from scratch at even par."""
+    _mini_event(fake_api, 1, {1: [
+        row(1, "A", 1030, played=0),
+        row(2, "B", 1020, played=0),
+        row(3, "C", 1010, round_to_par=-3, played=6),
+    ]})
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {1, 2, 3}
+    assert field[1]["cur"] == 0.0 and field[1]["rem"] == 3.0
+    assert field[3]["cur"] == -3.0
+
+
+def test_suspended_player_carries_prior_round(fake_api):
+    """Weather suspension: a player mid-R1 while the sheet pointer moved to
+    R2 keeps their partial score and remaining holes (USWDGC 2026 shape)."""
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True),
+            row(2, "B", 1020, round_to_par=-2, played=13)],       # suspended mid-R1
+        2: [row(1, "A", 1030, round_to_par=-1, played=9),
+            row(2, "B", 1020, played=0)],                          # not started R2
+    })
+    field = live_api.live_field(1, "MPO")
+    assert field[1]["cur"] == -5.0 and field[1]["rem"] == pytest.approx((54 - 27) / 18)
+    assert field[2]["cur"] == -2.0 and field[2]["rem"] == pytest.approx((54 - 13) / 18)
+
+
+def test_withdrawal_and_dns_leave_the_field(fake_api):
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True),
+            row(2, "B", 1020, round_to_par=-2, played=18, has_score=True),
+            row(3, "C", 1010, played=0)],                          # never started
+        2: [row(1, "A", 1030, round_to_par=-1, played=9),
+            row(2, "B", 1020, played=0, grand_total="999")],       # withdrew
+    })
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {1}   # B withdrew; C is a mid-event DNS
+
+
+def test_topar_fallback_when_roundtopar_missing(fake_api):
+    """A sheet publishing no per-round score at all falls back to the sheet's
+    running ToPar for the current round only."""
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True)],
+        2: [row(1, "A", 1030, to_par=-6, played=9)],
+    })
+    field = live_api.live_field(1, "MPO")
+    assert field[1]["cur"] == -6.0
+    assert field[1]["rem"] == pytest.approx((54 - 27) / 18)
+
+
+def test_missing_earlier_sheet_is_skipped(fake_api):
+    """A restructured schedule can leave a hole in the round ids; only the
+    latest sheet is allowed to hard-fail."""
+    fake_api.event(1, event_payload("Mini", 3, [("MPO", 3)]))
+    fake_api.round(1, "MPO", 1, round_payload(
+        [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True)]))
+    fake_api.round(1, "MPO", 3, round_payload(
+        [row(1, "A", 1030, round_to_par=-2, played=9)]))
+    field = live_api.live_field(1, "MPO")
+    assert field[1]["cur"] == -6.0

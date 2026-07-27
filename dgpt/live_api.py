@@ -7,8 +7,10 @@ and completed-event responses are cached to disk since they never change.
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date
 from pathlib import Path
@@ -19,6 +21,46 @@ BASE = "https://www.pdga.com/apps/tournament/live-api"
 UA = {"User-Agent": "dgpt-forecast/1.0 (github.com/dgoodenough/discgolf)"}
 LIVE_CACHE = config.CACHE_DIR / "live"
 RESULTS_CACHE = config.CACHE_DIR / "results"
+
+# Flight recorder: a rolling archive of raw API responses in the results cache
+# (persisted across CI runs by actions/cache, gitignored locally). Every
+# one-shot probe workflow this season existed because the payload that caused
+# a wrong number was gone by the time it was investigated — this keeps the
+# recent history of each sheet so a bad number can be replayed locally
+# (tests/fixtures/capture.py is the tool for promoting one to a fixture).
+# Snapshots are written only when a sheet's content actually changed; the
+# newest FLIGHT_KEEP versions per sheet are retained.
+FLIGHT_DIR = config.CACHE_DIR / "flight"
+FLIGHT_KEEP = 48
+
+
+def _flight_name(url: str) -> str | None:
+    q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+    tid = (q.get("TournID") or ["x"])[0]
+    if "live_results_fetch_round" in url:
+        return f"round_{tid}_{(q.get('Division') or ['x'])[0]}_{(q.get('Round') or ['x'])[0]}"
+    if "live_results_fetch_event" in url:
+        return f"event_{tid}"
+    return None
+
+
+def _record_flight(url: str, data: dict) -> None:
+    """Archive one raw response. Must never break a fetch: best-effort only."""
+    name = _flight_name(url)
+    if name is None or os.environ.get("DGPT_FLIGHT_OFF"):
+        return
+    try:
+        payload = json.dumps(data, separators=(",", ":"))
+        FLIGHT_DIR.mkdir(parents=True, exist_ok=True)
+        snaps = sorted(FLIGHT_DIR.glob(f"{name}.*.json"))
+        if snaps and snaps[-1].read_text(encoding="utf-8") == payload:
+            return  # unchanged since the newest snapshot
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        (FLIGHT_DIR / f"{name}.{stamp}.json").write_text(payload, encoding="utf-8")
+        for old in snaps[: max(len(snaps) + 1 - FLIGHT_KEEP, 0)]:
+            old.unlink()
+    except OSError:
+        pass
 
 _MIN_INTERVAL = 0.5  # be polite: max ~2 req/s
 _last_request = 0.0
@@ -52,6 +94,7 @@ def _get(url: str, cache_file: Path | None = None) -> dict:
             raise
     else:
         raise RuntimeError(f"still rate-limited after retries: {url}")
+    _record_flight(url, data)
     if cache_file:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(json.dumps(data), encoding="utf-8")
