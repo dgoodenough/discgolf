@@ -210,15 +210,21 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     # explicit withdrawal marker (GrandTotal 999) or by never having played
     # once the event is past its first round.
     #
-    # Per-round score fields vary: DGPT populates the running "ToPar" live
-    # mid-round; some majors backfill it only when a round completes and
-    # carry it forward on later sheets, with the live score in per-round
-    # "RoundtoPar" (0 = not started, so activity is gated on Played /
-    # HasRoundScore). A mid-round row can carry BOTH a stale carried ToPar
-    # and a live RoundtoPar; since a live ToPar always equals prior + round
-    # score, "ToPar unchanged from the prior total while the round is
-    # active" identifies the stale case exactly, and the round score is
-    # added on top.
+    # Score source: SUM the per-round "RoundtoPar" across sheets. The
+    # round-total "ToPar" cannot be summed and is not comparable between
+    # sheets — at multi-layout events each round's sheet reports it against
+    # that round's par, so the same player reads differently on each sheet
+    # (Jomez Champions Landing 2026: Buhr's sheets said -16 / -11 / -10 while
+    # his actual rounds were -6 / -1 / -3). Preferring ToPar therefore latched
+    # a value from the wrong layout and inverted the leaderboard — the model
+    # had the runner-up winning. RoundtoPar is per-round and layout-local, so
+    # summing it reconstructs the true total exactly (Buhr -10 = 1st,
+    # Orum -8 = 2nd, matching the field's RunningPlace), and it is live
+    # mid-round (it counts only holes played so far).
+    #
+    # ToPar is used only as a fallback for a round that reports no
+    # RoundtoPar at all, and only for the current round, where it is the
+    # running total on the sheet being played.
     state: dict[int, dict] = {}
     for rnd in range(1, latest + 1):
         try:
@@ -238,17 +244,16 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
                 rec["wd"] = True
             played = s.get("Played") or (18 if s.get("HasRoundScore") else 0)
             active = bool(s.get("HasRoundScore")) or played > 0
-            topar, rtp = s.get("ToPar"), s.get("RoundtoPar")
-            if topar is not None:
-                t = float(topar)
-                if (active and not s.get("HasRoundScore") and rtp is not None
-                        and rec["cur"] is not None and t == rec["cur"]):
-                    t += float(rtp)  # stale carried total mid-round: add the live round score
-                rec["cur"] = t
-                rec["holes"] = (rnd - 1) * 18 + played
-            elif active and rtp is not None:
+            if not active:
+                continue  # not started this round: carry what's accumulated
+            rtp, topar = s.get("RoundtoPar"), s.get("ToPar")
+            if rtp is not None:
                 rec["cur"] = (rec["cur"] or 0.0) + float(rtp)
                 rec["holes"] += played
+            elif topar is not None:
+                # no per-round score published: fall back to the sheet's total
+                rec["cur"] = float(topar)
+                rec["holes"] = (rnd - 1) * 18 + played
 
     out: dict[int, dict] = {}
     for pdga, r in state.items():
