@@ -89,8 +89,21 @@ jobs:
           done
           echo "::warning::Pages did not reach 'built' after 3 attempts (data commit still landed)"
 
-      # Last step: a failure here fails the run (owner gets notified) after
+      # Last steps: a failure here fails the run (owner gets notified) after
       # the data commit and deploy have already gone out. Runs weekly rather
       # than in the live cron because StatMando can lag right after events.
       - name: Validate standings against StatMando
         run: python -m dgpt.validate
+
+      # The refresh wrote data/cache/invariant_violations.txt (empty = clean);
+      # see dgpt/invariants.py. Live events rarely overlap this schedule, so
+      # this is usually a no-op — but if one does, bad-looking live data marks
+      # the run red without having blocked the publish.
+      - name: Check live-data invariants
+        if: always()
+        run: |
+          if [ -s data/cache/invariant_violations.txt ]; then
+            echo "::error::Live data failed invariant checks (data still published):"
+            cat data/cache/invariant_violations.txt
+            exit 1
+          fi

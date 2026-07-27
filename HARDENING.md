@@ -51,7 +51,13 @@ pattern across them, not any single bug, is what this backlog addresses.
 Ordered by expected payoff. "In-season safe" = additive, can't change a
 published number.
 
-### 1. Commit the regression corpus; make it a test suite *(in-season safe to start)*
+*Items 1-5 shipped mid-season (2026-07): the fixture corpus + suite live in
+`tests/` (gated by `.github/workflows/tests.yml`), the flight recorder in
+`dgpt/live_api.py`, the invariant checks in `dgpt/invariants.py`, and the
+failure posture in `.github/workflows/live-refresh.yml`. Items 6-8 remain
+offseason work.*
+
+### 1. Commit the regression corpus; make it a test suite *(shipped 2026-07)*
 
 The captured payloads that verified this season's fixes (Jomez
 multi-layout, USWDGC `RoundtoPar`-only, weather suspension, Heinola R1,
@@ -65,7 +71,7 @@ tiny sim count. The smoke test alone would have caught c287e19 before
 merge; the fixtures make every future live-API fix start from "add the
 failing payload" instead of "write a probe workflow."
 
-### 2. Flight recorder: archive raw payloads during live refresh *(in-season safe)*
+### 2. Flight recorder: archive raw payloads during live refresh *(shipped 2026-07)*
 
 Every one-shot probe existed because the payload that caused a wrong
 number was gone by the time we investigated. During live refresh, write
@@ -75,7 +81,7 @@ keeping the last N snapshots per sheet. Any future "why did it say
 that?" becomes a local replay instead of a CI probe. Bonus: this is the
 per-round WD-rate capture MODEL_IDEAS' variance work wants anyway.
 
-### 3. Publish-gate invariants at ingest *(flag-only version in-season safe)*
+### 3. Publish-gate invariants at ingest *(flag-only version shipped 2026-07)*
 
 The Buhr inversion was detectable at ingest: our reconstructed totals
 disagreed with the sheet's own `RunningPlace` ordering. Check a small
@@ -87,7 +93,7 @@ Offseason, consider promoting hard violations to "hold this event's
 live projection and show a banner" rather than publishing known-suspect
 odds.
 
-### 4. Make the live loop fail loudly *(in-season safe)*
+### 4. Make the live loop fail loudly *(shipped 2026-07)*
 
 Wrap the refresh call in the loop so an exception marks the run failed
 (notifying the owner) instead of scrolling past; keep looping on
@@ -97,7 +103,7 @@ watchdog to the same loop: if an event is live and the published
 if nothing threw. Cheap, and it converts every future silent-stale
 incident into a push notification.
 
-### 5. CI gate on pull requests *(process; immediate)*
+### 5. CI gate on pull requests *(shipped 2026-07)*
 
 There is currently no workflow that runs on PRs — the first execution
 of merged code is a production refresh. Add a PR workflow running the

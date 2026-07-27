@@ -1,0 +1,32 @@
+name: Tests
+
+# The regression suite gates every pull request — the first execution of
+# merged code must never again be a production refresh (the c287e19 crash
+# shipped exactly that way). Push runs are path-filtered so the live loop's
+# data commits don't trigger it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - "dgpt/**"
+      - "tests/**"
+      - ".github/workflows/**"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Run the test suite
+        run: python -m pytest tests -q
