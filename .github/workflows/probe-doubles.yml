@@ -1,0 +1,38 @@
+name: Probe doubles roster (one-shot)
+on:
+  push:
+    branches: [claude/standings-attendance-bug-8j9c7k]
+    paths: ['.github/workflows/probe-doubles.yml']
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Dump doubles roster + pairing
+        run: |
+          python - <<'EOF'
+          import json
+          from dgpt import live_api, config
+
+          tid = config.TID_DOUBLES
+          for div in ("MPO", "FPO"):
+              data = live_api.fetch_round(tid, div, 1)
+              sc = data.get("scores") or []
+              print(f"\n=== {div}: {len(sc)} roster rows ===")
+              withmates = [s for s in sc if s.get("Teammates")]
+              print("rows with Teammates:", len(withmates))
+              for s in sc[:3]:
+                  print("  row:", json.dumps({k: s.get(k) for k in
+                        ("Name","PDGANum","Teammates","TeamName","Rating","GrandTotal")}, default=str)[:400])
+              print("  registered_field size:", len(live_api.registered_roster(tid, div)))
+              pairing = live_api.doubles_teams(tid, div)
+              print("  doubles_teams() pairs:", len(pairing))
+              for k, v in list(pairing.items())[:3]:
+                  print("   ", k, "->", v)
+          EOF
