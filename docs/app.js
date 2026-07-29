@@ -55,12 +55,17 @@ async function loadDiv(div) {
    side-by-side down a column, so they have to be mutually comparable, and
    auto-scaling would make a 2-point wobble look like a collapse. Nulls (before
    a player entered the model) break the line instead of reading as 0%. */
-function moversSpark(x, dates) {
+function moversSpark(x, dates, m, meta) {
   const s = x.spark;
   if (!s || s.length < 2) return "";
   const H = 20, W = 76, n = s.length;
+  const rank = m.metric === "rank";
   const px = (i) => (i / (n - 1)) * W;
-  const py = (v) => H - v * H;
+  // odds: 0 at the bottom, 1 at the top. rank: #1 at the TOP, worst at the
+  // bottom, scaled to the worst rank actually shown so the column stays
+  // mutually comparable rather than compressing everyone against 650th.
+  const rmax = Math.max(m.rank_max || 1, 2);
+  const py = (v) => (rank ? ((v - 1) / (rmax - 1)) * H : H - v * H);
   let dAttr = "", pen = false, last = null;
   for (let i = 0; i < n; i++) {
     if (s[i] == null) { pen = false; continue; }
@@ -71,12 +76,18 @@ function moversSpark(x, dates) {
   const cls = x.delta > 0 ? "movers-up" : "movers-down";
   const base = s.find((v) => v != null);
   const tip = dates
-    ? s.map((v, i) => (v == null ? null : `${fmtDShort(dates[i])} ${Math.round(v * 100)}%`))
+    ? s.map((v, i) => (v == null ? null
+        : `${fmtDShort(dates[i])} ${rank ? "#" + v : Math.round(v * 100) + "%"}`))
         .filter(Boolean).join("\n")
     : "";
+  // on the rank chart the auto-bid cutline is the meaningful reference — you can
+  // see who crossed it — rather than the player's own starting value
+  const refY = rank
+    ? (meta && meta.cut && meta.cut <= rmax ? py(meta.cut) : null)
+    : (base != null ? py(base) : null);
   return `<div class="mspark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <title>${tip}</title>
-    ${base != null ? `<path class="msp-base" d="M0 ${py(base).toFixed(1)}H${W}"/>` : ""}
+    ${refY != null ? `<path class="msp-base" d="M0 ${refY.toFixed(1)}H${W}"/>` : ""}
     <path class="msp-line ${cls}" d="${dAttr}"/>
     ${last != null ? `<circle class="msp-dot ${cls}" cx="${px(last).toFixed(1)}" cy="${py(s[last]).toFixed(1)}" r="1.8"/>` : ""}
   </svg></div>`;
@@ -84,7 +95,7 @@ function moversSpark(x, dates) {
 
 const fmtDShort = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
 
-const MOVER_WINDOWS = [["day", "Day"], ["week", "Week"]];
+const MOVER_WINDOWS = [["day", "Day"], ["week", "Week"], ["season", "Season"]];
 
 /* qualitative movers panel (from prediction snapshots), with three "why"s: the
    newest result, the monthly ratings move, and registration changes. A ratings
@@ -106,9 +117,18 @@ function moversHtml(d, div) {
   const nameOf = new Map((d.schedule || []).map((s) => [s.tid, shortName(s.name)]));
   const fmtD = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
   const pct0 = (x) => Math.round(x * 100) + "%";
+  // the season window is measured in standings places, not odds (odds can't be
+  // reconstructed for past dates), so its two end columns swap: the primary
+  // cell shows the rank move and the trailing cell current Cup odds
+  const isRank = m.metric === "rank";
   const rows = m.movers.map((x) => {
     const up = x.delta > 0;
     const rank = x.rank_from ? `#${x.rank_from}→#${x.rank_to}` : `→#${x.rank_to}`;
+    const primary = isRank ? rank : `${pct0(x.champ_from)} → ${pct0(x.champ_to)}`;
+    const deltaCell = isRank
+      ? `${x.delta > 0 ? "+" : "−"}${Math.abs(x.delta)}`
+      : (x.delta > 0 ? "+" : "−") + Math.abs(Math.round(x.delta * 100));
+    const trailing = isRank ? pct0(x.champ_now) : rank;
     const lr = x.last_result
       ? `${nameOf.get(x.last_result.tid) || ""}: ${Math.round(x.last_result.pts)}${placeTag(x.last_result.place)}`
       : '<span class="dim">DNP</span>';
@@ -127,26 +147,28 @@ function moversHtml(d, div) {
     return `<tr>
       <td class="${up ? "movers-up" : "movers-down"}">${up ? "▲" : "▼"}</td>
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
-      <td class="num ${up ? "movers-up" : "movers-down"}">${pct0(x.champ_from)} → ${pct0(x.champ_to)}</td>
-      <td class="num dim">${(x.delta > 0 ? "+" : "−") + Math.abs(Math.round(x.delta * 100))}</td>
-      <td class="msparkcell">${moversSpark(x, m.spark_dates)}</td>
+      <td class="num ${up ? "movers-up" : "movers-down"}">${primary}</td>
+      <td class="num dim">${deltaCell}</td>
+      <td class="msparkcell">${moversSpark(x, m.spark_dates, m, d.meta)}</td>
       <td class="num">${ratingCell}</td>
       <td>${lr}</td>
       <td>${regs}</td>
-      <td class="num dim">${rank}</td></tr>`;
+      <td class="num dim">${trailing}</td></tr>`;
   }).join("");
   const seg = tabs.map(([k, lbl]) =>
     `<button data-mwin="${k}" class="${k === active ? "active" : ""}">${lbl}</button>`).join("");
-  const body = rows || `<tr><td colspan="9" class="dim">No moves above ${
-    Math.round((active === "day" ? 0.01 : 0.02) * 100)}% in this window — a quiet stretch.</td></tr>`;
+  const floor = isRank ? "3 places" : `${Math.round((active === "day" ? 0.01 : 0.02) * 100)}%`;
+  const body = rows || `<tr><td colspan="9" class="dim">No moves above ${floor} in this window — a quiet stretch.</td></tr>`;
   // the day window's "now" is live, so label it as such rather than pretending
   // it's a snapshot boundary
   const since = `since ${fmtD(m.baseline)}${m.live_latest ? "" : ` → ${fmtD(m.latest)}`}`;
-  const trendTitle = active === "day" ? "Cup odds, last 7 days" : "Cup odds, last 7 weeks";
-  return `<details class="movers" ${state.moversOpen ? "open" : ""}><summary>Biggest movers — Cup odds ${since}</summary>
+  const trendTitle = isRank ? "Standings rank across the season (dashed line = auto-bid cut)"
+    : active === "day" ? "Cup odds, last 7 days" : "Cup odds, last 7 weeks";
+  const headline = isRank ? "Biggest movers — standings" : "Biggest movers — Cup odds";
+  return `<details class="movers" ${state.moversOpen ? "open" : ""}><summary>${headline} ${since}</summary>
     <div class="seg movers-seg">${seg}</div>
     <table class="table-ledger detail-tbl"><thead><tr>
-      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th title="${trendTitle}">Trend</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th><th>Last event</th><th>Registration changes</th><th class="num">Rank</th>
+      <th></th><th>Player</th><th class="num">${isRank ? "Rank" : "Cup odds"}</th><th class="num" title="${isRank ? "Places climbed this month" : "Change in Cup odds"}">Δ</th><th title="${trendTitle}">Trend</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th><th>Last event</th><th>Registration changes</th><th class="num">${isRank ? "Cup odds" : "Rank"}</th>
     </tr></thead><tbody>${body}</tbody></table></details>`;
 }
 

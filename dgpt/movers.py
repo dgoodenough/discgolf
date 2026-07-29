@@ -29,13 +29,13 @@ import csv
 import datetime as dt
 import json
 
-from . import config
+from . import config, points
 
 OUT = config.REPO_ROOT / "docs" / "data" / "movers.json"
 APP_DATA = config.REPO_ROOT / "docs" / "data"
 TOP_N = 12
 
-WINDOWS = ("day", "week")
+WINDOWS = ("day", "week", "season")
 
 # Per-window noise floors. Measured over this season's snapshots: consecutive-day
 # per-player |delta| is overwhelmingly simulation jitter (median nonzero 0.0002
@@ -44,8 +44,12 @@ WINDOWS = ("day", "week")
 # days and stays honestly sparse on quiet ones. The week floor is unchanged.
 MIN_DELTA = {"day": 0.01, "week": 0.02}
 
-# Sparkline horizon per window: last 7 days, last 7 Mondays.
+# Sparkline horizon per window: last 7 days, last 7 Mondays. (The season window
+# spans the whole season, so its axis is derived from the calendar instead.)
 SPARK_N = {"day": 7, "week": 7}
+
+# Season window is measured in standings PLACES, not odds — see _season_movers.
+MIN_PLACES = 3
 
 # Attendance for these classes is gated by standings qualification, not a
 # registration list, so a player crossing the ~100% attendance threshold there
@@ -252,6 +256,129 @@ def _division_movers(division: str, window: str, rows: list[dict], dates: list[s
     }
 
 
+def _rank_asof(bundle: dict, division: str, asof: str) -> dict[int, int]:
+    """Standings rank as of a date, replayed from banked results.
+
+    This is exact, not an estimate: standings are a pure function of banked
+    event points under the per-class caps, and every event carries an end date.
+    Filtering to the events finished by `asof` and re-running
+    points.season_total reproduces the standings that stood then — which is why
+    the season window can reach back to February even though snapshots only
+    begin in July. (Cup odds cannot be recovered this way; they would need a
+    re-sim against the field and ratings of the day, which were never stored.)
+    """
+    end_of = {s["tid"]: s["end"] for s in bundle.get("schedule", [])}
+    totals: list[tuple[float, int]] = []
+    for p in bundle.get("players", []):
+        evs = [(b["tid"], b["pts"]) for b in p["banked"]
+               if end_of.get(b["tid"], "9999-99-99") <= asof]
+        if not evs:
+            continue  # not in the standings yet on that date
+        totals.append((points.season_total(evs, division), p["pdga"]))
+    totals.sort(key=lambda t: -t[0])
+    return {pdga: i for i, (_, pdga) in enumerate(totals, 1)}
+
+
+def _season_axis(today: dt.date) -> list[str]:
+    """As-of dates for the season sparkline: the end of each completed month
+    this season, then today. Months before the first event resolve to no
+    standings and render as a gap."""
+    axis = [
+        (dt.date(today.year, m + 1, 1) - dt.timedelta(days=1)).isoformat()
+        for m in range(1, today.month)
+    ]
+    axis.append(today.isoformat())
+    return axis
+
+
+def _season_movers(division: str, bundle: dict, rows: list[dict], dates: list[str],
+                   today: dt.date) -> dict | None:
+    """Month-to-date standings movement, with a whole-season rank arc.
+
+    Measured in places rather than Cup odds: odds can't be reconstructed for
+    past dates (see _rank_asof), so a season-long odds chart would be a
+    fabrication. Rank is exactly recoverable, and it's the more legible
+    "who is climbing" signal anyway — the auto-bid cut is itself a rank.
+    """
+    month_start = today.replace(day=1)
+    baseline_asof = (month_start - dt.timedelta(days=1)).isoformat()
+
+    base_rank = _rank_asof(bundle, division, baseline_asof)
+    cur_rank = {p["pdga"]: p["rank"] for p in bundle.get("players", [])}
+    champ_now = {p["pdga"]: p["p_champ"] for p in bundle.get("players", [])}
+    if not base_rank or not cur_rank:
+        return None
+
+    last_result, _, _ = _context(bundle, baseline_asof, today.isoformat())
+
+    # rating move over the month, when a snapshot that old exists
+    old_snap: dict[int, dict] = {}
+    older = [d for d in dates if d <= baseline_asof]
+    if older:
+        old_snap = {int(r["pdga_number"]): r for r in rows if r["snapshot_date"] == older[-1]}
+
+    # Restrict to the Cup bubble — within 2x the auto-bid cut (56 MPO / 36 FPO).
+    # Raw place deltas are otherwise dominated by the deep field: a player's
+    # first event vaults them past everyone still tied on zero, so an unfiltered
+    # list reads "#299 -> #158" for players with 0.00 Cup odds while the actual
+    # race is invisible. Measured on this season's data, the GMC cut (100/50)
+    # was still too loose (top MPO movers all sat at 0.00-0.03 odds); 2x the
+    # standings cut surfaces movement that matters (#57->#41 at 0.24, #33->#25
+    # at 0.21) and keeps the sparkline's rank domain tight enough that the
+    # auto-bid cutline is a meaningful reference inside it. A minimum-starts
+    # filter was tried and discarded — it changed almost nothing (84 vs 86).
+    contender = 2 * (bundle.get("meta", {}).get("cut") or 28)
+
+    movers = []
+    for pdga, r_to in cur_rank.items():
+        r_from = base_rank.get(pdga)
+        if r_from is None:
+            continue  # wasn't ranked at the start of the month; no move to show
+        if min(r_from, r_to) > contender:
+            continue  # never in the playoff conversation this month
+        places = r_from - r_to  # positive = climbed
+        if abs(places) < MIN_PLACES:
+            continue
+        b = old_snap.get(pdga)
+        try:
+            r_old = int(b["rating"]) if b and b.get("rating") not in (None, "") else None
+        except (ValueError, TypeError):
+            r_old = None
+        r_new = next((p.get("rating") for p in bundle["players"] if p["pdga"] == pdga), None)
+        movers.append({
+            "pdga": pdga,
+            "name": next(p["name"] for p in bundle["players"] if p["pdga"] == pdga),
+            "rank_from": r_from,
+            "rank_to": r_to,
+            "delta": places,          # places climbed; sign drives the arrow
+            "champ_now": round(float(champ_now.get(pdga, 0.0)), 4),
+            "last_result": last_result.get(pdga),
+            "reg_added": [],
+            "reg_removed": [],
+            "rating_from": r_old,
+            "rating_to": int(r_new) if r_new else None,
+            "rating_delta": (int(r_new) - r_old) if (r_old and r_new) else None,
+        })
+    movers.sort(key=lambda m: -abs(m["delta"]))
+    movers = movers[:TOP_N]
+
+    axis = _season_axis(today)
+    series_by_date = {a: _rank_asof(bundle, division, a) for a in axis[:-1]}
+    series_by_date[axis[-1]] = cur_rank
+    for m in movers:
+        m["spark"] = [series_by_date[a].get(m["pdga"]) for a in axis]
+    ranked = [v for m in movers for v in m["spark"] if v]
+    return {
+        "metric": "rank",
+        "baseline": month_start.isoformat(),
+        "latest": today.isoformat(),
+        "live_latest": True,
+        "spark_dates": axis,
+        "rank_max": max(ranked) if ranked else 1,
+        "movers": movers,
+    }
+
+
 def write_movers() -> None:
     today = dt.date.today()
     out: dict[str, dict] = {}
@@ -266,7 +393,9 @@ def write_movers() -> None:
         bundle = _load_bundle(div)
         live = _live_endpoint(bundle)
         out[div.lower()] = {
-            w: _division_movers(div, w, rows, dates, bundle, live, today) for w in WINDOWS
+            w: (_season_movers(div, bundle, rows, dates, today) if w == "season"
+                else _division_movers(div, w, rows, dates, bundle, live, today))
+            for w in WINDOWS
         }
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -276,4 +405,5 @@ def write_movers() -> None:
         for w in WINDOWS:
             data = windows.get(w)
             parts.append(f"{w}={len(data['movers'])} (vs {data['baseline']})" if data else f"{w}=n/a")
+        # season needs no snapshots at all — it is replayed from banked results
         print(f"  movers {div}: " + ", ".join(parts))

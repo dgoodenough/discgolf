@@ -236,12 +236,25 @@ completed/gated sets.
 
 ## 8. Decisions — resolved 2026-07
 
-- **D1 → (c), and ship day + week first.** Day and week are implemented. The
-  season view will plot **rank or points**, not odds: those are exactly
-  reconstructable back to February, so it can be a real season-long chart
-  instead of a one-point stub. Not built yet — it needs the as-of-date
-  standings replay described in §2.1, which is a separate piece of work from
-  the snapshot-window machinery below.
+- **D1 → (c). All three tabs are shipped.** The season tab plots **standings
+  rank**, not odds: rank is exactly reconstructable back to February, so it is
+  a real season-long chart rather than a one-point stub. Implementation notes:
+  - `_rank_asof` replays standings from the bundle's banked results filtered by
+    event end date, re-running `points.season_total` so the per-class caps
+    apply as they did then. Verified against live data: replaying as-of today
+    reproduces the pipeline's own ranks for **548/548** ranked MPO players.
+    It needs no snapshots at all, and no I/O beyond the bundle.
+  - Window is **month-to-date** (1st of the current month → now, live), so it
+    stays useful mid-month instead of freezing on the 1st.
+  - Movers are restricted to the **Cup bubble, 2x the auto-bid cut** (56 MPO /
+    36 FPO). This was measured, not assumed: raw place deltas are dominated by
+    the deep field, where a first event vaults a player 140 places past
+    everyone tied on zero. Unfiltered, every top MPO mover had 0.00 Cup odds;
+    the GMC cut (100/50) was still too loose; 2x the standings cut surfaces the
+    real race (Williams #27→#19 at 0.75, Midtlyng #18→#12 at 0.69). A
+    minimum-starts filter was tried and dropped — it changed 86 rows to 84.
+  - Odds are still shown per row as context, and the sparkline draws the
+    auto-bid cutline as its reference so crossings are visible.
 - **D3 → day 1%, week 2%,** set from the measured distribution rather than
   guessed. Consecutive-day per-player `|delta|` is overwhelmingly simulation
   jitter: median nonzero 0.0002 (MPO) / 0.0005 (FPO), p90 0.0055 / 0.0199. A
