@@ -3,7 +3,8 @@
    a single player against frozen per-sim cutlines ("cutline replay"). */
 "use strict";
 
-const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" }, colsMode: "auto", permalink: null };
+const state = { div: "mpo", data: {}, sort: { key: "p_champ", dir: "desc" }, colsMode: "auto", permalink: null,
+                moverWin: "week", moversOpen: false };
 
 // player permalinks: #mpo-75412 opens that division with the player expanded
 {
@@ -48,12 +49,60 @@ async function loadDiv(div) {
   return state.data[div];
 }
 
-/* qualitative week-over-week movers panel (from prediction snapshots), with
-   three "why"s: the newest result, the monthly ratings move, and registration
-   changes. A ratings shift alone can drive the Cup odds with no event played. */
+/* Cup-odds trend sparkline for one mover: a time series over the window's
+   horizon, so unlike sparkCell (a distribution, drawn as bars) this is a line.
+   Y is pinned to 0-100% rather than auto-scaled per player — these are read
+   side-by-side down a column, so they have to be mutually comparable, and
+   auto-scaling would make a 2-point wobble look like a collapse. Nulls (before
+   a player entered the model) break the line instead of reading as 0%. */
+function moversSpark(x, dates) {
+  const s = x.spark;
+  if (!s || s.length < 2) return "";
+  const H = 20, W = 76, n = s.length;
+  const px = (i) => (i / (n - 1)) * W;
+  const py = (v) => H - v * H;
+  let dAttr = "", pen = false, last = null;
+  for (let i = 0; i < n; i++) {
+    if (s[i] == null) { pen = false; continue; }
+    dAttr += `${pen ? "L" : "M"}${px(i).toFixed(1)} ${py(s[i]).toFixed(1)}`;
+    pen = true; last = i;
+  }
+  if (!dAttr) return "";
+  const cls = x.delta > 0 ? "movers-up" : "movers-down";
+  const base = s.find((v) => v != null);
+  const tip = dates
+    ? s.map((v, i) => (v == null ? null : `${fmtDShort(dates[i])} ${Math.round(v * 100)}%`))
+        .filter(Boolean).join("\n")
+    : "";
+  return `<div class="mspark"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <title>${tip}</title>
+    ${base != null ? `<path class="msp-base" d="M0 ${py(base).toFixed(1)}H${W}"/>` : ""}
+    <path class="msp-line ${cls}" d="${dAttr}"/>
+    ${last != null ? `<circle class="msp-dot ${cls}" cx="${px(last).toFixed(1)}" cy="${py(s[last]).toFixed(1)}" r="1.8"/>` : ""}
+  </svg></div>`;
+}
+
+const fmtDShort = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
+
+const MOVER_WINDOWS = [["day", "Day"], ["week", "Week"]];
+
+/* qualitative movers panel (from prediction snapshots), with three "why"s: the
+   newest result, the monthly ratings move, and registration changes. A ratings
+   shift alone can drive the Cup odds with no event played. Tabs pick the
+   comparison window; the day window's "now" is the live published state, so it
+   tracks play during a tournament. */
 function moversHtml(d, div) {
-  const m = state.movers && state.movers[div];
-  if (!m || !m.movers.length) return "";
+  const all = state.movers && state.movers[div];
+  if (!all) return "";
+  // back-compat: before the first refresh on the windowed schema, movers.json
+  // is still the flat single-window shape — treat it as the week tab.
+  const windowed = all.movers ? { week: all } : all;
+  // keep a window's tab even when it has no movers — "nothing moved this week"
+  // is real information, and tabs that appear/disappear per division are worse
+  const tabs = MOVER_WINDOWS.filter(([k]) => windowed[k]);
+  if (!tabs.length || !tabs.some(([k]) => windowed[k].movers.length)) return "";
+  const active = tabs.some(([k]) => k === state.moverWin) ? state.moverWin : tabs[tabs.length - 1][0];
+  const m = windowed[active];
   const nameOf = new Map((d.schedule || []).map((s) => [s.tid, shortName(s.name)]));
   const fmtD = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
   const pct0 = (x) => Math.round(x * 100) + "%";
@@ -80,15 +129,25 @@ function moversHtml(d, div) {
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
       <td class="num ${up ? "movers-up" : "movers-down"}">${pct0(x.champ_from)} → ${pct0(x.champ_to)}</td>
       <td class="num dim">${(x.delta > 0 ? "+" : "−") + Math.abs(Math.round(x.delta * 100))}</td>
+      <td class="msparkcell">${moversSpark(x, m.spark_dates)}</td>
       <td class="num">${ratingCell}</td>
       <td>${lr}</td>
       <td>${regs}</td>
       <td class="num dim">${rank}</td></tr>`;
   }).join("");
-  return `<details class="movers"><summary>Biggest movers — Cup odds since ${fmtD(m.baseline)}</summary>
+  const seg = tabs.map(([k, lbl]) =>
+    `<button data-mwin="${k}" class="${k === active ? "active" : ""}">${lbl}</button>`).join("");
+  const body = rows || `<tr><td colspan="9" class="dim">No moves above ${
+    Math.round((active === "day" ? 0.01 : 0.02) * 100)}% in this window — a quiet stretch.</td></tr>`;
+  // the day window's "now" is live, so label it as such rather than pretending
+  // it's a snapshot boundary
+  const since = `since ${fmtD(m.baseline)}${m.live_latest ? "" : ` → ${fmtD(m.latest)}`}`;
+  const trendTitle = active === "day" ? "Cup odds, last 7 days" : "Cup odds, last 7 weeks";
+  return `<details class="movers" ${state.moversOpen ? "open" : ""}><summary>Biggest movers — Cup odds ${since}</summary>
+    <div class="seg movers-seg">${seg}</div>
     <table class="table-ledger detail-tbl"><thead><tr>
-      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th><th>Last event</th><th>Registration changes</th><th class="num">Rank</th>
-    </tr></thead><tbody>${rows}</tbody></table></details>`;
+      <th></th><th>Player</th><th class="num">Cup odds</th><th class="num">Δ</th><th title="${trendTitle}">Trend</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th><th>Last event</th><th>Registration changes</th><th class="num">Rank</th>
+    </tr></thead><tbody>${body}</tbody></table></details>`;
 }
 
 /* ---------- shared bits ---------- */
@@ -254,6 +313,16 @@ function renderForecast(d) {
     🥇 = won a points event this year; a DGPT Elite or Major win earns a guaranteed Cup spot via special invite (Cup = 100%), so these odds already include winning a remaining event.
     <br><b>Playoff assumption:</b> GMC and MVP fields assume every player who qualifies will attend — signups aren't open yet, so those odds will shift once they are.</p>`;
 
+  // switching the movers window re-renders, so remember the panel was open
+  el.querySelectorAll(".movers-seg button").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.moverWin = b.dataset.mwin;
+      state.moversOpen = true;
+      renderForecast(d);
+    })
+  );
+  const det = el.querySelector("details.movers");
+  if (det) det.addEventListener("toggle", () => { state.moversOpen = det.open; });
   el.querySelectorAll("#cols-seg button").forEach((b) =>
     b.addEventListener("click", () => { state.colsMode = b.dataset.mode; renderForecast(d); })
   );
