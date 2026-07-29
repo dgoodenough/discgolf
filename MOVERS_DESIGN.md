@@ -206,18 +206,31 @@ July 1", driven by the window's baseline.
 
 ## 7. Staging
 
-1. **`movers.py`: parameterise the window.** Extract the anchor selection into
-   a function taking (baseline_cutoff, latest_cutoff) and emit `week` only,
-   under the new nested shape. Client reads `movers[div].week`. No visible
-   change — pure refactor, verifiable by diffing output against today's.
+The regression suite (`tests/`, gated on every PR by
+`.github/workflows/tests.yml`) already covers `movers` via `test_smoke.py`
+and `conftest.py`, so each stage below lands with tests rather than a
+one-shot verification. Snapshot history is a plain CSV — a synthetic
+multi-week history is a cheap fixture, no captured payload needed.
+
+1. **`movers.py`: parameterise the window.** Extract anchor selection into a
+   function taking (baseline_cutoff, latest_cutoff) and emit `week` only,
+   under the new nested shape. Client reads `movers[div].week`. Pure refactor
+   — assert byte-identical mover lists against today's output.
 2. **Add `day` and `month` windows**, including the live-bundle latest for
-   `day` and per-window floors. Still no UI: verify in JSON.
+   `day` and per-window floors. Backend only; test with a synthetic history
+   fixture covering the anchoring rules, the gap/forward-fill semantics, and
+   the early-season degradation path.
 3. **Client tabs**, defaulting to `week` so current behaviour is preserved.
 4. **Sparkline**: series into the payload, renderer in `app.js`.
 5. *(optional, later)* per-player timeseries file + sparklines on expanded rows.
 
 Stages 1–2 are backend-only and land without touching the site; 3–4 are
 client-only. Each is independently revertible.
+
+One sequencing note: stage 2's daily window reads current `p_champ` from the
+bundle, which `movers.write_movers` already loads via `_context`. So the live
+endpoint needs no new plumbing — `_context` returns it alongside the existing
+completed/gated sets.
 
 ---
 
