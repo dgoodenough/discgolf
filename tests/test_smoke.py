@@ -122,7 +122,8 @@ def test_snapshot_and_movers_run_clean(sim_result):
     # with a single snapshot neither window has anything to compare against
     movers.write_movers()
     out = json.loads(movers.OUT.read_text(encoding="utf-8"))
-    assert out == {"mpo": {"day": None, "week": None}, "fpo": {"day": None, "week": None}}
+    empty = {"day": None, "week": None, "season": None}
+    assert out == {"mpo": empty, "fpo": empty}
 
 
 def test_invariants_clean_on_tiny_world(sim_result):

@@ -31,7 +31,8 @@ def world(tmp_path, monkeypatch):
     (tmp_path / "predictions").mkdir()
 
     def build(history: dict[str, dict[int, float]], *, live: dict[int, float],
-              players=(1, 2), ratings=None, registered="", events=(), schedule=()):
+              players=(1, 2), ratings=None, registered="", events=(), schedule=(),
+              banked=None, ranks=None, meta=None):
         """history: {date: {pdga: p_champ}}; live: {pdga: p_champ}."""
         rows = []
         for date, vals in sorted(history.items()):
@@ -49,11 +50,14 @@ def world(tmp_path, monkeypatch):
             w.writeheader()
             w.writerows(rows)
         bundle = {
+            "meta": meta or {"cut": 28, "gmc_cut": 100},
             "schedule": list(schedule),
             "events": [{"tid": t} for t in events],
             "players": [
-                {"pdga": p, "name": f"P{p}", "rank": p, "rating": (ratings or {}).get(p, 1000),
-                 "p_champ": live[p], "att": [1.0] * len(events), "banked": []}
+                {"pdga": p, "name": f"P{p}", "rank": (ranks or {}).get(p, p),
+                 "rating": (ratings or {}).get(p, 1000),
+                 "p_champ": live[p], "att": [1.0] * len(events),
+                 "banked": list((banked or {}).get(p, []))}
                 for p in players if p in live
             ],
         }
@@ -167,3 +171,68 @@ def test_completed_and_gated_events_excluded_from_reg_changes(world, monkeypatch
     out = _run(monkeypatch, dt.date(2026, 7, 27))
     m = out["mpo"]["day"]["movers"][0]
     assert m["reg_removed"] == [30]
+
+
+# ---------------------------------------------------------------- season tab
+
+def _sched(*specs):
+    return [{"tid": t, "end": end, "completed": True, "cls": "elite", "name": f"E{t}"}
+            for t, end in specs]
+
+
+def test_rank_asof_replays_standings_from_banked_results(world, monkeypatch):
+    """The season tab's foundation: filtering banked events by end date and
+    re-running the capping logic reproduces the standings of that date."""
+    from dgpt import movers as M
+    bundle = {
+        "meta": {"cut": 28},
+        "schedule": _sched((1, "2026-03-01"), (2, "2026-06-15")),
+        "events": [],
+        "players": [
+            {"pdga": 10, "name": "Early", "rank": 2, "rating": 1000, "p_champ": 0.1, "att": [],
+             "banked": [{"tid": 1, "pts": 100.0, "place": 3}]},
+            {"pdga": 11, "name": "Late", "rank": 1, "rating": 1000, "p_champ": 0.2, "att": [],
+             "banked": [{"tid": 2, "pts": 150.0, "place": 1}]},
+        ],
+    }
+    # in March only the first event counts, so Early leads and Late is unranked
+    assert M._rank_asof(bundle, "MPO", "2026-03-31") == {10: 1}
+    # by July both count and Late is ahead
+    assert M._rank_asof(bundle, "MPO", "2026-07-01") == {11: 1, 10: 2}
+
+
+def test_season_window_is_rank_based_and_needs_no_snapshots(world, monkeypatch):
+    """Season movement is measured in places and reconstructed from results, so
+    it works with no usable snapshot history at all."""
+    banked = {
+        1: [{"tid": 1, "pts": 100.0, "place": 3}, {"tid": 2, "pts": 90.0, "place": 5}],   # gained in July
+        2: [{"tid": 1, "pts": 95.0, "place": 4}],
+    }
+    world({"2026-07-29": {1: 0.5, 2: 0.5}}, live={1: 0.6, 2: 0.4}, players=(1, 2),
+          ranks={1: 1, 2: 2}, banked=banked,
+          schedule=_sched((1, "2026-05-01"), (2, "2026-07-15")))
+    out = _run(monkeypatch, dt.date(2026, 7, 29))
+    s = out["mpo"]["season"]
+    assert s["metric"] == "rank" and s["baseline"] == "2026-07-01"
+    # P1 was 2nd at the end of June (95 vs 100), 1st now: +1 place... below the
+    # 3-place floor, so nobody qualifies — the floor is doing its job
+    assert s["movers"] == []
+    # the axis still spans the season and ends today
+    assert s["spark_dates"][-1] == "2026-07-29"
+    assert len(s["spark_dates"]) == 7  # Jan..Jun month ends + today
+
+
+def test_season_window_filters_to_the_cup_bubble(world, monkeypatch):
+    """A big climb deep in the field is a field-filling artifact, not a story:
+    only players within 2x the auto-bid cut are eligible."""
+    banked = {
+        1: [{"tid": 1, "pts": 500.0, "place": 1}, {"tid": 2, "pts": 300.0, "place": 2}],   # contender, climbs
+        2: [{"tid": 2, "pts": 1.0, "place": 90}],                               # deep field, huge climb
+    }
+    # pad so ranks are meaningful: player 2 sits far outside the bubble
+    world({"2026-07-29": {1: 0.5, 2: 0.01}}, live={1: 0.5, 2: 0.01}, players=(1, 2),
+          ranks={1: 5, 2: 400}, banked=banked, meta={"cut": 28},
+          schedule=_sched((1, "2026-05-01"), (2, "2026-07-15")))
+    out = _run(monkeypatch, dt.date(2026, 7, 29))
+    shown = {m["pdga"] for m in out["mpo"]["season"]["movers"]}
+    assert 2 not in shown  # rank 400 is outside 2x28, however far it moved
