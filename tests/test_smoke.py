@@ -119,10 +119,10 @@ def test_snapshot_and_movers_run_clean(sim_result):
     # a second record on the same day is a no-op, not a duplicate
     assert "already taken today" in snapshot.record(res, "MPO")
 
-    # with a single snapshot there is no week-over-week window yet
+    # with a single snapshot neither window has anything to compare against
     movers.write_movers()
     out = json.loads(movers.OUT.read_text(encoding="utf-8"))
-    assert out == {"mpo": None, "fpo": None}
+    assert out == {"mpo": {"day": None, "week": None}, "fpo": {"day": None, "week": None}}
 
 
 def test_invariants_clean_on_tiny_world(sim_result):

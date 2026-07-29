@@ -150,6 +150,18 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .movers .table-ledger { margin: 0; }
 .movers-up { color: var(--pos); font-weight: 600; }
 .movers-down { color: var(--neg); font-weight: 600; }
+/* window tabs: same segmented control as the column switcher, scaled down */
+.movers-seg { margin: 8px 10px 0; width: max-content; }
+.movers-seg button { padding: 3px 11px; font-size: var(--fs-small); }
+/* odds trend sparkline (time series; sparkCell is the distribution one) */
+td.msparkcell { width: 84px; padding-top: 3px; padding-bottom: 3px; }
+.mspark { width: 76px; height: 20px; }
+.mspark svg { width: 100%; height: 100%; overflow: visible; }
+.msp-line { fill: none; stroke: currentColor; stroke-width: 1.4; vector-effect: non-scaling-stroke;
+            stroke-linejoin: round; stroke-linecap: round; }
+.msp-base { fill: none; stroke: var(--grid-strong); stroke-width: 1; stroke-dasharray: 2 2;
+            vector-effect: non-scaling-stroke; }
+.msp-dot { fill: currentColor; stroke: none; }
 .reg-chip { display: inline-block; font-size: var(--fs-caption); padding: 0 5px; border-radius: var(--radius); border: 1px solid var(--grid); white-space: nowrap; }
 .reg-chip.reg-in { color: var(--pos); background: var(--pos-fill); }
 .reg-chip.reg-out { color: var(--neg); background: var(--neg-fill); }
