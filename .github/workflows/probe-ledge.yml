@@ -1,0 +1,34 @@
+name: Probe Ledgestone rounds (one-shot)
+on:
+  push:
+    branches: [claude/ledgestone-finals-rounds]
+    paths: ['.github/workflows/probe-ledge.yml']
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Dump event round structure
+        run: |
+          python - <<'EOF'
+          import json
+          from dgpt import live_api
+          ev = live_api.fetch_event(96414)
+          print("Name:", ev.get("Name"))
+          print("FinalRound:", ev.get("FinalRound"), "| HighestCompletedRound:", ev.get("HighestCompletedRound"))
+          print("Rounds:", ev.get("Rounds"), "| Finals:", ev.get("Finals"), "| Semis:", ev.get("Semis"))
+          print("RoundsList:", json.dumps(ev.get("RoundsList"), default=str)[:700])
+          for d in ev.get("Divisions", []):
+              if d.get("Division") in ("MPO","FPO"):
+                  print("  div:", d.get("Division"), "LatestRound:", d.get("LatestRound"), "Players:", d.get("Players"))
+          f = live_api.live_field(96414, "MPO") or {}
+          print("\nlive_field size:", len(f))
+          for pdga, r in list(f.items())[:4]:
+              print(f"   {r['name']}: cur={r['cur']} rem={r['rem']}")
+          EOF
