@@ -180,3 +180,50 @@ def test_missing_earlier_sheet_is_skipped(fake_api):
         [row(1, "A", 1030, round_to_par=-2, played=9)]))
     field = live_api.live_field(1, "MPO")
     assert field[1]["cur"] == -6.0
+
+
+# ---------------------------------------------------- finals round ids (2026-07-30)
+
+def _sheet(rows):
+    return {"scores": rows}
+
+
+def _row(pdga, name, rtp, played, done=1):
+    return {"PDGANum": pdga, "Name": name, "Rating": 1000, "ToPar": None,
+            "RoundtoPar": rtp, "Played": played, "HasRoundScore": done}
+
+
+def test_finals_round_id_is_not_a_round_count(fake_api):
+    """Ledgestone 2026 reports FinalRound=12 with RoundsList {1,2,3,12:Finals}.
+    Reading 12 as a count told the model everyone had ~11 rounds left, which
+    inflates the projected spread and flattens the live odds."""
+    fake_api.event(1, event_payload("Ledgestone", 12, [("MPO", 1)], round_ids=[1, 2, 3, 12]))
+    fake_api.round(1, "MPO", 1, _sheet([_row(10, "Heimburg", -11, 18)]))
+
+    field = live_api.live_field(1, "MPO")
+    assert field[10]["cur"] == -11.0
+    assert field[10]["rem"] == 2.0  # 3 regular rounds, one played — not 11
+
+
+def test_only_listed_round_sheets_are_requested(fake_api):
+    """The finals id must not make us request the nonexistent rounds 4-11."""
+    fake_api.event(1, event_payload("Ledgestone", 12, [("MPO", 12)], round_ids=[1, 2, 3, 12]))
+    for rnd, rtp in ((1, -5), (2, -3), (3, -2), (12, -4)):
+        fake_api.round(1, "MPO", rnd, _sheet([_row(10, "A", rtp, 18 if rnd < 12 else 9)]))
+
+    field = live_api.live_field(1, "MPO")
+    requested = [c for c in fake_api.calls if "fetch_round" in c]
+    assert len(requested) == 4                      # 1,2,3,12 — no 404 storm
+    assert field[10]["cur"] == -14.0                # finals score included
+    assert field[10]["rem"] == 0.0                  # past the regular rounds
+
+
+def test_plain_and_major_round_counts_unchanged(fake_api):
+    """Regression: events whose FinalRound really is a count still work."""
+    fake_api.event(1, event_payload("Jomez", 3, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, _sheet([_row(10, "A", -6, 18)]))
+    assert live_api.live_field(1, "MPO")[10]["rem"] == 2.0
+
+    fake_api.event(2, event_payload("USWDGC", 4, [("FPO", 1)]))
+    fake_api.round(2, "FPO", 1, _sheet([_row(20, "B", -5, 12, done=0)]))
+    assert live_api.live_field(2, "FPO")[20]["rem"] == pytest.approx((72 - 12) / 18)
