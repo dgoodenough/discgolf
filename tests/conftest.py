@@ -101,9 +101,15 @@ def round_payload(rows: list[dict]) -> dict:
 
 
 def event_payload(name: str, final_round: int, divisions: list[tuple[str, int]],
-                  end_date: str | None = None) -> dict:
+                  end_date: str | None = None, round_ids: list[int] | None = None) -> dict:
+    """`round_ids` mirrors PDGA's RoundsList keys. Ids >= 11 are finals, so an
+    event with a Final 9 looks like [1, 2, 3, 12] with FinalRound=12 — a round
+    ID, not a count (see live_api._round_plan)."""
+    ids = round_ids if round_ids is not None else list(range(1, final_round + 1))
     return {
         "Name": name, "FinalRound": final_round, "EndDate": end_date,
+        "Rounds": len([i for i in ids if i < 11]),
+        "RoundsList": {str(i): {"Number": i} for i in ids},
         "Divisions": [{"Division": d, "LatestRound": lr} for d, lr in divisions],
     }
 

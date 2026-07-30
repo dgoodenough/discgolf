@@ -59,6 +59,19 @@ pattern across them, not any single bug, is what this backlog addresses.
    day. The 7/24–7/26 snapshots still carry the contaminated roster —
    they feed no panel, but they do feed end-of-season grading.
 
+9. **A fifth live-API shape variant — and the first one a check caught.**
+   `FinalRound` is not a round count: at events with a Final 9 it is the
+   finals round's ID. Ledgestone 2026 reported `FinalRound: 12` with
+   `RoundsList {1, 2, 3, 12: "Finals"}`, so the remaining-holes model read
+   ~11 rounds left for the whole field and flattened the live odds
+   (fixed in `live_api._round_plan`). Two things worked as designed this
+   time: the item-3 rem-bounds invariant flagged it within a refresh
+   instead of it being noticed by eye days later, and the publish-first
+   posture meant the site kept updating while the run went red. Item 1's
+   corpus is why the fix ships with the variant pinned as a test rather
+   than a probe workflow. This is the pattern of incident 1 continuing —
+   the variants are not exhausted — but the detection loop now works.
+
 ## The plan
 
 Ordered by expected payoff. "In-season safe" = additive, can't change a

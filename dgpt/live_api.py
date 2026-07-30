@@ -113,6 +113,35 @@ def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: boo
     return _get(url, cf)["data"]
 
 
+FINALS_ID_MIN = 11  # round ids >= this are finals/semis, not numbered rounds
+
+
+def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
+    """(sheet ids to read, number of scheduled regular rounds).
+
+    "FinalRound" is NOT a round count — at events with a Final 9 it is the
+    finals round's ID. Ledgestone 2026 reports FinalRound=12 with
+    RoundsList {1, 2, 3, 12: "Finals"}, i.e. three regular rounds. Treating 12
+    as a count told the remaining-holes model everyone had ~11 rounds left,
+    which inflates the projected spread enormously and flattens the live win
+    odds (caught by the rem bounds invariant, 2026-07-30).
+
+    Read the structure instead: RoundsList enumerates the real round ids, ids
+    >= FINALS_ID_MIN are the finals, and the regular-round count is what the
+    field actually plays. That also matches how simulate.ROUNDS treats these
+    events (3 rounds for everything but majors), so the live projection and
+    the from-scratch projection agree. Iterating the listed ids rather than
+    1..latest additionally stops us requesting the nonexistent rounds 4-11.
+    """
+    ids = sorted(int(k) for k in (event.get("RoundsList") or {}) if str(k).isdigit())
+    if not ids:  # older/degraded payloads: fall back to a contiguous range
+        n = event.get("Rounds") or latest
+        ids = list(range(1, max(int(n), int(latest)) + 1))
+    regular = [i for i in ids if i < FINALS_ID_MIN]
+    total_rounds = len(regular) or len(ids)
+    return [i for i in ids if i <= latest], total_rounds
+
+
 def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO")) -> bool:
     """True once every (non-withdrawn) player in each relevant division has a
     final-round score — so the event can be banked into the standings the
@@ -236,12 +265,14 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     not-started, and we leave those out.
     """
     event = fetch_event(tournament_id)
-    total_rounds = event.get("FinalRound")
     div = next((d for d in event["Divisions"] if d["Division"] == division), None)
-    if div is None or not total_rounds:
+    if div is None:
         return None
     latest = div.get("LatestRound")
     if not latest:
+        return None
+    sheet_ids, total_rounds = _round_plan(event, latest)
+    if not total_rounds:
         return None
 
     # Accumulate each player's state across ALL round sheets 1..latest rather
@@ -269,7 +300,7 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     # RoundtoPar at all, and only for the current round, where it is the
     # running total on the sheet being played.
     state: dict[int, dict] = {}
-    for rnd in range(1, latest + 1):
+    for rnd in sheet_ids:
         try:
             scores = fetch_round(tournament_id, division, rnd).get("scores") or []
         except urllib.error.HTTPError:
