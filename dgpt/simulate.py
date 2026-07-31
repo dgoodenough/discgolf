@@ -230,6 +230,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     live_tids = {r["tournament_id"] for r in live_now}
     live_data: dict[int, tuple] = {}
+    live_place: dict[int, dict[int, int]] = {}
     for ev_i, row in enumerate(remaining):
         if row["tournament_id"] not in live_tids:
             continue
@@ -239,12 +240,16 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         cur = np.zeros(n)
         rem = np.zeros(n)
         in_field = np.zeros(n, dtype=bool)
+        place_now: dict[int, int] = {}
         for pdga, info in state.items():
             if pdga in idx:
                 j = idx[pdga]
                 cur[j], rem[j], in_field[j] = info["cur"], info["rem"], True
+                if info.get("place"):
+                    place_now[j] = info["place"]
         favg = float(ratings[in_field].mean()) if in_field.any() else 1000.0
         live_data[ev_i] = (cur, rem, in_field, favg)
+        live_place[ev_i] = place_now
 
     # playoff events (drawn last, with attendance gated on standings)
     gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
@@ -495,14 +500,23 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     # per-player live-event projections (finish + points) from the place hist
     live_stats: dict[int, dict] = {}
     places = np.arange(1, LIVE_CAP + 1)
+    PRE_DRAWS = 4000
+    rng_pre = np.random.default_rng(11)
     for ev_i, hist in live_place_hist.items():
         tid = remaining[ev_i]["tournament_id"]
-        cur, rem, in_field, _ = live_data[ev_i]
+        cur, rem, in_field, favg_live = live_data[ev_i]
         cv = curves[tid]
         pts_by_place = np.zeros(LIVE_CAP)
         m = min(LIVE_CAP, len(cv) - 1)
         pts_by_place[:m] = cv[1 : 1 + m]
         v_asc = pts_by_place[::-1]
+        # One shared draw of the field's pre-event scores, reused for every
+        # player's "what did we expect of them here?" baseline. Whole rounds,
+        # not remaining holes: this is the projection as it stood at tee-off.
+        ev_rounds = ROUNDS.get(remaining[ev_i]["cls"], 3)
+        opp_r = ratings[in_field]
+        opp_draws = (-(opp_r - favg_live) / rpps * ev_rounds
+                     + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), (PRE_DRAWS, len(opp_r))))
         per: dict[int, dict] = {}
         for j in range(n):
             if not in_field[j]:
@@ -514,12 +528,22 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             cum = np.cumsum(w[::-1])
             def q(f: float) -> float:
                 return float(v_asc[min(int(np.searchsorted(cum, f * tot)), LIVE_CAP - 1)])
+            # pre-event expectation: what this player's rating alone projected
+            # against this field, ignoring the score so far. Comparing it to
+            # mean_pts is the over/under-performing story the day tracker tells.
+            pre_mu = -(ratings[j] - favg_live) / rpps * ev_rounds
+            pre_scores = pre_mu + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), PRE_DRAWS)
+            beat = (opp_draws < pre_scores[:, None]).sum(axis=1)
+            pre_place = np.clip(beat + 1, 1, LIVE_CAP)
             per[pdga_numbers[j]] = {
                 "cur": round(float(cur[j]), 1),
                 "rem": round(float(rem[j]), 2),
+                "place": live_place.get(ev_i, {}).get(j),   # current standing
                 "win": round(float(w[0] / tot), 4),
                 "mean_place": round(float((places * w).sum() / tot), 1),
                 "mean_pts": round(float((pts_by_place * w).sum() / tot), 1),
+                "pre_place": int(np.median(pre_place)),
+                "pre_pts": round(float(np.median(pts_by_place[pre_place - 1])), 1),
                 "p10": q(0.10), "p50": q(0.50), "p90": q(0.90),
             }
         live_stats[tid] = per

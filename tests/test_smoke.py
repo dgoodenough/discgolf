@@ -146,3 +146,17 @@ def test_full_refresh_sequence(tiny_world):
     snapshot.record(res, "MPO")
     movers.write_movers()
     invariants.run_checks()
+
+
+def test_live_stats_carry_current_place_and_pre_event_baseline(sim_result):
+    """The day tracker's columns: current standing from the sheet's own
+    RunningPlace, and the pre-event expectation the live projection is
+    compared against."""
+    world, _, res = sim_result
+    live = res.live_stats.get(world.live_tid) or {}
+    assert live, "tiny world should have a live event"
+    row = next(iter(live.values()))
+    for key in ("cur", "rem", "place", "mean_pts", "pre_pts", "pre_place"):
+        assert key in row, f"live stats missing {key}"
+    assert row["pre_place"] >= 1
+    assert row["pre_pts"] >= 0

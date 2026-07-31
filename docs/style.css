@@ -150,6 +150,7 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .movers .table-ledger { margin: 0; }
 .movers-up { color: var(--pos); font-weight: 600; }
 .movers-down { color: var(--neg); font-weight: 600; }
+td.nowrap { white-space: nowrap; }
 /* window tabs: same segmented control as the column switcher, scaled down */
 .movers-seg { margin: 8px 10px 0; width: max-content; }
 .movers-seg button { padding: 3px 11px; font-size: var(--fs-small); }

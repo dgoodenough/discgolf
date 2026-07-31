@@ -121,6 +121,18 @@ function moversHtml(d, div) {
   // reconstructed for past dates), so its two end columns swap: the primary
   // cell shows the rank move and the trailing cell current Cup odds
   const isRank = m.metric === "rank";
+  // During a tournament the day tab's job is "why did this move TODAY", and the
+  // answer is on the course, not in the last event they played. Swap the stale
+  // "Last event" column for the live one: where they stand now, and what the
+  // model projects for them versus what it expected before a disc was thrown.
+  const liveTid = active === "day"
+    ? (liveEvents(d).map((e) => e.tid).find((t) => d.players.some((p) => p.live && p.live[t])) ?? null)
+    : null;
+  const liveOf = new Map(
+    liveTid == null ? [] : d.players.filter((p) => p.live && p.live[liveTid]).map((p) => [p.pdga, p.live[liveTid]])
+  );
+  const showLive = liveOf.size > 0;
+  const ord = (n) => (n == null ? "—" : ordinal(Math.round(n)));
   const rows = m.movers.map((x) => {
     const up = x.delta > 0;
     const rank = x.rank_from ? `#${x.rank_from}→#${x.rank_to}` : `→#${x.rank_to}`;
@@ -144,6 +156,26 @@ function moversHtml(d, div) {
       ...(x.reg_added || []).map((t) => `<span class="reg-chip reg-in">+ ${nameOf.get(t) || t}</span>`),
       ...(x.reg_removed || []).map((t) => `<span class="reg-chip reg-out">− ${nameOf.get(t) || t}</span>`),
     ].join(" ");
+    let storyCells;
+    if (showLive) {
+      const l = liveOf.get(x.pdga);
+      if (!l) {
+        storyCells = `<td class="dim">not in field</td><td class="num dim">—</td>`;
+      } else {
+        const thru = Math.round((d.events.find((e) => e.tid === liveTid).rounds - l.rem) * 18);
+        const pos = l.place ? ordinal(l.place) : thru <= 0 ? "yet to tee off" : "—";
+        const score = thru <= 0 ? "" : ` · ${l.cur >= 0 ? "+" : ""}${l.cur}`;
+        // projected points now vs the pre-event expectation = the whole story
+        const beat = l.pre_pts != null && l.mean_pts > l.pre_pts;
+        const vs = l.pre_pts == null ? "" :
+          `<span class="dim" title="Projected before the event, from rating vs this field (median ${ord(l.pre_place)})">exp ${Math.round(l.pre_pts)}</span>`;
+        storyCells =
+          `<td class="nowrap">${pos}${score}<span class="dim"> thru ${Math.max(thru, 0)}</span></td>` +
+          `<td class="num nowrap"><span class="${l.pre_pts == null ? "" : beat ? "movers-up" : "movers-down"}">${Math.round(l.mean_pts)}</span> ${vs}</td>`;
+      }
+    } else {
+      storyCells = `<td>${lr}</td><td>${regs}</td>`;
+    }
     return `<tr>
       <td class="${up ? "movers-up" : "movers-down"}">${up ? "▲" : "▼"}</td>
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
@@ -151,8 +183,7 @@ function moversHtml(d, div) {
       <td class="num dim">${deltaCell}</td>
       <td class="msparkcell">${moversSpark(x, m.spark_dates, m, d.meta)}</td>
       <td class="num">${ratingCell}</td>
-      <td>${lr}</td>
-      <td>${regs}</td>
+      ${storyCells}
       <td class="num dim">${trailing}</td></tr>`;
   }).join("");
   const seg = tabs.map(([k, lbl]) =>
@@ -168,7 +199,11 @@ function moversHtml(d, div) {
   return `<details class="movers" ${state.moversOpen ? "open" : ""}><summary>${headline} ${since}</summary>
     <div class="seg movers-seg">${seg}</div>
     <table class="table-ledger detail-tbl"><thead><tr>
-      <th></th><th>Player</th><th class="num">${isRank ? "Rank" : "Cup odds"}</th><th class="num" title="${isRank ? "Places climbed this month" : "Change in Cup odds"}">Δ</th><th title="${trendTitle}">Trend</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th><th>Last event</th><th>Registration changes</th><th class="num">${isRank ? "Cup odds" : "Rank"}</th>
+      <th></th><th>Player</th><th class="num">${isRank ? "Rank" : "Cup odds"}</th><th class="num" title="${isRank ? "Places climbed this month" : "Change in Cup odds"}">Δ</th><th title="${trendTitle}">Trend</th><th class="num" title="Change in PDGA rating over the window — a monthly ratings update can move Cup odds with no event played">Rating Δ</th>${
+        showLive
+          ? `<th title="Current standing and score at ${shortName((d.schedule.find((s) => s.tid === liveTid) || {}).name || "the live event")}">Now</th><th class="num" title="Projected event points, against what the model expected from this player pre-event">Proj. pts</th>`
+          : `<th>Last event</th><th>Registration changes</th>`
+      }<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
     </tr></thead><tbody>${body}</tbody></table></details>`;
 }
 

@@ -313,11 +313,19 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             pdga = s.get("PDGANum")
             if not pdga:
                 continue
-            rec = state.setdefault(pdga, {"name": None, "rating": None, "cur": None, "holes": 0, "wd": False})
+            rec = state.setdefault(pdga, {"name": None, "rating": None, "cur": None,
+                                          "holes": 0, "wd": False, "place": None})
             rec["name"] = s.get("Name") or rec["name"]
             rec["rating"] = s.get("Rating") or rec["rating"]
             if str(s.get("GrandTotal")) == "999":
                 rec["wd"] = True
+            # the latest sheet carrying a RunningPlace is the current standing.
+            # It is the sheet's own authoritative ordering (the same field the
+            # invariants check against), so it beats re-deriving a place by
+            # sorting on cur — which would tie players who are mid-round with
+            # different holes played.
+            if s.get("RunningPlace"):
+                rec["place"] = int(s["RunningPlace"])
             played = s.get("Played") or (18 if s.get("HasRoundScore") else 0)
             active = bool(s.get("HasRoundScore")) or played > 0
             if not active:
@@ -345,6 +353,7 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             "rating": r["rating"],
             "cur": float(cur),
             "rem": max(total_rounds * 18 - holes, 0) / 18.0,
+            "place": r["place"],   # current standing per the sheet (None pre-tee)
         }
     return out or None
 
