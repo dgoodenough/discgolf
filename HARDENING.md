@@ -60,11 +60,18 @@ pattern across them, not any single bug, is what this backlog addresses.
    they feed no panel, but they do feed end-of-season grading.
 
 9. **A fifth live-API shape variant — and the first one a check caught.**
-   `FinalRound` is not a round count: at events with a Final 9 it is the
-   finals round's ID. Ledgestone 2026 reported `FinalRound: 12` with
+   `FinalRound` is not a round count: where a round is labelled "Finals" it
+   is that round's ID. Ledgestone 2026 reported `FinalRound: 12` with
    `RoundsList {1, 2, 3, 12: "Finals"}`, so the remaining-holes model read
    ~11 rounds left for the whole field and flattened the live odds
-   (fixed in `live_api._round_plan`). Two things worked as designed this
+   (fixed in `live_api._round_plan`). The first fix then over-corrected by
+   excluding the finals id as a shootout, making it a 3-round event when
+   Ledgestone plays 4 — the "Finals" sheet carries the full field over 18
+   holes on its own layout. Worth noting the checks did not catch that
+   second error: rem=2 is as plausible to a bounds test as rem=3, and it
+   took the owner knowing the tournament. Structural facts that no
+   invariant can infer are exactly where a fixture pinned from a real
+   payload earns its keep. Two things worked as designed this
    time: the item-3 rem-bounds invariant flagged it within a refresh
    instead of it being noticed by eye days later, and the publish-first
    posture meant the site kept updating while the run went red. Item 1's

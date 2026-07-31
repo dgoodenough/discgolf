@@ -113,33 +113,35 @@ def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: boo
     return _get(url, cf)["data"]
 
 
-FINALS_ID_MIN = 11  # round ids >= this are finals/semis, not numbered rounds
-
-
 def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
-    """(sheet ids to read, number of scheduled regular rounds).
+    """(sheet ids to read, number of rounds the field plays).
 
-    "FinalRound" is NOT a round count — at events with a Final 9 it is the
-    finals round's ID. Ledgestone 2026 reports FinalRound=12 with
-    RoundsList {1, 2, 3, 12: "Finals"}, i.e. three regular rounds. Treating 12
-    as a count told the remaining-holes model everyone had ~11 rounds left,
-    which inflates the projected spread enormously and flattens the live win
-    odds (caught by the rem bounds invariant, 2026-07-30).
+    "FinalRound" is NOT a round count — where an event has a round PDGA labels
+    "Finals", it is that round's ID. Ledgestone 2026 reports FinalRound=12 with
+    RoundsList {1, 2, 3, 12: "Finals"}. Treating 12 as a count told the
+    remaining-holes model everyone had ~11 rounds left, which inflates the
+    projected spread enormously and flattens the live win odds (caught by the
+    rem bounds invariant, 2026-07-30).
 
-    Read the structure instead: RoundsList enumerates the real round ids, ids
-    >= FINALS_ID_MIN are the finals, and the regular-round count is what the
-    field actually plays. That also matches how simulate.ROUNDS treats these
-    events (3 rounds for everything but majors), so the live projection and
-    the from-scratch projection agree. Iterating the listed ids rather than
-    1..latest additionally stops us requesting the nonexistent rounds 4-11.
+    Nor is the "Finals" round a top-card shootout to be excluded: at Ledgestone
+    its sheet carries the full field (156 MPO / 55 FPO rows) over 18 holes on
+    its own layout — it is simply the fourth round, numbered oddly. Ledgestone
+    is a four-round event. So the count is every round listed, whatever its id;
+    "Rounds" is no good either, since it reports 3 there (numbered rounds only).
+
+    Caveat for a future variant: a genuine 9-hole Final 9 would be counted as a
+    whole round here, overstating rem by half a round for the players in it.
+    No 2026 event does that — every listed round has been a full 18 — and the
+    hole counts needed to do better only exist on sheets already published.
+
+    Iterating the listed ids rather than 1..latest also stops us requesting the
+    nonexistent rounds 4-11 on every refresh.
     """
     ids = sorted(int(k) for k in (event.get("RoundsList") or {}) if str(k).isdigit())
     if not ids:  # older/degraded payloads: fall back to a contiguous range
         n = event.get("Rounds") or latest
         ids = list(range(1, max(int(n), int(latest)) + 1))
-    regular = [i for i in ids if i < FINALS_ID_MIN]
-    total_rounds = len(regular) or len(ids)
-    return [i for i in ids if i <= latest], total_rounds
+    return [i for i in ids if i <= latest], len(ids)
 
 
 def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO")) -> bool:

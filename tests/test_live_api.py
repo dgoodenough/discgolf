@@ -196,20 +196,22 @@ def _row(pdga, name, rtp, played, done=1):
 def test_finals_round_id_is_not_a_round_count(fake_api):
     """Ledgestone 2026 reports FinalRound=12 with RoundsList {1,2,3,12:Finals}.
     Reading 12 as a count told the model everyone had ~11 rounds left, which
-    inflates the projected spread and flattens the live odds."""
+    inflates the projected spread and flattens the live odds. The "Finals"
+    round is a full fourth round for the whole field (verified: 156 MPO rows,
+    18 holes, its own layout), so the count is 4 — not 3.""" 
     fake_api.event(1, event_payload("Ledgestone", 12, [("MPO", 1)], round_ids=[1, 2, 3, 12]))
     fake_api.round(1, "MPO", 1, _sheet([_row(10, "Heimburg", -11, 18)]))
 
     field = live_api.live_field(1, "MPO")
     assert field[10]["cur"] == -11.0
-    assert field[10]["rem"] == 2.0  # 3 regular rounds, one played — not 11
+    assert field[10]["rem"] == 3.0  # 4 rounds, one played — not 11, and not 3
 
 
 def test_only_listed_round_sheets_are_requested(fake_api):
     """The finals id must not make us request the nonexistent rounds 4-11."""
     fake_api.event(1, event_payload("Ledgestone", 12, [("MPO", 12)], round_ids=[1, 2, 3, 12]))
     for rnd, rtp in ((1, -5), (2, -3), (3, -2), (12, -4)):
-        fake_api.round(1, "MPO", rnd, _sheet([_row(10, "A", rtp, 18 if rnd < 12 else 9)]))
+        fake_api.round(1, "MPO", rnd, _sheet([_row(10, "A", rtp, 18)]))
 
     field = live_api.live_field(1, "MPO")
     requested = [c for c in fake_api.calls if "fetch_round" in c]
