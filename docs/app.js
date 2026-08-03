@@ -176,6 +176,18 @@ function moversHtml(d, div) {
     } else {
       storyCells = `<td>${lr}</td><td>${regs}</td>`;
     }
+    // projected final standings seed: the story the odds delta can't tell —
+    // between two locked-in players (both 100%) only this number moves
+    let seedCell = "";
+    if (!isRank) {
+      if (x.proj_rank_from == null || x.proj_rank_to == null) {
+        seedCell = `<td class="num dim">—</td>`;
+      } else {
+        const rf = Math.round(x.proj_rank_from), rt = Math.round(x.proj_rank_to);
+        const cls2 = rt < rf ? "movers-up" : rt > rf ? "movers-down" : "dim";
+        seedCell = `<td class="num nowrap ${cls2}" title="Projected final standings position: ${x.proj_rank_from} → ${x.proj_rank_to}">#${rf} → #${rt}</td>`;
+      }
+    }
     return `<tr>
       <td class="${up ? "movers-up" : "movers-down"}">${up ? "▲" : "▼"}</td>
       <td><a class="plink" href="https://www.pdga.com/player/${x.pdga}" target="_blank" rel="noopener">${x.name}</a></td>
@@ -184,12 +196,13 @@ function moversHtml(d, div) {
       <td class="msparkcell">${moversSpark(x, m.spark_dates, m, d.meta)}</td>
       <td class="num">${ratingCell}</td>
       ${storyCells}
+      ${seedCell}
       <td class="num dim">${trailing}</td></tr>`;
   }).join("");
   const seg = tabs.map(([k, lbl]) =>
     `<button data-mwin="${k}" class="${k === active ? "active" : ""}">${lbl}</button>`).join("");
   const floor = isRank ? "3 places" : `${Math.round((active === "day" ? 0.01 : 0.02) * 100)}%`;
-  const body = rows || `<tr><td colspan="9" class="dim">No moves above ${floor} in this window — a quiet stretch.</td></tr>`;
+  const body = rows || `<tr><td colspan="${isRank ? 9 : 10}" class="dim">No moves above ${floor} in this window — a quiet stretch.</td></tr>`;
   // the day window's "now" is live, so label it as such rather than pretending
   // it's a snapshot boundary
   const since = `since ${fmtD(m.baseline)}${m.live_latest ? "" : ` → ${fmtD(m.latest)}`}`;
@@ -203,7 +216,7 @@ function moversHtml(d, div) {
         showLive
           ? `<th title="Current standing and score at ${shortName((d.schedule.find((s) => s.tid === liveTid) || {}).name || "the live event")}">Now</th><th class="num" title="Projected event points, against what the model expected from this player pre-event">Proj. pts</th>`
           : `<th>Last event</th><th>Registration changes</th>`
-      }<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
+      }${isRank ? "" : `<th class="num" title="Projected final standings seed — where the model expects them to end the season. Moves here tell the seeding battles the Cup odds can't (a No. 2 vs No. 3 race between two locks)">Proj. seed</th>`}<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
     </tr></thead><tbody>${body}</tbody></table></details>`;
 }
 

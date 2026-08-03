@@ -44,6 +44,16 @@ WINDOWS = ("day", "week", "season")
 # days and stays honestly sparse on quiet ones. The week floor is unchanged.
 MIN_DELTA = {"day": 0.01, "week": 0.02}
 
+# Projected-seed story floor. Cup odds saturate: once a player is a lock
+# (p_champ 1.0) nothing above can move, and the real race — the projected
+# final standings position, i.e. the 2nd-vs-3rd-seed battle — is invisible to
+# the odds delta. So a mover also qualifies on |Δ mean_rank| alone, for
+# players with real Cup odds. Floor measured over this season's snapshots
+# (consecutive-day |Δ mean_rank|, contenders at p_champ >= 0.2): p90 = 0.9,
+# p95 = 1.2 — 2.0 places is clear of daily sim jitter in both divisions.
+MIN_RANK_DELTA = 2.0
+RANK_STORY_MIN_CHAMP = 0.2
+
 # Sparkline horizon per window: last 7 days, last 7 Mondays. (The season window
 # spans the whole season, so its axis is derived from the calendar instead.)
 SPARK_N = {"day": 7, "week": 7}
@@ -87,6 +97,7 @@ def _live_endpoint(bundle: dict) -> dict[int, dict]:
             "cur_rank": p["rank"],
             "rating": p.get("rating") or "",
             "registered": registered,
+            "mean_rank": p.get("mean_rank", ""),
         }
     return out
 
@@ -188,13 +199,25 @@ def _division_movers(division: str, window: str, rows: list[dict], dates: list[s
         except (ValueError, TypeError):
             return None
 
+    def _mrank(r: dict | None) -> float | None:
+        try:
+            return float(r["mean_rank"]) if r and r.get("mean_rank") not in (None, "") else None
+        except (ValueError, TypeError):
+            return None
+
     movers = []
     for pdga, c in cur.items():
         b = base.get(pdga)
         p_to = float(c["p_champ"])
         p_from = float(b["p_champ"]) if b else 0.0
         d = p_to - p_from
-        if abs(d) < MIN_DELTA[window]:
+        mr_from, mr_to = _mrank(b), _mrank(c)
+        mr_d = (mr_to - mr_from) if (mr_from is not None and mr_to is not None) else None
+        # a big projected-seed move qualifies on its own — the odds delta is
+        # blind to seed battles between locked-in players (see MIN_RANK_DELTA)
+        seed_story = (mr_d is not None and abs(mr_d) >= MIN_RANK_DELTA
+                      and p_to >= RANK_STORY_MIN_CHAMP)
+        if abs(d) < MIN_DELTA[window] and not seed_story:
             continue
         # registration changes (why #2) — only when the baseline actually
         # recorded registrations (blank = pre-schema rows, unknowable; showing
@@ -228,8 +251,14 @@ def _division_movers(division: str, window: str, rows: list[dict], dates: list[s
             "rating_from": r_from,          # why #3: monthly ratings move
             "rating_to": r_to,
             "rating_delta": (r_to - r_from) if (r_from is not None and r_to is not None) else None,
+            # why #4 / story: projected final standings position (mean_rank)
+            "proj_rank_from": round(mr_from, 1) if mr_from is not None else None,
+            "proj_rank_to": round(mr_to, 1) if mr_to is not None else None,
+            "proj_rank_delta": round(mr_d, 1) if mr_d is not None else None,
         })
-    movers.sort(key=lambda m: -abs(m["delta"]))
+    # rank a 2-seat projected move like a 4-point odds move, so seed battles
+    # between locked players aren't pushed off the list on busy event days
+    movers.sort(key=lambda m: -(abs(m["delta"]) + 0.02 * abs(m["proj_rank_delta"] or 0.0)))
     movers = movers[:TOP_N]
 
     # sparkline: p_champ across the window's horizon, forward-filled
