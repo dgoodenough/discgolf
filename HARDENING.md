@@ -79,6 +79,30 @@ pattern across them, not any single bug, is what this backlog addresses.
    than a probe workflow. This is the pattern of incident 1 continuing —
    the variants are not exhausted — but the detection loop now works.
 
+10. **The live window closed mid-final-round; the site froze overnight on
+    the second-to-last hole.** `live_events` was purely date-based
+    (`start <= today <= end`, UTC). Ledgestone ended Sunday 2026-08-02; a
+    6pm CDT finish is 23:00Z, and at 00:00Z Monday the loop declared
+    nothing live and exited while the lead card was still on the course.
+    Last capture 23:17Z: the eventual winner at 23% with one hole to
+    play, served all night — nothing recomputes between the loop's exit
+    and the Monday 11:00Z cron. This was a known, flagged risk ("Sunday
+    overrun") that was left unfixed until it bit. Fix: a one-day grace
+    window past `end_date`, open only until a refresh banks the event
+    (`completed=True` in the committed schedule closes it). The grace
+    period exposed a second, worse latent bug: banking is also
+    date-based, and `final_results` caches sheets permanently once the
+    end date passes — a refresh triggered at 00:05Z mid-final-round
+    would have frozen partial results as the event's permanent record.
+    So during the grace night (before 06:00Z) the scoreboard outranks
+    the calendar: `event_complete` gets the banking veto, with the
+    date-based answer as the fallback after 06:00Z or on API error, so a
+    player abandoned mid-round without a WD marker can only delay
+    banking a few hours, never past the Monday cron. Lesson twice over:
+    every place the pipeline consults the calendar about live play is a
+    UTC-rollover bug waiting for a US Sunday finish, and the second one
+    (permanent caching keyed on date) was sitting behind the first.
+
 ## The plan
 
 Ordered by expected payoff. "In-season safe" = additive, can't change a
