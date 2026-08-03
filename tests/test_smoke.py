@@ -119,11 +119,18 @@ def test_snapshot_and_movers_run_clean(sim_result):
     # a second record on the same day is a no-op, not a duplicate
     assert "already taken today" in snapshot.record(res, "MPO")
 
-    # with a single snapshot neither window has anything to compare against
+    # with a single snapshot neither snapshot-diff window has anything to
+    # compare against; the season window is calendar-dependent (it replays
+    # banked results as of the previous month's end, no snapshots needed),
+    # so it may or may not materialize depending on where today falls
+    # relative to the fixture's event dates
     movers.write_movers()
     out = json.loads(movers.OUT.read_text(encoding="utf-8"))
-    empty = {"day": None, "week": None, "season": None}
-    assert out == {"mpo": empty, "fpo": empty}
+    for div in ("mpo", "fpo"):
+        assert out[div]["day"] is None
+        assert out[div]["week"] is None
+        season = out[div]["season"]
+        assert season is None or season["metric"] == "rank"
 
 
 def test_invariants_clean_on_tiny_world(sim_result):

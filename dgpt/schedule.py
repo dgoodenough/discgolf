@@ -73,13 +73,28 @@ def build(client: PDGAClient | None = None) -> list[dict]:
 
 
 def live_events(rows: list[dict] | None = None) -> list[dict]:
-    """Points events currently in progress (start_date <= today <= end_date)."""
+    """Points events currently in progress.
+
+    An event stays "live" for one grace day past its end date until a refresh
+    has marked it completed. Sunday final rounds in US time zones finish after
+    00:00 UTC (6pm CDT = 23:00Z), so a purely date-based window shuts the live
+    loop down mid-final-round: Ledgestone 2026 froze on the second-to-last
+    hole at 23:17Z and nothing recomputed until the Monday cron (the site
+    showed the winner at 23% all night). With the grace day the loop keeps
+    polling across the UTC rollover; the first refresh after the last scores
+    post banks the event, commits completed=True, and the window closes.
+    """
     rows = rows if rows is not None else load()
     today = dt.date.today()
-    return [
-        r for r in rows
-        if dt.date.fromisoformat(r["start_date"]) <= today <= dt.date.fromisoformat(r["end_date"])
-    ]
+    out = []
+    for r in rows:
+        start = dt.date.fromisoformat(r["start_date"])
+        end = dt.date.fromisoformat(r["end_date"])
+        if start <= today <= end:
+            out.append(r)
+        elif end < today <= end + dt.timedelta(days=1) and not r["completed"]:
+            out.append(r)
+    return out
 
 
 def load() -> list[dict]:
@@ -93,17 +108,32 @@ def load() -> list[dict]:
         return rows
 
 
+def _utc_now() -> dt.datetime:  # seam so tests can pin the grace-night clock
+    return dt.datetime.now(dt.timezone.utc)
+
+
 def _row(e: dict, cls: str, *, mpo: bool, fpo: bool, fpo_points: bool) -> dict:
     tid = int(e["tournament_id"])
     today = dt.date.today()
     start = dt.date.fromisoformat(e["start_date"])
     end = dt.date.fromisoformat(e["end_date"])
     completed = end < today
-    if not completed and start <= today:  # in progress — may have already finished
+    # In progress: an event may finish before its end date passes. Grace
+    # night: the reverse — a US Sunday finish runs past 00:00 UTC, and banking
+    # on the date alone would cache a mid-final-round sheet as the permanent
+    # result (final_results caches once the end date passes). In both cases
+    # the scoreboard outranks the calendar. The grace override stops at 06:00
+    # UTC — by then even a west-coast night finish is long done — so a player
+    # abandoned mid-round without a WD marker (which reads as "still playing"
+    # forever) can only delay banking a few hours, not past the Monday cron.
+    in_grace_night = (
+        end < today <= end + dt.timedelta(days=1) and _utc_now().hour < 6
+    )
+    if start <= today and (not completed or in_grace_night):
         try:
             completed = live_api.event_complete(tid)
         except Exception:
-            pass
+            pass  # keep the date-based answer
     return {
         "tournament_id": tid,
         "name": e["tournament_name"],
