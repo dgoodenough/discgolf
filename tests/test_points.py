@@ -30,6 +30,19 @@ def test_doubles_curve_spans_singles_places():
     assert curve[2] == pytest.approx((115.0 + 105.0) / 2)
 
 
+def test_finishers_past_the_curve_table_get_the_floor():
+    # the table ends at place 144; official standings keep paying its 1.0
+    # floor (x class multiplier) to every finisher after that — the Ledgestone
+    # 2026 validation diff (official 1.33, ours 0.0 at places 145-151)
+    assert points.assign_points([145], "MPO", "elite") == [1.0]
+    assert points.assign_points([151], "MPO", "elite_plus") == [pytest.approx(1.33)]
+
+
+def test_tie_straddling_the_table_end_averages_with_the_floor():
+    # T143 spanning places 143-145: (1.0 + 1.0 + 1.0) / 3, not (1+1+0)/3
+    assert points.assign_points([143, 143, 143], "MPO", "elite") == [1.0, 1.0, 1.0]
+
+
 def test_season_total_per_class_caps():
     """Best 10 DGPT, best 2 majors, both playoffs, ALL Jomez bonus."""
     cls_by_tid = {}

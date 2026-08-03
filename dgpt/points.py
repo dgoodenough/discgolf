@@ -57,9 +57,16 @@ def assign_points(places: list[int], division: str, cls: str) -> list[float]:
     curve = event_curve(division, cls)
     from collections import Counter
 
+    # The published curve stops at place 144, but the official standings keep
+    # paying its floor value (1.0 x multiplier) to every finisher past it —
+    # Ledgestone 2026 was the first field deep enough to prove it (156 MPO;
+    # StatMando showed 1.33 for places 145+ where we paid 0.0). Both division
+    # curves converge to a flat 1.0 tail inside the table, so extending the
+    # deepest value is the official behavior, not a guess.
+    floor = curve[max(curve)]
     counts = Counter(places)
     tie_points = {
-        p: sum(curve.get(p + i, 0.0) for i in range(n)) / n for p, n in counts.items()
+        p: sum(curve.get(p + i, floor) for i in range(n)) / n for p, n in counts.items()
     }
     return [round(tie_points[p], 2) for p in places]
 
