@@ -32,8 +32,9 @@ def world(tmp_path, monkeypatch):
 
     def build(history: dict[str, dict[int, float]], *, live: dict[int, float],
               players=(1, 2), ratings=None, registered="", events=(), schedule=(),
-              banked=None, ranks=None, meta=None):
-        """history: {date: {pdga: p_champ}}; live: {pdga: p_champ}."""
+              banked=None, ranks=None, meta=None, mranks=None, mrank_live=None):
+        """history: {date: {pdga: p_champ}}; live: {pdga: p_champ}.
+        mranks: {date: {pdga: mean_rank}}; mrank_live: {pdga: mean_rank}."""
         rows = []
         for date, vals in sorted(history.items()):
             for pdga, p in vals.items():
@@ -43,6 +44,7 @@ def world(tmp_path, monkeypatch):
                     "division": "MPO", "pdga_number": pdga, "name": f"P{pdga}",
                     "rating": (ratings or {}).get(pdga, 1000), "cur_rank": pdga,
                     "p_champ": p, "registered": registered,
+                    "mean_rank": (mranks or {}).get(date, {}).get(pdga, ""),
                 })
         path = tmp_path / "predictions" / "history_mpo.csv"
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -57,6 +59,7 @@ def world(tmp_path, monkeypatch):
                 {"pdga": p, "name": f"P{p}", "rank": (ranks or {}).get(p, p),
                  "rating": (ratings or {}).get(p, 1000),
                  "p_champ": live[p], "att": [1.0] * len(events),
+                 "mean_rank": (mrank_live or {}).get(p, ""),
                  "banked": list((banked or {}).get(p, []))}
                 for p in players if p in live
             ],
@@ -236,3 +239,49 @@ def test_season_window_filters_to_the_cup_bubble(world, monkeypatch):
     out = _run(monkeypatch, dt.date(2026, 7, 29))
     shown = {m["pdga"] for m in out["mpo"]["season"]["movers"]}
     assert 2 not in shown  # rank 400 is outside 2x28, however far it moved
+
+
+def test_locked_players_seed_battle_qualifies_without_an_odds_move(world, monkeypatch):
+    """Two locks (p_champ 1.0 on both endpoints, odds delta 0) racing for the
+    No. 1 seed: the projected-seed move alone must surface the mover, carrying
+    the proj_rank fields the panel renders."""
+    world(
+        {"2026-07-26": {1: 1.0, 2: 1.0}, "2026-07-27": {1: 1.0, 2: 1.0}},
+        live={1: 1.0, 2: 1.0},
+        mranks={"2026-07-26": {1: 3.4, 2: 1.2}, "2026-07-27": {1: 3.4, 2: 1.2}},
+        mrank_live={1: 1.1, 2: 3.5},
+    )
+    out = _run(monkeypatch, dt.date(2026, 7, 27))
+    day = out["mpo"]["day"]
+    by = {m["pdga"]: m for m in day["movers"]}
+    assert set(by) == {1, 2}
+    assert by[1]["proj_rank_from"] == 3.4 and by[1]["proj_rank_to"] == 1.1
+    assert by[1]["proj_rank_delta"] == pytest.approx(-2.3)
+    assert by[1]["delta"] == 0.0
+
+
+def test_sub_floor_seed_wiggle_does_not_qualify(world, monkeypatch):
+    """Daily mean_rank jitter under the measured floor stays invisible."""
+    world(
+        {"2026-07-26": {1: 1.0}, "2026-07-27": {1: 1.0}},
+        live={1: 1.0},
+        mranks={"2026-07-26": {1: 2.0}, "2026-07-27": {1: 2.0}},
+        mrank_live={1: 3.0},  # |delta| = 1.0 < MIN_RANK_DELTA
+    )
+    out = _run(monkeypatch, dt.date(2026, 7, 27))
+    assert out["mpo"]["day"]["movers"] == []
+
+
+def test_missing_mean_rank_still_movers_on_odds_with_null_seed_fields(world, monkeypatch):
+    """Pre-schema snapshots have no mean_rank recorded for comparison shape —
+    an odds mover still appears, with the seed columns null, never fabricated."""
+    world(
+        {"2026-07-26": {1: 0.30}, "2026-07-27": {1: 0.31}},
+        live={1: 0.60},
+        mrank_live={1: 12.0},  # live has one, the baseline doesn't
+    )
+    out = _run(monkeypatch, dt.date(2026, 7, 27))
+    m = out["mpo"]["day"]["movers"][0]
+    assert m["delta"] == pytest.approx(0.30)
+    assert m["proj_rank_from"] is None and m["proj_rank_delta"] is None
+    assert m["proj_rank_to"] == 12.0

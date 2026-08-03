@@ -279,3 +279,59 @@ completed/gated sets.
 - **D3 — Threshold tuning.** The day/week/month floors above (0.5% / 2% / 3%)
   are guesses. Worth checking against the actual distribution of daily deltas
   before shipping.
+
+## 9. Next: telling the "why", and the Cup head-start story (logged 2026-08-03)
+
+Post-Ledgestone review items, recorded here as the tracker of record.
+
+### 9a. Projected seed as a first-class mover signal *(shipped with this note)*
+
+Cup odds saturate: two locks racing for the No. 2 seed never cross an
+odds floor. Day/week rows now carry `proj_rank_from/to/delta` from
+`mean_rank`, render as a "Proj. seed" column, and a 2+-place projected
+move qualifies on its own (floor measured: consecutive-day |Δ mean_rank|
+for p_champ ≥ 0.2 contenders is p90 0.9 / p95 1.2). Sorting weighs
+2 seats like 4 odds points so seed battles survive TOP_N on event days.
+
+### 9b. A "why" attribution per mover row *(open — design)*
+
+The panel shows three whys (last result, rating move, registration) plus
+the live columns, but the reader still infers which one drove the delta.
+The honest version is a per-row *decomposition*, computed by replaying
+the sim's inputs one change at a time between the two endpoints:
+
+1. re-run endpoint A with only the ratings swapped to endpoint B's →
+   attribute that delta to "ratings";
+2. then swap the banked results in → "results";
+3. then the registration/field state → "field";
+4. remainder = interaction + sim noise (should sit under the floors).
+
+Cost: 3 extra sim passes per division per refresh (~seconds at the
+25k-draw client scale, but these need server-side runs — bound it to the
+movers list's players only, or run at snapshot time once per day rather
+than per live refresh). Cheap approximation until then: a one-word
+"driver" tag chosen by precedence (event played in window → "result";
+|rating Δ| ≥ 3 → "ratings"; reg change → "registration"; else "field
+drift"), which is inference but labeled as such. Decide offseason
+whether the decomposition is worth the compute; the tag could ship
+in-season since it's read-side only.
+
+### 9c. Strokes in hand going into the Powerball Cup *(open — needs format input)*
+
+The Cup seeds carry a scoring head start, so the standings race is
+ultimately a race for strokes. The story to publish: "at current
+projections, X starts the Cup N strokes ahead of Y." Everything model-side
+already exists — the rank histogram (`hist`) restricted to Cup qualifiers
+gives each player a projected-seed distribution, so we can publish both
+the modal head start and its uncertainty (e.g. "70% to start with 2+
+strokes on the field").
+
+Blocked on one input: the official seed → starting-strokes table for the
+2026 Cup format (not yet in the repo; the points explainer stops at
+qualification). Once known, add it to `data/pointslogic/`, map the seed
+distribution through it, and surface (a) a column or panel on the main
+table ("Cup head start: median / p10–p90"), and (b) the movers story
+("this week's play was worth +1 starting stroke"). Strokes are the most
+legible unit the site could speak in — better than points or odds for
+casual readers — so this likely wants a place in the header stakes line,
+not just a column.
