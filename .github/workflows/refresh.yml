@@ -4,11 +4,17 @@ name: Refresh forecast
 # recomputes standings, re-runs the 100k-sim forecast, and commits if
 # anything changed (which redeploys GitHub Pages).
 #
-# Mondays: pick up the weekend's results. Thursdays: pick up registration
-# lists as upcoming events enter the trusted 14-day window.
+# Daily. Originally Mondays (weekend results) + Thursdays (registration
+# lists), but a registration drop announced mid-week sat stale for up to
+# three days — the PDGA field list is the source of record for attendance,
+# and it changes on no schedule (McBeth's Discmania withdrawal, 2026-08-03,
+# landed on a Monday afternoon). A daily run bounds registration staleness
+# at ~24h, gives the movers day window a real snapshot every day, and costs
+# ~3 CI minutes (free on a public repo). GitHub's cron is best-effort, so
+# treat 11:00 UTC as "sometime that morning".
 on:
   schedule:
-    - cron: "0 11 * * 1,4"
+    - cron: "0 11 * * *"
   workflow_dispatch: {}
 
 permissions:
