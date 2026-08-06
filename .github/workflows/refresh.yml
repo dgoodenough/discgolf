@@ -15,7 +15,12 @@ name: Refresh forecast
 on:
   schedule:
     - cron: "0 11 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: "Trigger a Pages build even if no data changed"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -75,8 +80,13 @@ jobs:
       # serving stale data (observed 2026-07-13: StatMando's FPO page was
       # mid-update, validate exited 1, and with no live event to push again
       # the site would have sat stale until Thursday's refresh).
+      # force_deploy exists because deploys otherwise ride data commits only:
+      # when a Pages build sticks in "building" past the retry budget (observed
+      # 2026-08-06, ~10 min of queueing), the next deploy attempt would wait
+      # for the next data change — a dispatch with force_deploy re-kicks the
+      # build immediately with nothing new to publish.
       - name: Trigger Pages build (retry on transient deploy failure)
-        if: steps.commit.outputs.changed == 'true'
+        if: steps.commit.outputs.changed == 'true' || inputs.force_deploy
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
