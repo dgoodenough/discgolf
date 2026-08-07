@@ -113,6 +113,20 @@ def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: boo
     return _get(url, cf)["data"]
 
 
+def _is_playoff(entry: dict, rid: int, final: int | None) -> bool:
+    """Is this RoundsList entry a sudden-death playoff rather than a round?
+
+    Prefers PDGA's own label ("Playoff" / "P", vs "Round 3" or "Finals").
+    Where an entry carries no label at all, falls back to the position of
+    FinalRound, which points at the last real round — anything listed beyond
+    it is a playoff.
+    """
+    label = " ".join(str(entry.get(k) or "") for k in ("Label", "LabelAbbreviated")).strip()
+    if label:
+        return "playoff" in label.lower()
+    return final is not None and rid > final
+
+
 def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     """(sheet ids to read, number of rounds the field plays).
 
@@ -126,8 +140,23 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     Nor is the "Finals" round a top-card shootout to be excluded: at Ledgestone
     its sheet carries the full field (156 MPO / 55 FPO rows) over 18 holes on
     its own layout — it is simply the fourth round, numbered oddly. Ledgestone
-    is a four-round event. So the count is every round listed, whatever its id;
-    "Rounds" is no good either, since it reports 3 there (numbered rounds only).
+    is a four-round event. "Rounds" is no good either, since it reports 3 there
+    (numbered rounds only).
+
+    But a sudden-death PLAYOFF is listed in RoundsList too, and it is not a
+    round: at USWDGC 2026 id 13 ("Playoff") is a one-row sheet over 8 holes,
+    and PDGA does not fold its strokes into anyone's ToPar. Counting every
+    listed id therefore handed the whole field a phantom round — a 3-round
+    event with a playoff listed read "rem 4.0" for everyone before a disc was
+    thrown (DGPT Discmania Challenge, 2026-08-07), inflating the projected
+    spread and flattening the live win odds exactly the way the FinalRound bug
+    above did. It slips past the rem bounds invariant because 4 rounds is a
+    perfectly legal number.
+
+    So: every listed round counts, except a playoff. PDGA labels it, and
+    "FinalRound" independently points at the last real round (12 at USWDGC,
+    with the playoff at 13) — we use the label where there is one and the
+    FinalRound bound for payloads that carry no labels.
 
     Caveat for a future variant: a genuine 9-hole Final 9 would be counted as a
     whole round here, overstating rem by half a round for the players in it.
@@ -135,12 +164,21 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     hole counts needed to do better only exist on sheets already published.
 
     Iterating the listed ids rather than 1..latest also stops us requesting the
-    nonexistent rounds 4-11 on every refresh.
+    nonexistent rounds 4-11 on every refresh, and keeps the playoff sheet out
+    of the score accumulation entirely.
     """
-    ids = sorted(int(k) for k in (event.get("RoundsList") or {}) if str(k).isdigit())
+    rounds_list = event.get("RoundsList") or {}
+    ids = sorted(int(k) for k in rounds_list if str(k).isdigit())
     if not ids:  # older/degraded payloads: fall back to a contiguous range
         n = event.get("Rounds") or latest
         ids = list(range(1, max(int(n), int(latest)) + 1))
+    else:
+        final = event.get("FinalRound")
+        final = int(final) if final else None
+        ids = [
+            i for i in ids
+            if not _is_playoff(rounds_list.get(str(i)) or rounds_list.get(i) or {}, i, final)
+        ]
     return [i for i in ids if i <= latest], len(ids)
 
 
@@ -356,8 +394,8 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             # Holes played, carried explicitly. It cannot be recovered from
             # `rem` downstream: `rem` is measured against this event's real
             # round list, while every consumer's round count is the per-class
-            # constant (3, or 4 for a major). A 4-round elite event makes the
-            # two disagree by a whole round.
+            # constant (3, or 4 for a major). Ledgestone plays four rounds as
+            # an elite_plus event, so there the two differ by a whole round.
             "thru": int(holes),
             "place": r["place"],   # current standing per the sheet (None pre-tee)
         }

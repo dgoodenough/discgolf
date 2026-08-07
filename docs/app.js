@@ -102,9 +102,9 @@ const MOVER_WINDOWS = [["day", "Day"], ["week", "Week"], ["season", "Season"]];
    Do NOT go back to deriving it as (e.rounds - live.rem) * 18. Those two
    numbers are measured against different round counts: `rem` comes from the
    event's real round list, while `e.rounds` is the model's per-class constant
-   (3, or 4 for a major). At a 4-round elite event the derivation lands a whole
-   round low, so everyone in round 1 read "thru 0" — and, because the callers
-   treat thru <= 0 as "hasn't teed off", lost their score too.
+   (3, or 4 for a major). Ledgestone plays four rounds as an elite_plus event,
+   so the derivation lands a whole round low there — and since the callers read
+   thru <= 0 as "hasn't teed off", a wrong value costs the score too.
    Older bundles predate `thru`; fall back to the derivation for those. */
 const liveThru = (e, l) =>
   Math.max(0, Math.round(l.thru != null ? l.thru : (e.rounds - l.rem) * 18));
