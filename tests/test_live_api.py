@@ -220,6 +220,41 @@ def test_only_listed_round_sheets_are_requested(fake_api):
     assert field[10]["rem"] == 0.0                  # past the regular rounds
 
 
+# ------------------------------------------------- holes played (2026-08-07)
+
+def test_thru_counts_holes_played_not_rounds_remaining(fake_api):
+    """Holes played must ride along explicitly.
+
+    The display bug: the front end derived it as (rounds - rem) * 18, where
+    `rounds` is the model's per-class constant. At this 4-round elite event
+    that constant is 3, so a player 9 holes into round 1 came out at -9 and
+    rendered as "thru 0" — with their score suppressed, since the caller reads
+    thru <= 0 as "yet to tee off"."""
+    fake_api.event(1, event_payload("Four Round Elite", 4, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, _sheet([_row(10, "A", -3, 9, done=0),
+                                        _row(11, "B", -1, 18)]))
+
+    field = live_api.live_field(1, "MPO")
+    assert field[10]["thru"] == 9
+    assert field[11]["thru"] == 18
+    # the derivation the front end used to do, against the class constant of 3
+    assert round((3 - field[10]["rem"]) * 18) == -9
+
+
+def test_thru_is_zero_before_teeing_off(fake_api):
+    _mini_event(fake_api, 1, {1: [row(1, "A", 1030, played=0)]})
+    assert live_api.live_field(1, "MPO")[1]["thru"] == 0
+
+
+def test_thru_accumulates_across_round_sheets(fake_api):
+    """Suspended-player shape: a completed round plus a partial one."""
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True)],
+        2: [row(1, "A", 1030, round_to_par=-1, played=9)],
+    })
+    assert live_api.live_field(1, "MPO")[1]["thru"] == 27
+
+
 def test_plain_and_major_round_counts_unchanged(fake_api):
     """Regression: events whose FinalRound really is a count still work."""
     fake_api.event(1, event_payload("Jomez", 3, [("MPO", 1)]))

@@ -97,6 +97,18 @@ const fmtDShort = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
 
 const MOVER_WINDOWS = [["day", "Day"], ["week", "Week"], ["season", "Season"]];
 
+/* Holes played at a live event, straight from the feed.
+
+   Do NOT go back to deriving it as (e.rounds - live.rem) * 18. Those two
+   numbers are measured against different round counts: `rem` comes from the
+   event's real round list, while `e.rounds` is the model's per-class constant
+   (3, or 4 for a major). At a 4-round elite event the derivation lands a whole
+   round low, so everyone in round 1 read "thru 0" — and, because the callers
+   treat thru <= 0 as "hasn't teed off", lost their score too.
+   Older bundles predate `thru`; fall back to the derivation for those. */
+const liveThru = (e, l) =>
+  Math.max(0, Math.round(l.thru != null ? l.thru : (e.rounds - l.rem) * 18));
+
 /* qualitative movers panel (from prediction snapshots), with three "why"s: the
    newest result, the monthly ratings move, and registration changes. A ratings
    shift alone can drive the Cup odds with no event played. Tabs pick the
@@ -162,7 +174,7 @@ function moversHtml(d, div) {
       if (!l) {
         storyCells = `<td class="dim">not in field</td><td class="num dim">—</td>`;
       } else {
-        const thru = Math.round((d.events.find((e) => e.tid === liveTid).rounds - l.rem) * 18);
+        const thru = liveThru(d.events.find((e) => e.tid === liveTid), l);
         const pos = l.place ? ordinal(l.place) : thru <= 0 ? "yet to tee off" : "—";
         const score = thru <= 0 ? "" : ` · ${l.cur >= 0 ? "+" : ""}${l.cur}`;
         // projected points now vs the pre-event expectation = the whole story
@@ -170,7 +182,7 @@ function moversHtml(d, div) {
         const vs = l.pre_pts == null ? "" :
           `<span class="dim" title="Projected before the event, from rating vs this field (median ${ord(l.pre_place)})">exp ${Math.round(l.pre_pts)}</span>`;
         storyCells =
-          `<td class="nowrap">${pos}${score}<span class="dim"> thru ${Math.max(thru, 0)}</span></td>` +
+          `<td class="nowrap">${pos}${score}<span class="dim"> thru ${thru}</span></td>` +
           `<td class="num nowrap"><span class="${l.pre_pts == null ? "" : beat ? "movers-up" : "movers-down"}">${Math.round(l.mean_pts)}</span> ${vs}</td>`;
       }
     } else {
@@ -620,10 +632,9 @@ function detailHtml(p, d) {
     }
     if (e.cls === "playoff") note += ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ assumes qualifiers attend</span>`;
     if (isLive) {
-      // rem carries rounds left, so (rounds - rem) * 18 = holes played. A
-      // player still on their pre-tournament even par with a full slate left
-      // hasn't teed off yet — show that instead of a misleading "now +0".
-      const thru = Math.round((e.rounds - s.live.rem) * 18);
+      // A player with no holes played is still on their pre-tournament even
+      // par — show that instead of a misleading "now +0".
+      const thru = liveThru(e, s.live);
       const pos = thru <= 0
         ? "yet to tee off"
         : `now ${s.live.cur >= 0 ? "+" : ""}${s.live.cur} thru ${thru}`;

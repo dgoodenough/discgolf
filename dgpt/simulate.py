@@ -231,6 +231,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     live_tids = {r["tournament_id"] for r in live_now}
     live_data: dict[int, tuple] = {}
     live_place: dict[int, dict[int, int]] = {}
+    live_thru: dict[int, dict[int, int]] = {}
     for ev_i, row in enumerate(remaining):
         if row["tournament_id"] not in live_tids:
             continue
@@ -241,15 +242,18 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         rem = np.zeros(n)
         in_field = np.zeros(n, dtype=bool)
         place_now: dict[int, int] = {}
+        thru_now: dict[int, int] = {}
         for pdga, info in state.items():
             if pdga in idx:
                 j = idx[pdga]
                 cur[j], rem[j], in_field[j] = info["cur"], info["rem"], True
                 if info.get("place"):
                     place_now[j] = info["place"]
+                thru_now[j] = int(info.get("thru") or 0)
         favg = float(ratings[in_field].mean()) if in_field.any() else 1000.0
         live_data[ev_i] = (cur, rem, in_field, favg)
         live_place[ev_i] = place_now
+        live_thru[ev_i] = thru_now
 
     # playoff events (drawn last, with attendance gated on standings)
     gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
@@ -538,6 +542,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             per[pdga_numbers[j]] = {
                 "cur": round(float(cur[j]), 1),
                 "rem": round(float(rem[j]), 2),
+                "thru": live_thru.get(ev_i, {}).get(j, 0),  # holes played
                 "place": live_place.get(ev_i, {}).get(j),   # current standing
                 "win": round(float(w[0] / tot), 4),
                 "mean_place": round(float((places * w).sum() / tot), 1),

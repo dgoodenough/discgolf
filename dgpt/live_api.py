@@ -353,6 +353,12 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             "rating": r["rating"],
             "cur": float(cur),
             "rem": max(total_rounds * 18 - holes, 0) / 18.0,
+            # Holes played, carried explicitly. It cannot be recovered from
+            # `rem` downstream: `rem` is measured against this event's real
+            # round list, while every consumer's round count is the per-class
+            # constant (3, or 4 for a major). A 4-round elite event makes the
+            # two disagree by a whole round.
+            "thru": int(holes),
             "place": r["place"],   # current standing per the sheet (None pre-tee)
         }
     return out or None
