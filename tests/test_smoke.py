@@ -163,7 +163,9 @@ def test_live_stats_carry_current_place_and_pre_event_baseline(sim_result):
     live = res.live_stats.get(world.live_tid) or {}
     assert live, "tiny world should have a live event"
     row = next(iter(live.values()))
-    for key in ("cur", "rem", "place", "mean_pts", "pre_pts", "pre_place"):
+    for key in ("cur", "rem", "thru", "place", "mean_pts", "pre_pts", "pre_place"):
         assert key in row, f"live stats missing {key}"
     assert row["pre_place"] >= 1
     assert row["pre_pts"] >= 0
+    # tiny world: R1 complete, R2 nine holes in for everyone still playing
+    assert {s["thru"] for s in live.values()} == {18, 27}

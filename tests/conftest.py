@@ -101,15 +101,24 @@ def round_payload(rows: list[dict]) -> dict:
 
 
 def event_payload(name: str, final_round: int, divisions: list[tuple[str, int]],
-                  end_date: str | None = None, round_ids: list[int] | None = None) -> dict:
+                  end_date: str | None = None, round_ids: list[int] | None = None,
+                  round_labels: dict[int, str] | None = None) -> dict:
     """`round_ids` mirrors PDGA's RoundsList keys. Ids >= 11 are finals, so an
     event with a Final 9 looks like [1, 2, 3, 12] with FinalRound=12 — a round
-    ID, not a count (see live_api._round_plan)."""
+    ID, not a count (see live_api._round_plan).
+
+    `round_labels` sets the entries' "Label", which is how PDGA distinguishes a
+    played round from a sudden-death playoff. Entries carry no label unless one
+    is given, which is also a real payload shape worth covering."""
     ids = round_ids if round_ids is not None else list(range(1, final_round + 1))
+    labels = round_labels or {}
     return {
         "Name": name, "FinalRound": final_round, "EndDate": end_date,
         "Rounds": len([i for i in ids if i < 11]),
-        "RoundsList": {str(i): {"Number": i} for i in ids},
+        "RoundsList": {
+            str(i): {"Number": i, **({"Label": labels[i]} if i in labels else {})}
+            for i in ids
+        },
         "Divisions": [{"Division": d, "LatestRound": lr} for d, lr in divisions],
     }
 

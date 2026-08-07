@@ -220,6 +220,82 @@ def test_only_listed_round_sheets_are_requested(fake_api):
     assert field[10]["rem"] == 0.0                  # past the regular rounds
 
 
+# ------------------------------------------------ playoff entries (2026-08-07)
+
+def test_playoff_entry_is_not_a_round(fake_api):
+    """A 3-round event with a sudden-death playoff listed is still 3 rounds.
+
+    PDGA lists the playoff in RoundsList like any round, so counting the list
+    gave every player in the field a phantom fourth round: pre-tee they read
+    "rem 4.0" and, once the day tracker derived holes played from that, "thru
+    0" halfway through round 1 (DGPT Discmania Challenge, 2026-08-07)."""
+    fake_api.event(1, event_payload(
+        "Three Rounds Plus Playoff", 3, [("MPO", 1)],
+        round_ids=[1, 2, 3, 13], round_labels={1: "Round 1", 2: "Round 2",
+                                               3: "Round 3", 13: "Playoff"}))
+    fake_api.round(1, "MPO", 1, _sheet([_row(10, "A", -3, 9, done=0)]))
+
+    field = live_api.live_field(1, "MPO")
+    assert field[10]["rem"] == pytest.approx((54 - 9) / 18)   # not (72 - 9) / 18
+    assert field[10]["thru"] == 9
+
+
+def test_unlabelled_entry_past_final_round_is_a_playoff(fake_api):
+    """No labels in the payload: FinalRound points at the last real round, so
+    anything listed beyond it is the playoff."""
+    fake_api.event(1, event_payload("No Labels", 3, [("MPO", 1)],
+                                    round_ids=[1, 2, 3, 13]))
+    fake_api.round(1, "MPO", 1, _sheet([_row(10, "A", -3, 18)]))
+    assert live_api.live_field(1, "MPO")[10]["rem"] == 2.0
+
+
+def test_uswdgc_playoff_sheet_is_neither_counted_nor_read(fake_api):
+    """The captured shape: RoundsList {1, 2, 3, 12: Finals, 13: Playoff}. The
+    finals are a real fourth round; the playoff is one row over 8 holes that
+    PDGA leaves out of everyone's ToPar. Counting it left the whole field a
+    round short of finished after the event was over."""
+    serve_uswdgc(fake_api)
+    field = live_api.live_field(USWDGC, "FPO")
+    winner = next(v for v in field.values() if v["name"] == "Silva Saarinen")
+    assert winner["rem"] == 0.0      # 4 rounds played, none left — not 1.0
+    assert winner["thru"] == 72
+    assert not any("Round=13" in c for c in fake_api.calls)
+
+
+# ------------------------------------------------- holes played (2026-08-07)
+
+def test_thru_counts_holes_played_not_rounds_remaining(fake_api):
+    """Holes played rides along explicitly so no consumer re-derives it.
+
+    Deriving it as (rounds - rem) * 18 silently depends on the event's real
+    round count matching the model's per-class constant — 3, or 4 for a major.
+    Any event where those differ (here: four rounds, non-major class) makes the
+    derivation land a whole round out, and the callers read thru <= 0 as "yet
+    to tee off", so the score disappears along with the hole count."""
+    fake_api.event(1, event_payload("Four Rounds", 4, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, _sheet([_row(10, "A", -3, 9, done=0),
+                                        _row(11, "B", -1, 18)]))
+
+    field = live_api.live_field(1, "MPO")
+    assert field[10]["thru"] == 9
+    assert field[11]["thru"] == 18
+    assert round((3 - field[10]["rem"]) * 18) == -9   # the old derivation
+
+
+def test_thru_is_zero_before_teeing_off(fake_api):
+    _mini_event(fake_api, 1, {1: [row(1, "A", 1030, played=0)]})
+    assert live_api.live_field(1, "MPO")[1]["thru"] == 0
+
+
+def test_thru_accumulates_across_round_sheets(fake_api):
+    """Suspended-player shape: a completed round plus a partial one."""
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True)],
+        2: [row(1, "A", 1030, round_to_par=-1, played=9)],
+    })
+    assert live_api.live_field(1, "MPO")[1]["thru"] == 27
+
+
 def test_plain_and_major_round_counts_unchanged(fake_api):
     """Regression: events whose FinalRound really is a count still work."""
     fake_api.event(1, event_payload("Jomez", 3, [("MPO", 1)]))
