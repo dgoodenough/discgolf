@@ -73,6 +73,8 @@ jobs:
           BUDGET=$(( $(date +%s) + 330 * 60 ))   # ~5.5h, then yield to the successor
           deps_ready=0
           failures=0
+          did_refresh=0     # set once this run re-simulates; gates the validate below
+          exit_reason=
 
           # 0 = live, 3 = clean "nothing live", 1 = crashed (traceback shows)
           is_live() {
@@ -97,6 +99,7 @@ jobs:
             live_rc=0; is_live || live_rc=$?
             if [ "$live_rc" = 3 ]; then
               echo "No points event live — exiting (cron will restart when one is)."
+              exit_reason=idle
               break
             elif [ "$live_rc" != 0 ]; then
               fail_step "is_live check crashed"
@@ -127,6 +130,7 @@ jobs:
               fi
               if python -m dgpt.refresh --sims 100000; then
                 failures=0
+                did_refresh=1
               else
                 # livecheck already advanced the signature; restore it so the
                 # next iteration re-detects the change and retries the refresh
@@ -156,7 +160,35 @@ jobs:
 
             if [ "$(date +%s)" -ge "$BUDGET" ]; then
               echo "Near job time limit — yielding; the queued successor takes over."
+              exit_reason=yield
               break
             fi
             sleep 300
           done
+
+          # Cross-check the standings against StatMando once a tournament has
+          # actually wrapped in this run: the loop refreshed at least once and
+          # then went idle because nothing is live any more.
+          #
+          # This lives here because the weekly refresh.yml — which has run
+          # dgpt.validate all along — shares the `refresh-forecast` concurrency
+          # group with this workflow, so during a tournament its queued run is
+          # cancelled by the next one and it never executes. It was cancelled
+          # on 2026-08-07, -08 and -09; the last time it validated anything was
+          # 2026-08-06. A cross-check that only runs when no event is on is the
+          # one that never sees the weekend that broke something.
+          #
+          # Gated on did_refresh so the 15-minute cron restarts don't re-run it
+          # every quarter hour all week, and skipped on a budget yield because
+          # the event is still live then and StatMando lags play. Roughly one
+          # run per tournament, right after it banks — which is exactly when a
+          # banking bug shows up as a points diff. stdlib only, no pip needed.
+          if [ "${exit_reason:-}" = "idle" ] && [ "$did_refresh" = "1" ]; then
+            echo "Tournament finished this run — validating standings against StatMando."
+            if python -m dgpt.validate; then
+              echo "validate: standings match"
+            else
+              echo "::error::Standings disagree with StatMando after an event banked (data still published — see dgpt/validate.py)"
+              exit 1
+            fi
+          fi
