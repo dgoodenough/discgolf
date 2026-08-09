@@ -113,6 +113,35 @@ def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: boo
     return _get(url, cf)["data"]
 
 
+def _day_span(event: dict) -> int | None:
+    """How many days the event runs, or None if the payload doesn't say.
+
+    An upper bound on rounds played: no 2026 DGPT event plays two rounds in a
+    day, so a 3-day event plays at most 3.
+    """
+    start, end = event.get("StartDate"), event.get("EndDate")
+    if not start or not end:
+        return None
+    try:
+        return (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+    except ValueError:
+        return None
+
+
+def _real_rounds(event: dict, latest: int | None = None) -> list[int]:
+    """The ids of rounds the field actually plays, in order (no playoff).
+
+    `latest` bounds the list to sheets that exist; omit it for the full plan.
+    """
+    if latest is None:
+        listed = [int(k) for k in (event.get("RoundsList") or {}) if str(k).isdigit()]
+        # not an arbitrary large number: _round_plan's no-RoundsList fallback
+        # builds range(1, latest + 1), so an unbounded value allocates it
+        latest = max(listed) if listed else int(event.get("FinalRound") or event.get("Rounds") or 1)
+    ids, n = _round_plan(event, int(latest))
+    return ids[:n]
+
+
 def _is_playoff(entry: dict, rid: int, final: int | None) -> bool:
     """Is this RoundsList entry a sudden-death playoff rather than a round?
 
@@ -158,6 +187,13 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     with the playoff at 13) — we use the label where there is one and the
     FinalRound bound for payloads that carry no labels.
 
+    Backstop for both: a tournament cannot play more rounds than it has days.
+    The date span is the one number PDGA cannot get creative with, and it
+    matches every 2026 event (3-day elites play 3, 4-day majors and DGPT+
+    play 4; Worlds runs 4 rounds over 5 days, so this only ever caps). When
+    the span says fewer rounds than the list does, the extra ids are not
+    rounds whatever they are labelled, and the last ones listed go first.
+
     Caveat for a future variant: a genuine 9-hole Final 9 would be counted as a
     whole round here, overstating rem by half a round for the players in it.
     No 2026 event does that — every listed round has been a full 18 — and the
@@ -179,6 +215,9 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
             i for i in ids
             if not _is_playoff(rounds_list.get(str(i)) or rounds_list.get(i) or {}, i, final)
         ]
+    span = _day_span(event)
+    if span and len(ids) > span:
+        ids = ids[:span]
     return [i for i in ids if i <= latest], len(ids)
 
 
@@ -191,9 +230,14 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
     The event-level "HighestCompletedRound" is unreliable here (it advances
     when the fastest division finishes, while another may still be on course),
     so we check each division's final round directly.
+
+    "Final round" means the last round the field plays, from the round plan —
+    NOT raw FinalRound, which can point at a sudden-death playoff. Reading a
+    playoff sheet here confirms completion off one or two rows.
     """
     event = fetch_event(tournament_id)
-    final = event.get("FinalRound")
+    rounds = _real_rounds(event)
+    final = rounds[-1] if rounds else None
     if not final:
         return False
     present = {d["Division"] for d in event["Divisions"]}
@@ -201,7 +245,7 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
         if div not in present:
             continue
         d = next(x for x in event["Divisions"] if x["Division"] == div)
-        if d.get("LatestRound") != final:
+        if (d.get("LatestRound") or 0) < final:
             return False  # not on the final round yet
         scores = fetch_round(tournament_id, div, final).get("scores") or []
         if not scores:
@@ -211,7 +255,19 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
                 continue  # finished, or withdrawn
             if (s.get("Played") or 0) > 0:
                 return False  # mid-round — still on the course
-            # played 0 holes with no score: cut / not in the final round, ignore
+            # No score and no holes played is two different situations, and
+            # they were being conflated: a player who is not in this round
+            # (a finals non-qualifier — USWDGC's finals sheet lists 33 of them
+            # with TeeTime "" and HasGroupAssignment 0), or a player whose
+            # round simply has not started yet. PDGA publishes the final
+            # round's sheet with tee times assigned the night before, so
+            # treating both as "ignore" declared the event finished hours
+            # before anyone teed off — which banked the Discmania Challenge
+            # with zero finishers and made it vanish (2026-08-09).
+            #
+            # An upcoming tee time means the tournament is not done.
+            if s.get("TeeTime") or s.get("HasGroupAssignment"):
+                return False
     return True
 
 
@@ -427,29 +483,42 @@ def final_results(tournament_id: int, division: str, *, use_cache: bool = True) 
     div = next((d for d in event["Divisions"] if d["Division"] == division), None)
     if div is None:
         return []
-    final_round = div.get("LatestRound") or event.get("FinalRound")
+    # The finishing order lives on the last round the field PLAYED. A
+    # sudden-death playoff is a separate sheet carrying only the tied players,
+    # so LatestRound can point past the real final round; reading it as the
+    # results sheet returns one or two rows, or none once the DNF filter below
+    # is applied (DGPT Discmania Challenge banked zero finishers this way,
+    # 2026-08-09 — the event vanished from the site entirely).
+    rounds = _real_rounds(event, div.get("LatestRound") or event.get("FinalRound"))
+    if not rounds:
+        return []
+    final_round = rounds[-1]
     scores = fetch_round(tournament_id, division, final_round, cache=completed).get("scores") or []
 
-    # DNF detection: DGPT events have no cut in regular rounds (1..N; finals
-    # use round ids 11/12), so a finisher must post a score in every regular
-    # round. Withdrawn players keep a RunningPlace in the live data but earn
-    # no standings points.
+    # DNF detection: DGPT events have no cut in the regular rounds (ids 1..10),
+    # so a finisher must post a score in every one of them. Withdrawn players
+    # keep a RunningPlace in the live data but earn no standings points.
+    #
+    # Only regular rounds are intersected. A finals round (ids 11+) is played
+    # by qualifiers alone — USWDGC's finals sheet carries 44 of 77 — so
+    # requiring it would disqualify every non-finalist. And the round list is
+    # already playoff-free: a playoff sheet posts no round scores, so
+    # intersecting one in empties the set and disqualifies the whole field,
+    # which is precisely how the Discmania Challenge banked nobody.
     finished: set[int] | None = None
-    for rnum in range(1, 11):
-        if rnum == final_round:
-            break
+    for rnum in (r for r in rounds if r <= 10):
         try:
-            rd_scores = fetch_round(tournament_id, division, rnum, cache=completed).get("scores") or []
+            rd_scores = (scores if rnum == final_round
+                         else fetch_round(tournament_id, division, rnum, cache=completed).get("scores") or [])
         except urllib.error.HTTPError as e:
-            if e.code == 404:  # past the last regular round
-                break
+            if e.code == 404:  # sheet never published (restructured schedule)
+                continue
             raise
         if not rd_scores:
-            break
+            continue
         posted = {s["PDGANum"] for s in rd_scores if s.get("HasRoundScore")}
-        finished = posted if finished is None else finished & posted
-    if final_round <= 10:  # no finals: the last regular round counts too
-        posted = {s["PDGANum"] for s in scores if s.get("HasRoundScore")}
+        if not posted:
+            continue  # sheet published but the round hasn't been played yet
         finished = posted if finished is None else finished & posted
 
     out = []

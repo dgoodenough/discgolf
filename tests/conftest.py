@@ -85,14 +85,20 @@ def fake_api(monkeypatch) -> FakeLiveAPI:
 
 def row(pdga: int, name: str, rating: int = 1000, *, round_to_par=None, to_par=None,
         played=None, has_score=False, running_place=None, grand_total=None,
-        teammates=None) -> dict:
-    """One player-row in a round sheet, in the live API's field names."""
+        teammates=None, tee_time="") -> dict:
+    """One player-row in a round sheet, in the live API's field names.
+
+    `tee_time` mirrors PDGA's TeeTime/HasGroupAssignment pair: set for a player
+    scheduled to play this round, empty for one who isn't in it at all (a
+    finals non-qualifier). It is what separates "hasn't teed off yet" from
+    "not playing this round"."""
     return {
         "PDGANum": pdga, "Name": name, "Rating": rating,
         "RoundtoPar": round_to_par, "ToPar": to_par,
         "Played": played, "HasRoundScore": has_score,
         "RunningPlace": running_place, "GrandTotal": grand_total,
         "Teammates": teammates or [],
+        "TeeTime": tee_time, "HasGroupAssignment": 1 if tee_time else 0,
     }
 
 

@@ -220,6 +220,59 @@ def test_only_listed_round_sheets_are_requested(fake_api):
     assert field[10]["rem"] == 0.0                  # past the regular rounds
 
 
+# ------------------------------------------- unplayed final round (2026-08-09)
+
+def test_event_with_final_round_still_to_play_is_not_complete(fake_api):
+    """PDGA publishes the final round's sheet with tee times the night before.
+
+    Reading "no score, no holes played" as "not in this round" declared the
+    event over before anyone teed off: the Discmania Challenge was banked at
+    2am on its final day with zero finishers, so it left the live view and
+    never reached the standings."""
+    fake_api.event(1, event_payload("Sunday To Come", 3, [("MPO", 3)]))
+    for rnd in (1, 2):
+        fake_api.round(1, "MPO", rnd, round_payload([
+            row(10, "A", 1030, round_to_par=-5, played=18, has_score=True),
+            row(11, "B", 1020, round_to_par=-3, played=18, has_score=True)]))
+    fake_api.round(1, "MPO", 3, round_payload([          # sheet up, nobody out
+        row(10, "A", 1030, played=0, tee_time="09:20:00", running_place=1),
+        row(11, "B", 1020, played=0, tee_time="09:20:00", running_place=2)]))
+
+    assert live_api.event_complete(1, ("MPO",)) is False
+
+
+def test_finals_non_qualifier_does_not_block_completion(fake_api):
+    """The other side of the same coin: a player with no tee time genuinely
+    isn't in the round, and must not hold the event open forever."""
+    fake_api.event(1, event_payload("Finals Field", 3, [("MPO", 3)]))
+    for rnd in (1, 2):
+        fake_api.round(1, "MPO", rnd, round_payload([
+            row(10, "A", 1030, round_to_par=-5, played=18, has_score=True),
+            row(11, "B", 1020, round_to_par=-3, played=18, has_score=True)]))
+    fake_api.round(1, "MPO", 3, round_payload([
+        row(10, "A", 1030, round_to_par=-2, played=18, has_score=True, running_place=1),
+        row(11, "B", 1020, played=0, running_place=2)]))   # no tee time = not in it
+
+    assert live_api.event_complete(1, ("MPO",)) is True
+
+
+def test_unplayed_round_sheet_does_not_disqualify_the_field(fake_api):
+    """The banking half: an unplayed sheet posts no scores, and intersecting
+    it into the DNF filter emptied the finisher set, so final_results returned
+    nobody and the event banked zero points."""
+    fake_api.event(1, event_payload("Sheet Up Unplayed", 3, [("MPO", 3)]))
+    for rnd in (1, 2):
+        fake_api.round(1, "MPO", rnd, round_payload([
+            row(10, "A", 1030, round_to_par=-5, played=18, has_score=True, running_place=1),
+            row(11, "B", 1020, round_to_par=-3, played=18, has_score=True, running_place=2)]))
+    fake_api.round(1, "MPO", 3, round_payload([
+        row(10, "A", 1030, played=0, tee_time="09:20:00", running_place=1),
+        row(11, "B", 1020, played=0, tee_time="09:20:00", running_place=2)]))
+
+    results = live_api.final_results(1, "MPO", use_cache=False)
+    assert [r["pdga_number"] for r in results] == [10, 11]
+
+
 # ------------------------------------------------ playoff entries (2026-08-07)
 
 def test_playoff_entry_is_not_a_round(fake_api):
