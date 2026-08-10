@@ -104,7 +104,12 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
         "meta": {
             "division": division,
             "season": config.SEASON,
-            "generated": dt.datetime.now().isoformat(timespec="seconds"),
+            # Written only after a refresh completed, so this is the age of the
+            # numbers themselves — the site reports it as "last update". Stamped
+            # UTC-aware: it used to be a naive now(), which is UTC on the runner
+            # but which a browser reads as the VIEWER's local time, shifting the
+            # reported age by their offset.
+            "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "n_sims": res.n_sims,
             "cut": simulate.STANDINGS_CUT[division],
             "field_size": simulate.FIELD_SIZE[division],

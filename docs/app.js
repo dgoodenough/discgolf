@@ -760,11 +760,57 @@ function replay(d, p, attendSet) {
 
 /* ---------- shell ---------- */
 
+/* Last successful standings update. meta.generated is written only after a
+   refresh completes, so it dates the numbers rather than the page load.
+
+   Bundles published before the UTC fix carry a naive timestamp stamped by a
+   UTC runner; a bare one is therefore read as UTC, not as the viewer's local
+   time, which would otherwise shift the age by their whole offset. */
+function updatedAt(meta) {
+  const s = meta.generated;
+  return new Date(/([+-]\d\d:?\d\d|Z)$/.test(s) ? s : s + "Z");
+}
+
+const agoText = (mins) =>
+  mins < 1 ? "just now"
+  : mins < 60 ? `${mins} min ago`
+  : mins < 48 * 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m ago`
+  : `${Math.floor(mins / 1440)} days ago`;
+
+/* What counts as late is set by the pipeline's own cadence, not a fixed
+   number: during a live event the loop re-simulates within ~6 minutes of a
+   scoring change, while between events the daily refresh legitimately leaves
+   the numbers a day old. Flagging on one threshold would either cry wolf all
+   week or stay silent through a stall mid-tournament. */
+function freshness(d) {
+  const at = updatedAt(d.meta);
+  const mins = Math.max(0, Math.round((Date.now() - at.getTime()) / 60000));
+  // "is an event in progress" comes from the bundle carrying live player
+  // records, not from liveEvents(): that compares against a UTC date, so a
+  // tournament finishing on a US Sunday evening reads as over hours before the
+  // pipeline stops tracking it — precisely the window a stall can hide in.
+  const live = (d.players || []).some((p) => p.live && Object.keys(p.live).length);
+  return { at, mins, live, stale: mins > (live ? 25 : 26 * 60) };
+}
+
 async function render() {
   const d = await loadDiv(state.div);
-  $("#meta-line").textContent =
-    `updated ${d.meta.generated.slice(0, 10)} · ${d.meta.n_sims.toLocaleString()} sims · ` +
-    `top ${d.meta.cut} qualify directly, field of ${d.meta.field_size}`;
+  {
+    const f = freshness(d);
+    const abs = f.at.toISOString().replace("T", " ").replace(":00.000Z", "Z");
+    const local = f.at.toLocaleString();
+    $("#meta-line").innerHTML =
+      `updated <span id="updated-at" class="${f.stale ? "stale" : ""}" ` +
+      `title="Last successful standings update&#10;${abs} UTC&#10;${local} local">` +
+      `${agoText(f.mins)}</span>${
+        f.stale
+          ? ` <span class="stale-flag" title="${f.live
+              ? "A live event normally republishes within a few minutes of any scoring change"
+              : "The daily refresh normally republishes every 24 hours"}">— later than expected</span>`
+          : ""
+      } · ${d.meta.n_sims.toLocaleString()} sims · ` +
+      `top ${d.meta.cut} qualify directly, field of ${d.meta.field_size}`;
+  }
   // live "state of the race" hook: how much is decided vs still being fought over
   {
     const spots = d.meta.field_size;
