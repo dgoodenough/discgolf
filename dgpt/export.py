@@ -22,6 +22,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
     division = res.division
     sched = schedule.load()
     sched_by_tid = {row["tournament_id"]: row for row in sched}
+    live_tids = {row["tournament_id"] for row in schedule.live_events(sched)}
     n = len(res.names)
 
     # per-place points curves for remaining events (trimmed; index 0 = 1st)
@@ -126,11 +127,19 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             "gmc_cut": config.PLAYOFF_QUAL["gmc"]["cut"][division],
             "mvp_cut": config.PLAYOFF_QUAL["mvp"]["cut"][division],
         },
+        # `live` is schedule.live_events()' answer, shipped rather than
+        # re-derived. It is the single definition of "in progress" for the
+        # whole system: the front end used to compare start/end against a UTC
+        # date, which has no grace day, so a US Sunday final round read as over
+        # from midnight UTC while the pipeline was still tracking it. That was
+        # the third copy of this window (schedule, livecheck, the page) and the
+        # third place it was wrong.
         "schedule": [
             {
                 "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
                 "start": row["start_date"], "end": row["end_date"],
                 "completed": row["completed"],
+                "live": row["tournament_id"] in live_tids,
             }
             for row in sched
             if row[division.lower()] and (division == "MPO" or row["fpo_points"] or row["completed"])

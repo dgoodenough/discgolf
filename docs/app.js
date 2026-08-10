@@ -305,9 +305,21 @@ function sparkCell(p, meta) {
 /* ---------- forecast view (standings + projections, sortable) ---------- */
 
 // events in progress today (client-side date, so it's current between refreshes)
+/* Which events are in progress is decided in one place — schedule.live_events()
+   — and shipped on each schedule row as `live`. Do not re-derive it here.
+
+   Comparing start/end against a UTC date, as this used to, is the same window
+   without the grace day: a US Sunday final round finishes after 00:00 UTC, so
+   the page called the event over while the pipeline was still tracking it and
+   scores were still moving. That bug existed in three copies of this window
+   (schedule.py, livecheck.py, here) and bit in all three.
+
+   Bundles published before the flag existed fall back to the old comparison. */
 function liveEvents(d) {
+  const sched = d.schedule || [];
+  if (sched.some((e) => "live" in e)) return sched.filter((e) => e.live);
   const today = new Date().toISOString().slice(0, 10);
-  return (d.schedule || []).filter((e) => e.start <= today && today <= e.end);
+  return sched.filter((e) => e.start <= today && today <= e.end);
 }
 function liveTidSet(d) {
   return new Set(liveEvents(d).map((e) => e.tid));
@@ -785,11 +797,11 @@ const agoText = (mins) =>
 function freshness(d) {
   const at = updatedAt(d.meta);
   const mins = Math.max(0, Math.round((Date.now() - at.getTime()) / 60000));
-  // "is an event in progress" comes from the bundle carrying live player
-  // records, not from liveEvents(): that compares against a UTC date, so a
-  // tournament finishing on a US Sunday evening reads as over hours before the
-  // pipeline stops tracking it — precisely the window a stall can hide in.
-  const live = (d.players || []).some((p) => p.live && Object.keys(p.live).length);
+  // liveEvents() now carries the backend's own answer, grace day included, so
+  // this reads it directly. It used to sniff live player records instead,
+  // because the old date-derived version called a Sunday-evening finish over
+  // hours before the pipeline stopped tracking it — the window a stall hides in.
+  const live = liveEvents(d).length > 0;
   return { at, mins, live, stale: mins > (live ? 25 : 26 * 60) };
 }
 
