@@ -12,7 +12,7 @@ import json
 import numpy as np
 import pytest
 
-from dgpt import export, invariants, movers, points, simulate, snapshot, standings
+from dgpt import export, invariants, movers, points, schedule, simulate, snapshot, standings
 
 N_SIMS = 400
 
@@ -98,6 +98,13 @@ def test_export_bundle_is_well_formed(sim_result, tmp_path):
             assert 0.0 <= p[key] <= 1.0, f"{p['name']} {key}={p[key]}"
         assert len(p["hist"]) == simulate.MAX_HIST_RANK
         assert len(p["att"]) == len(bundle["events"])
+
+    # every schedule row carries the backend's own "in progress" answer, so the
+    # page never re-derives that window from a UTC date (which has no grace day
+    # and reads a US Sunday finish as over while scores are still moving)
+    live_tids = {r["tournament_id"] for r in schedule.live_events()}
+    assert {s["tid"] for s in bundle["schedule"] if s["live"]} == live_tids
+    assert world.live_tid in live_tids
 
     # remaining events: live + major + doubles + both playoffs (no Cup)
     assert len(bundle["events"]) == 5
