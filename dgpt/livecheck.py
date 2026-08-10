@@ -11,7 +11,6 @@ updates data/live_signature.txt, which the refresh commit then persists.
 """
 from __future__ import annotations
 
-import datetime as dt
 import hashlib
 import os
 import sys
@@ -27,13 +26,19 @@ def signature() -> str:
     current official ratings snapshot (PDGA updates it ~monthly; the
     fetch behind it is TTL-throttled so this check stays cheap)."""
     rows = schedule.load()
-    today = dt.date.today()
+    # Which events are in progress is schedule.live_events()' judgement, not a
+    # date comparison of our own. It carries a grace day past the end date
+    # because a US Sunday final round runs past 00:00 UTC, and re-deriving
+    # `start <= today <= end` here threw that away: at midnight UTC, mid-final
+    # round, this stopped hashing live scores entirely, so every later check
+    # reported "unchanged" and the site froze with the lead card mid-round —
+    # the same failure the grace day was added to fix (Ledgestone 2026,
+    # repeated at the Discmania Challenge on 2026-08-10).
+    live_tids = {r["tournament_id"] for r in schedule.live_events(rows)}
     parts: list[str] = [f"ratings:{ratings.signature_component()}"]
     for r in rows:
-        start = dt.date.fromisoformat(r["start_date"])
-        end = dt.date.fromisoformat(r["end_date"])
-        completed = end < today
-        live = start <= today <= end
+        completed = r["completed"]
+        live = r["tournament_id"] in live_tids
         parts.append(f"{r['tournament_id']}:{int(completed)}:{int(live)}")
         if live:
             for div in ("MPO", "FPO"):

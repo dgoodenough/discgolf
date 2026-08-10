@@ -15,6 +15,12 @@ html, body { margin: 0; }
 #top .stakes .al { color: var(--pend); }  /* still contested = pending (yellow) */
 #top .sub { margin: 5px 0 0; color: var(--ink-2); font-size: var(--fs-small); }
 #live-note { margin: 5px 0 0; font-size: var(--fs-small); font-weight: 600; color: var(--neg); }
+/* last-update age: dotted underline marks it as hoverable for the exact time,
+   and it turns warning-coloured when the publish is later than the pipeline's
+   own cadence should allow */
+#updated-at { border-bottom: 1px dotted var(--ink-3); cursor: help; font-variant-numeric: tabular-nums; }
+#updated-at.stale, .stale-flag { color: var(--neg); font-weight: 600; }
+.stale-flag { cursor: help; }
 
 /* pulsing "live" dot + badge */
 .live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--neg); vertical-align: middle; margin-right: 5px; animation: live-pulse 1.4s ease-in-out infinite; }
