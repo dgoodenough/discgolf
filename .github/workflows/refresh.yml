@@ -15,12 +15,7 @@ name: Refresh forecast
 on:
   schedule:
     - cron: "0 11 * * *"
-  workflow_dispatch:
-    inputs:
-      force_deploy:
-        description: "Trigger a Pages build even if no data changed"
-        type: boolean
-        default: false
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -58,20 +53,27 @@ jobs:
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
         run: python -m dgpt.refresh --sims 100000
 
-      - name: Commit if anything changed
-        id: commit
+      # Publish first, commit state second: the site is the deliverable, and if
+      # the publish fails the run goes red without having advanced anything.
+      # `site` is force-pushed to a single parentless commit, so republishing
+      # an unchanged bundle costs no history and needs no change detection.
+      - name: Publish the site
+        run: .github/publish-site.sh
+
+      - name: Commit pipeline state if it changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data docs/data results predictions
-          # ignore the generated-at timestamp when deciding whether data moved
-          if git diff --cached --quiet -I'"generated":'; then
-            echo "No data changes."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+          # Only cross-run state lives on main now — the livecheck signature,
+          # the ratings snapshot, the schedule, and the prediction history the
+          # backtest reads. The generated bundle goes to the `site` branch, so
+          # a refresh that changes nothing durable makes no commit at all.
+          git add data predictions
+          if git diff --cached --quiet; then
+            echo "No state changes."
           else
-            git commit -m "Auto-refresh standings + projections ($(date -u +%F))"
+            git commit -m "Refresh pipeline state ($(date -u +%F))"
             git push
-            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       # Deploy BEFORE validating: a validate failure must mark the run red
@@ -80,13 +82,11 @@ jobs:
       # serving stale data (observed 2026-07-13: StatMando's FPO page was
       # mid-update, validate exited 1, and with no live event to push again
       # the site would have sat stale until Thursday's refresh).
-      # force_deploy exists because deploys otherwise ride data commits only:
-      # when a Pages build sticks in "building" past the retry budget (observed
-      # 2026-08-06, ~10 min of queueing), the next deploy attempt would wait
-      # for the next data change — a dispatch with force_deploy re-kicks the
-      # build immediately with nothing new to publish.
+      # Unconditional now: the publish step above always moves `site`, so
+      # there is no "nothing changed" case to skip, and a Pages build stuck in
+      # "building" past the retry budget (observed 2026-08-06, ~10 min of
+      # queueing) is re-kicked by the next run rather than needing a dispatch.
       - name: Trigger Pages build (retry on transient deploy failure)
-        if: steps.commit.outputs.changed == 'true' || inputs.force_deploy
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

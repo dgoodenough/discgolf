@@ -56,10 +56,10 @@ jobs:
       # signature, because livecheck advances it at gate time: without the
       # restore, a crash after the last score change of the night would read
       # "unchanged" forever and never retry. Invariant violations (see
-      # dgpt/invariants.py) fail the run AFTER the data commit and push, and
-      # only when the violation set is new (data/cache/invariant_alerted.txt
-      # de-duplicates), so a persistent mismatch doesn't spam a red run every
-      # six minutes.
+      # dgpt/invariants.py) fail the run AFTER the site has been published and
+      # any state committed, and only when the violation set is new
+      # (data/cache/invariant_alerted.txt de-duplicates), so a persistent
+      # mismatch doesn't spam a red run every six minutes.
       - name: Drive the live refresh loop
         env:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
@@ -138,15 +138,27 @@ jobs:
                 fail_step "refresh crashed"
                 sleep 300; continue
               fi
-              git add data docs/data results predictions
-              if git diff --cached --quiet -I'"generated":'; then
-                echo "nothing to commit after refresh"
+              # Publish the regenerated bundle to `site` (a single parentless
+              # commit, force-pushed) BEFORE committing state. On failure the
+              # signature has not been committed yet, so restoring it makes the
+              # next iteration re-detect the change and retry the publish —
+              # the same recovery the refresh-crash path above uses.
+              if ! .github/publish-site.sh; then
+                git checkout -- data/live_signature.txt || true
+                fail_step "site publish failed"
+                sleep 300; continue
+              fi
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || true
+
+              # Cross-run state only: the bundle no longer lands on main, so
+              # most live iterations now make no commit here at all.
+              git add data predictions
+              if git diff --cached --quiet; then
+                echo "no state change after refresh"
               else
-                git commit -m "Live refresh ($(date -u +'%F %H:%MZ'))"
+                git commit -m "Refresh pipeline state ($(date -u +'%F %H:%MZ'))"
                 # a concurrent merge/weekly refresh could have moved main
                 git push || { git pull --rebase --autostash && git push; }
-                # nudge Pages (best-effort; data commit has already landed)
-                gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || true
               fi
               # publish-gate invariants: alert on NEW violations, after the push
               viol=data/cache/invariant_violations.txt
