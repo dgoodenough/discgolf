@@ -13,10 +13,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-# `ratings` is aliased: simulate.run assigns a local ndarray named `ratings`,
-# which would shadow the module inside that function (UnboundLocalError)
-from . import config, fields, live_api, points, schedule, standings
-from . import ratings as official_ratings
+from . import config, fields, live_api, points, ratings, schedule, standings
 
 # Score-model constants, recalibrated against all completed 2026 rounds
 # (94 rounds / 6,667 player-rounds; see dgpt/calibrate.py). The 2021 values
@@ -103,7 +100,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         r for r in sched
         if not r["completed"] and r[division.lower()] and r["cls"] not in ("championship", "playoff")
     ]
-    official = official_ratings.current(division)  # standings rows already overlaid
+    official = ratings.current(division)  # standings rows already overlaid
     for ev in upcoming_rows:
         roster = live_api.registered_roster(ev["tournament_id"], division)
         for pdga, info in roster.items():
@@ -119,7 +116,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
 
     n = len(table)
     pdga_numbers = [r["pdga_number"] for r in table]
-    ratings = np.array([float(r["rating"]) for r in table])
+    player_ratings = np.array([float(r["rating"]) for r in table])
     idx = {p: i for i, p in enumerate(pdga_numbers)}
 
     major_tids = config.MAJOR_TIDS_MPO if division == "MPO" else config.MAJOR_TIDS_FPO
@@ -216,10 +213,10 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         # field average over everyone actually playing (both team members),
         # not just the entrants of record — it stands in for a solo's partner
         involved = sorted({i for pr in pairs for i in pr} | set(solos))
-        favg_players = float(ratings[involved].mean()) if involved else 1000.0
+        favg_players = float(player_ratings[involved].mean()) if involved else 1000.0
         team_ratings = np.array(
-            [(ratings[i] + ratings[j]) / 2 for i, j in pairs]
-            + [(ratings[i] + favg_players) / 2 for i in solos]
+            [(player_ratings[i] + player_ratings[j]) / 2 for i, j in pairs]
+            + [(player_ratings[i] + favg_players) / 2 for i in solos]
         )
         dbl_teams = (pairs, solos, team_ratings)
         for t, (i, j) in enumerate(pairs):
@@ -250,7 +247,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 if info.get("place"):
                     place_now[j] = info["place"]
                 thru_now[j] = int(info.get("thru") or 0)
-        favg = float(ratings[in_field].mean()) if in_field.any() else 1000.0
+        favg = float(player_ratings[in_field].mean()) if in_field.any() else 1000.0
         live_data[ev_i] = (cur, rem, in_field, favg)
         live_place[ev_i] = place_now
         live_thru[ev_i] = thru_now
@@ -332,21 +329,21 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 # in progress: lock in the score so far, project the holes left
                 cur, rem, in_field, favg = live_data[ev_i]
                 plays = np.broadcast_to(in_field, (c, n))
-                mu = cur[None, :] - (ratings[None, :] - favg) / rpps * rem[None, :]
+                mu = cur[None, :] - (player_ratings[None, :] - favg) / rpps * rem[None, :]
                 sd = ROUND_SD * np.sqrt(np.maximum(rem, 1e-9))
                 scores = mu + rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
                 scores = np.where(in_field[None, :], scores, np.inf)
             else:
                 n_rounds = ROUNDS.get(row["cls"], 3)
-                fsum = (plays * ratings).sum(axis=1)
+                fsum = (plays * player_ratings).sum(axis=1)
                 fcnt = plays.sum(axis=1)
                 avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
-                mu = -(ratings[None, :] - avg[:, None]) / rpps * n_rounds
+                mu = -(player_ratings[None, :] - avg[:, None]) / rpps * n_rounds
                 scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
                 scores[~plays] = np.inf
             if done == 0:
                 played = np.where(plays, scores, np.nan)
-                events_meta[ev_i]["field_avg_rating"] = round(float((ratings[plays[0]].mean()) if plays[0].any() else 1000.0), 1)
+                events_meta[ev_i]["field_avg_rating"] = round(float((player_ratings[plays[0]].mean()) if plays[0].any() else 1000.0), 1)
                 events_meta[ev_i]["opp_score_sd"] = round(float(np.nanstd(played)), 2)
                 events_meta[ev_i]["field_size"] = round(float(plays.sum(axis=1).mean()), 1)
             order = np.argsort(scores, axis=1)
@@ -518,7 +515,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         # player's "what did we expect of them here?" baseline. Whole rounds,
         # not remaining holes: this is the projection as it stood at tee-off.
         ev_rounds = ROUNDS.get(remaining[ev_i]["cls"], 3)
-        opp_r = ratings[in_field]
+        opp_r = player_ratings[in_field]
         opp_draws = (-(opp_r - favg_live) / rpps * ev_rounds
                      + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), (PRE_DRAWS, len(opp_r))))
         per: dict[int, dict] = {}
@@ -535,7 +532,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             # pre-event expectation: what this player's rating alone projected
             # against this field, ignoring the score so far. Comparing it to
             # mean_pts is the over/under-performing story the day tracker tells.
-            pre_mu = -(ratings[j] - favg_live) / rpps * ev_rounds
+            pre_mu = -(player_ratings[j] - favg_live) / rpps * ev_rounds
             pre_scores = pre_mu + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), PRE_DRAWS)
             beat = (opp_draws < pre_scores[:, None]).sum(axis=1)
             pre_place = np.clip(beat + 1, 1, LIVE_CAP)
@@ -560,7 +557,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         n_sims=n_sims,
         names=[r["name"] for r in table],
         pdga_numbers=pdga_numbers,
-        ratings=list(ratings),
+        ratings=list(player_ratings),
         current_points=[r["points"] for r in table],
         current_rank=[r["rank"] for r in table],
         mean_points=total_pts.mean(axis=0),
