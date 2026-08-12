@@ -178,6 +178,18 @@ a single **parentless** commit, so the published payload has exactly one
 version at any time and accumulates no history. Pages serves `site`
 /docs.
 
+One consequence worth knowing before it confuses someone: **the static
+pages now go live on the next publish, not on merge.** Pages used to
+rebuild from any commit touching `docs/` on main, so a copy fix appeared
+as soon as it landed. It now rides along with the data bundle, so it
+waits for the 11:00 UTC refresh or a live-refresh iteration.
+`.github/workflows/publish-docs.yml` (dispatch-only) exists for when
+that wait is wrong: it republishes `docs/` in under a minute with no pip
+and no simulation, carrying the currently-published bundle across
+untouched. `publish-site.sh` refuses to run if that bundle is absent,
+because it force-pushes and a fresh checkout of main has the pages but
+no `docs/data` — publishing that would blank the live site.
+
 Bootstrapping is ordered: the branch does not exist until the publish
 step has run once, and the Pages settings dropdown will not offer a
 branch that does not exist. So run *Refresh forecast* first (the
