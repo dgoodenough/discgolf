@@ -35,7 +35,13 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   frozen simulation cutlines.
 - **Its own scorecard.** Every meaningful forecast is snapshotted to
   [predictions/](predictions/) so the model can be graded (Brier,
-  calibration) at season's end with `python -m dgpt.evaluate`.
+  calibration) at season's end with `python -m dgpt.evaluate`. The live
+  projections don't wait that long: `python -m dgpt.grade_live` replays every
+  completed event from the cached round sheets, re-runs the projection at each
+  round boundary, and scores the predicted finish distributions against what
+  actually happened — with skill scores against baselines that drop the ratings
+  or drop the leaderboard, so "is this model better than nothing?" has an
+  answer.
 
 ## Running it
 
@@ -50,7 +56,8 @@ simulation, and regenerates the site data in `docs/`. GitHub Actions runs it
 twice weekly, plus every 15 minutes during live play (a cheap change-check
 skips the heavy work between rounds). `python -m dgpt.validate` diffs the
 standings against StatMando; `python -m dgpt.calibrate` refits the score
-model from cached rounds.
+model from cached rounds; `python -m dgpt.grade_live` grades the live
+projections against the events they were made for.
 
 ## Data sources
 
