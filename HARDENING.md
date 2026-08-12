@@ -178,6 +178,14 @@ a single **parentless** commit, so the published payload has exactly one
 version at any time and accumulates no history. Pages serves `site`
 /docs.
 
+Bootstrapping is ordered: the branch does not exist until the publish
+step has run once, and the Pages settings dropdown will not offer a
+branch that does not exist. So run *Refresh forecast* first (the
+force-push creates the ref — nothing is created by hand), then point
+Settings → Pages at `site` /docs. Between those two steps Pages keeps
+serving main/docs, so the site freezes rather than breaking, which is
+the failure mode most likely to go unnoticed.
+
 The split follows the "inputs as well as outputs" caution above, which
 is what makes this in-season safe rather than offseason work:
 

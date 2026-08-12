@@ -14,10 +14,19 @@
 # pipeline reads back (data/live_signature.txt, data/current_ratings.json,
 # predictions/history_*.csv).
 #
-# ONE-TIME SETUP: GitHub Pages must be pointed at branch `site`, folder /docs
-# (Settings -> Pages -> Build and deployment -> Deploy from a branch). Until
-# that is flipped, Pages keeps serving main/docs and the site will freeze at
-# the last bundle committed there.
+# ONE-TIME SETUP, AND THE ORDER MATTERS — `site` has to exist before the Pages
+# settings dropdown will offer it, and nothing creates it until this script has
+# run once:
+#
+#   1. Actions -> "Refresh forecast" -> Run workflow. Its publish step calls
+#      this script, and the force-push below creates the ref, so there is no
+#      branch to make by hand and nothing to seed it with.
+#   2. Settings -> Pages -> Build and deployment -> Deploy from a branch ->
+#      `site` / docs. The dropdown does not list `site` until step 1 has run.
+#
+# Between the two steps Pages keeps serving main/docs, so the site freezes at
+# the last bundle committed there rather than breaking visibly — which is why
+# step 2 is easy to forget and worth confirming.
 #
 # A temporary index is used so the working tree and the real index are never
 # touched — the live-refresh loop commits pipeline state to main around these
