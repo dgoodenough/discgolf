@@ -412,7 +412,9 @@ class _Drawer:
         if first_chunk:
             meta = self.events_meta[ev_i]
             meta["field_avg_rating"] = round(float(tavg), 1)
-            meta["opp_score_sd"] = round(float(np.std(tscores)), 2)
+            # std of an empty slice is NaN, which json.dump emits bare and
+            # JSON.parse rejects — see the note in _draw_singles
+            meta["opp_score_sd"] = round(float(np.std(tscores)), 2) if T else 0.0
             meta["field_size"] = float(T)
         self.att_count[ev_i] += plays.sum(axis=0)
         pts = self.curves[row["tournament_id"]][np.minimum(place, n + 1)]
@@ -444,7 +446,13 @@ class _Drawer:
             played = np.where(plays, scores, np.nan)
             meta = self.events_meta[ev_i]
             meta["field_avg_rating"] = round(float((rtg[plays[0]].mean()) if plays[0].any() else 1000.0), 1)
-            meta["opp_score_sd"] = round(float(np.nanstd(played)), 2)
+            # nanstd over an all-NaN slice is NaN, and json.dump writes that as
+            # a bare NaN: valid to Python, a SyntaxError to JSON.parse, so the
+            # browser drops the whole bundle and the page renders nothing. An
+            # event nobody is projected to play has no spread to report; the
+            # app only reads opp_score_sd when field_size is 0 too, and that
+            # path clamps to first place regardless.
+            meta["opp_score_sd"] = round(float(np.nanstd(played)), 2) if plays.any() else 0.0
             meta["field_size"] = round(float(plays.sum(axis=1).mean()), 1)
         order = np.argsort(scores, axis=1)
         place = np.empty_like(order)
@@ -471,6 +479,25 @@ def _rank_of(totals: np.ndarray, rows_ix: np.ndarray, n: int) -> np.ndarray:
     r = np.empty_like(order)
     r[rows_ix, order] = np.arange(1, n + 1)[None, :]
     return r
+
+
+def _top_k_by_place(place: np.ndarray, eligible: np.ndarray, k: int, n: int) -> np.ndarray:
+    """Mask of the k best finishers among `eligible` — the performance paths.
+
+    Ineligible players are padded to n + 1 so they can never take a slot. When
+    fewer than k players are eligible, the k-th smallest value *is* that
+    padding, so every eligible player qualifies — which is the intended rule.
+
+    k is clamped to n because np.partition indexes into the array's own width,
+    not the eligible count. A division holding fewer players than the
+    qualification constant (FPO's MVP-performance path admits 4) used to raise
+    `IndexError: index 3 is out of bounds for axis 1 with size 0` from inside
+    numpy. At k = n the k-th smallest is the row maximum, so every eligible
+    player qualifies — the same answer the padding already gives.
+    """
+    padded = np.where(eligible, place, n + 1)
+    kth = np.partition(padded, min(k, n) - 1, axis=1)[:, min(k, n) - 1]
+    return (padded <= kth[:, None]) & eligible
 
 
 # ------------------------------------------------------- playoff structure
@@ -638,9 +665,7 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
             mvp_plays = rank_pre_mvp <= qual.mvp_cut
             if qual.gmc_ei is not None:  # GMC top-perf finishers outside the points cut advance
                 elig = gmc_plays & (rank_pre_mvp > qual.mvp_cut)
-                gp = np.where(elig, gmc_place, n + 1)
-                kth = np.partition(gp, qual.mvp_perf - 1, axis=1)[:, qual.mvp_perf - 1]
-                mvp_plays = mvp_plays | ((gp <= kth[:, None]) & elig)
+                mvp_plays = mvp_plays | _top_k_by_place(gmc_place, elig, qual.mvp_perf, n)
             t.p_mvp_field_hits += mvp_plays.sum(axis=0)
             mvp_pts, mvp_place, mvp_plays = drawer.draw(qual.mvp_ei, mvp_plays, c, rows_ix, first_chunk)
             sim_win |= (mvp_place == 1) & mvp_plays
@@ -658,9 +683,7 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         if mvp_place is not None:
             # top perf_champ MVP finishers outside the standings cut earn a spot
             elig = mvp_plays & ~auto_bid
-            mp = np.where(elig, mvp_place, n + 1)
-            kth = np.partition(mp, qual.perf_champ - 1, axis=1)[:, qual.perf_champ - 1]
-            mvp_qual = (mp <= kth[:, None]) & elig
+            mvp_qual = _top_k_by_place(mvp_place, elig, qual.perf_champ, n)
             t.p_mvp_qual_hits += mvp_qual.sum(axis=0)
             champ_field |= mvp_qual
         # DGPT/Major winners get a special invite (bottom seed) if not already in
@@ -668,8 +691,12 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         t.p_champ_hits += champ_field.sum(axis=0)
 
         sorted_totals = -np.sort(-totals, axis=1)
-        t.cutline[done : done + c] = sorted_totals[:, cut_n - 1]
-        t.cutline2[done : done + c] = sorted_totals[:, cut_n]
+        # A division can hold fewer players than there are qualifying spots
+        # (a small early-season FPO field). Then everyone is in: the last
+        # filled spot is the lowest-ranked player, and there is no first spot
+        # outside the cut for cutline2 to report.
+        t.cutline[done : done + c] = sorted_totals[:, min(cut_n, n) - 1]
+        t.cutline2[done : done + c] = sorted_totals[:, cut_n] if n > cut_n else 0.0
         capped = np.minimum(ranks, MAX_HIST_RANK)  # one bincount for all players
         stride = MAX_HIST_RANK + 1
         flat = capped + (np.arange(n) * stride)[None, :]
@@ -751,6 +778,17 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     major_tids = config.MAJOR_TIDS_MPO if division == "MPO" else config.MAJOR_TIDS_FPO
 
     roster = _build_roster(division, sched)
+    if roster.n == 0:
+        # Distinct from a small division, which simulates fine. Zero means
+        # standings.compute returned nothing AND every remaining event's
+        # registration roster was empty — both sources dark at once, which is
+        # an outage rather than a season state. Fail loudly here: the
+        # alternative is publishing an empty division to a live page, and a
+        # blank forecast that looks deliberate is worse than a red run.
+        raise ValueError(
+            f"{division}: no players with a known rating — standings are empty "
+            "and no remaining event returned a registration roster"
+        )
     banked = _split_banked(roster, division, major_tids)
     remaining = _remaining_events(sched, division)
     event_probs = _attendance_probs(sched, roster, remaining, division, banked.player_events)
