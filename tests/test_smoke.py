@@ -86,7 +86,12 @@ def test_roster_added_first_timer_gets_a_row(sim_result):
 def test_export_bundle_is_well_formed(sim_result, tmp_path):
     world, _, res = sim_result
     export.export(res)
-    bundle = json.loads((export.DOCS_DATA / "mpo.json").read_text(encoding="utf-8"))
+    raw = (export.DOCS_DATA / "mpo.json").read_text(encoding="utf-8")
+    # Strict grammar: json.loads accepts bare NaN/Infinity but JSON.parse
+    # rejects them, and one anywhere in the bundle costs the browser the page.
+    bundle = json.loads(raw, parse_constant=lambda c: pytest.fail(
+        f"non-standard JSON constant {c!r} in the exported bundle"
+    ))
 
     assert bundle["meta"]["division"] == "MPO"
     assert bundle["meta"]["cut"] == simulate.STANDINGS_CUT["MPO"]

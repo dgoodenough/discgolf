@@ -111,9 +111,10 @@ published number.
 *Items 1-5 shipped mid-season (2026-07): the fixture corpus + suite live in
 `tests/` (gated by `.github/workflows/tests.yml`), the flight recorder in
 `dgpt/live_api.py`, the invariant checks in `dgpt/invariants.py`, and the
-failure posture in `.github/workflows/live-refresh.yml`. Items 6-7 and 9
-are offseason work; item 8's first two pieces (a resnapshot command, the
-invariant gate on recording) are in-season safe and still open.*
+failure posture in `.github/workflows/live-refresh.yml`. Item 6 shipped
+2026-08 (`.github/publish-site.sh`). Items 7 and 9 are offseason work;
+item 8's first two pieces (a resnapshot command, the invariant gate on
+recording) are in-season safe and still open.*
 
 ### 1. Commit the regression corpus; make it a test suite *(shipped 2026-07)*
 
@@ -169,16 +170,46 @@ item-1 suite. And retire the reused `claude/standings-attendance-bug-*`
 branch: fifteen PRs of unrelated fixes shipped under a branch name
 describing a bug fixed in April. Fresh branch per change.
 
-### 6. Move data commits off main *(offseason)*
+### 6. Move data commits off main *(shipped 2026-08)*
 
-Publish generated data (`docs/data`, `data/`, `results/`,
-`predictions/`) from the refresh workflows via `actions/deploy-pages`
-artifact deploys, or to a dedicated `data` branch, so refreshes stop
-creating commits on main entirely. Main's history becomes readable
-again, clones shrink, and the push/rebase races between the live loop
-and merges disappear. Needs care with the pieces that are inputs as
-well as outputs (`live_signature.txt`, prediction history), which is
-why it waits for the offseason.
+Generated output no longer lands on main. `.github/publish-site.sh`
+builds a tree from `docs/` and force-pushes it to the `site` branch as
+a single **parentless** commit, so the published payload has exactly one
+version at any time and accumulates no history. Pages serves `site`
+/docs.
+
+Bootstrapping is ordered: the branch does not exist until the publish
+step has run once, and the Pages settings dropdown will not offer a
+branch that does not exist. So run *Refresh forecast* first (the
+force-push creates the ref — nothing is created by hand), then point
+Settings → Pages at `site` /docs. Between those two steps Pages keeps
+serving main/docs, so the site freezes rather than breaking, which is
+the failure mode most likely to go unnoticed.
+
+The split follows the "inputs as well as outputs" caution above, which
+is what makes this in-season safe rather than offseason work:
+
+| | |
+|---|---|
+| Published to `site`, gitignored on main | `docs/data/*.json` |
+| Untracked, local build products | `results/`, `data/standings_*.csv` |
+| Still committed to main (state the pipeline reads back) | `data/live_signature.txt`, `data/current_ratings.json`, `data/schedule_2026.csv`, `predictions/history_*.csv` |
+
+Nothing reads `results/` or `data/standings_*.csv` back — they are
+written and never opened again (`simulate.write_csv`,
+`standings.write_csv`), so untracking them loses no input. The
+prediction history stays on main: `evaluate` and `movers` both read it,
+README advertises it, and it is appended at most once per calendar day
+rather than once per refresh.
+
+Before: ~1.6MB of JSON rewritten on main every ~6 minutes during play,
+48 of the last 50 commits machine output. After: a live iteration that
+only moves scores makes **no commit to main at all**.
+
+Remaining: `data/current_ratings.json` is 200KB on one line and is
+rewritten whenever any rating moves. That is rare (`refresh_if_stale`
+writes only on an actual change) so it was left alone, but it is the
+next-largest thing on main if it ever gets chattier.
 
 ### 7. Reduce single-source validation risk *(offseason)*
 

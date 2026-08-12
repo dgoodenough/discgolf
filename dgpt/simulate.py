@@ -5,18 +5,27 @@ relative to the field average is -(rating - field_avg) / RATING_PTS_PER_STROKE
 strokes, with per-round noise N(0, ROUND_SD). Each sim draws fields for the
 remaining events from participation probabilities, ranks the finishers, and
 awards 2026 points; banked points from completed events are fixed.
+
+Shape of a run (`run` is the orchestration; everything else is a phase):
+
+    _build_roster        who is in the table, and their ratings
+    _split_banked        completed-event points, routed to counting pools
+    _remaining_events    what is left to simulate
+    _attendance_probs    P(plays) per event per player
+    _build_doubles       team pairings for the doubles championship
+    _load_live_state     current scores for an event in progress
+    _Drawer              draws one event's points + places for a chunk of sims
+    _simulate            the chunk loop: draws events, applies the caps, ranks
+    _live_projections    per-player finish distribution for a live event
 """
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
-# `ratings` is aliased: simulate.run assigns a local ndarray named `ratings`,
-# which would shadow the module inside that function (UnboundLocalError)
-from . import config, fields, live_api, points, schedule, standings
-from . import ratings as official_ratings
+from . import config, fields, live_api, points, ratings, schedule, standings
 
 # Score-model constants, recalibrated against all completed 2026 rounds
 # (94 rounds / 6,667 player-rounds; see dgpt/calibrate.py). The 2021 values
@@ -84,26 +93,37 @@ def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
     return vec
 
 
-def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
-        chunk: int = 500) -> SimResult:
-    rng = np.random.default_rng(seed)
-    rpps = RATING_PTS_PER_STROKE[division]
-    sched = schedule.load()
-    table = standings.compute(division)
+# ------------------------------------------------------------------ roster
 
-    # players: anyone with a start this season and a known rating
-    table = [r for r in table if r["rating"]]
+@dataclass
+class _Roster:
+    """The player set for a run, fixed once and read everywhere after."""
+    table: list[dict]
+    pdga_numbers: list[int]
+    player_ratings: np.ndarray     # (n,) official rating per table position
+    idx: dict[int, int]            # pdga number -> table position
 
-    # add players with no standings row yet who are registered for any
-    # remaining event (or playing a live one) so first-timers get rows
-    live_now = schedule.live_events(sched)
+    @property
+    def n(self) -> int:
+        return len(self.table)
+
+
+def _build_roster(division: str, sched: list[dict]) -> _Roster:
+    """Standings rows with a known rating, plus registered first-timers.
+
+    Players with no standings row yet but a spot on a remaining event's
+    roster (or in a live field) get a zero-points row so the app can show
+    them.
+    """
+    table = [r for r in standings.compute(division) if r["rating"]]
+
     have = {r["pdga_number"] for r in table}
     max_rank = max((r["rank"] for r in table), default=0)
     upcoming_rows = [
         r for r in sched
         if not r["completed"] and r[division.lower()] and r["cls"] not in ("championship", "playoff")
     ]
-    official = official_ratings.current(division)  # standings rows already overlaid
+    official = ratings.current(division)  # standings rows already overlaid
     for ev in upcoming_rows:
         roster = live_api.registered_roster(ev["tournament_id"], division)
         for pdga, info in roster.items():
@@ -117,121 +137,190 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 "rank": max_rank, "points": 0.0, "events": [],
             })
 
-    n = len(table)
     pdga_numbers = [r["pdga_number"] for r in table]
-    ratings = np.array([float(r["rating"]) for r in table])
-    idx = {p: i for i, p in enumerate(pdga_numbers)}
+    return _Roster(
+        table=table,
+        pdga_numbers=pdga_numbers,
+        player_ratings=np.array([float(r["rating"]) for r in table]),
+        idx={p: i for i, p in enumerate(pdga_numbers)},
+    )
 
-    major_tids = config.MAJOR_TIDS_MPO if division == "MPO" else config.MAJOR_TIDS_FPO
-    # banked points split by counting pool (2026 per-class caps)
-    banked_majors = np.zeros((n, len(major_tids)))
-    banked_dgpt: list[list[float]] = [[] for _ in range(n)]
-    banked_jomez_sum = np.zeros(n)    # Jomez bonus — all count
-    banked_playoff_sum = np.zeros(n)  # both playoffs count (0 until they happen)
-    player_events = {r["pdga_number"]: {tid for tid, *_ in r["events"]} for r in table}
-    # which banked event fills each pool slot (for per-event drop odds)
-    banked_dgpt_tids: list[list[int]] = [[] for _ in range(n)]
-    banked_major_tids: list[list[int]] = [[] for _ in range(n)]
-    for i, r in enumerate(table):
+
+# ------------------------------------------------------------------ banked
+
+@dataclass
+class _Banked:
+    """Completed-event points, split by 2026 counting pool."""
+    majors: np.ndarray             # (n, n_major_tids) one column per major slot
+    dgpt: np.ndarray               # (n, max_slots) padded with zeros
+    jomez_sum: np.ndarray          # (n,) all Jomez bonus points count
+    playoff_sum: np.ndarray        # (n,) both playoffs count
+    dgpt_tids: list[list[int]]     # which event fills each DGPT slot
+    major_tids: list[list[int]]    # which event fills each major slot
+    has_win: np.ndarray            # (n,) already earned the Cup winner invite
+    player_events: dict[int, set]  # pdga -> tids started (for participation rates)
+
+    @property
+    def max_slots(self) -> int:
+        return self.dgpt.shape[1]
+
+
+def _split_banked(roster: _Roster, division: str, major_tids: set[int]) -> _Banked:
+    n = roster.n
+    majors = np.zeros((n, len(major_tids)))
+    dgpt_lists: list[list[float]] = [[] for _ in range(n)]
+    jomez_sum = np.zeros(n)
+    playoff_sum = np.zeros(n)
+    dgpt_tids: list[list[int]] = [[] for _ in range(n)]
+    major_slot_tids: list[list[int]] = [[] for _ in range(n)]
+    for i, r in enumerate(roster.table):
         m = 0
         for tid, pts, _, _ in r["events"]:
             pool = points.event_pool(tid, division)
             if pool == "major":
-                banked_majors[i, m] = pts
-                banked_major_tids[i].append(tid)
+                majors[i, m] = pts
+                major_slot_tids[i].append(tid)
                 m += 1
             elif pool == "jomez":
-                banked_jomez_sum[i] += pts
+                jomez_sum[i] += pts
             elif pool == "playoff":
-                banked_playoff_sum[i] += pts
+                playoff_sum[i] += pts
             else:  # dgpt / dgpt+ / doubles
-                banked_dgpt[i].append(pts)
-                banked_dgpt_tids[i].append(tid)
-    max_banked = max((len(b) for b in banked_dgpt), default=1)
-    banked_dgpt_arr = np.zeros((n, max_banked))
-    for i, b in enumerate(banked_dgpt):
-        banked_dgpt_arr[i, : len(b)] = b
+                dgpt_lists[i].append(pts)
+                dgpt_tids[i].append(tid)
+    max_slots = max((len(b) for b in dgpt_lists), default=1)
+    dgpt = np.zeros((n, max_slots))
+    for i, b in enumerate(dgpt_lists):
+        dgpt[i, : len(b)] = b
 
     # already-won a DGPT/Major singles event -> guaranteed Cup special invite.
     # Jomez Series and the doubles championship do NOT grant the invite.
     no_invite_tids = config.JOMEZ_TIDS | {config.TID_DOUBLES}
-    has_banked_win = np.array([
+    has_win = np.array([
         any(place == 1 and tid not in no_invite_tids for tid, _, place, _ in r["events"])
-        for r in table
+        for r in roster.table
     ])
+    return _Banked(
+        majors=majors, dgpt=dgpt, jomez_sum=jomez_sum, playoff_sum=playoff_sum,
+        dgpt_tids=dgpt_tids, major_tids=major_slot_tids, has_win=has_win,
+        player_events={r["pdga_number"]: {tid for tid, *_ in r["events"]} for r in roster.table},
+    )
 
-    remaining = [
+
+# ------------------------------------------------------- remaining schedule
+
+def _remaining_events(sched: list[dict], division: str) -> list[dict]:
+    return [
         row for row in sched
         if not row["completed"]
         and row[division.lower()]
         and row["cls"] != "championship"
         and (division == "MPO" or row["fpo_points"])
     ]
-    player_names = {r["pdga_number"]: r["name"] for r in table}
+
+
+def _attendance_probs(sched: list[dict], roster: _Roster, remaining: list[dict],
+                      division: str, player_events: dict[int, set]) -> list[np.ndarray]:
+    """P(plays) per remaining event, aligned to roster.pdga_numbers."""
+    player_names = {r["pdga_number"]: r["name"] for r in roster.table}
     rates = fields.participation_rates(sched, player_events, division, player_names)
     overrides = fields.load_overrides()
-    event_probs = []
+    out = []
     for row in remaining:
-        probs = fields.play_probabilities(row, division, pdga_numbers, rates, overrides)
-        event_probs.append(np.array([probs[p] for p in pdga_numbers]))
+        probs = fields.play_probabilities(row, division, roster.pdga_numbers, rates, overrides)
+        out.append(np.array([probs[p] for p in roster.pdga_numbers]))
+    return out
 
-    curves = {row["tournament_id"]: _curve_vector(division, row["cls"], n) for row in remaining}
 
-    # live events in progress: model each player's current score plus a
-    # rating-based projection of the holes they have left, instead of
-    # simulating the whole event from scratch
-    # doubles championship: simulate at TEAM level, team rating = mean of the
-    # two players' ratings (no doubles-play priors). Pairings come from
-    # live_api.doubles_teams (PDGA Live once staged, DGS registration until
-    # then — re-fetched every refresh so new teams appear automatically).
-    # Registered players without a listed partner get a field-average partner.
-    dbl_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_DOUBLES), None)
-    dbl_teams = None
-    dbl_info: dict[int, dict] = {}
-    player_names_by_i = {i: r["name"] for i, r in enumerate(table)}
-    if dbl_ei is not None:
-        pairing = live_api.doubles_teams(config.TID_DOUBLES, division)
-        registered = [i for i in range(n) if event_probs[dbl_ei][i] >= 0.999]
-        seen: set[int] = set()
-        pairs: list[tuple[int, int]] = []
-        solos: list[int] = []
-        for i in registered:
-            if i in seen:
-                continue
-            partner = pairing.get(pdga_numbers[i], {}).get("partner")
-            j = idx.get(partner) if partner else None
-            # Pair on the roster's own Teammates data alone. Do NOT also
-            # require the partner to appear in the registered list: PDGA Live
-            # lists ONE row per team (the entrant of record), so the partner
-            # is usually absent from it — requiring both collapsed every team
-            # into a "solo" with a phantom field-average partner and halved
-            # the field. A partner with no row in our table (unrated/am) still
-            # falls through to the solo model, which is what it's for.
-            if j is not None and j != i and j not in seen:
-                pairs.append((i, j))
-                seen.update((i, j))
-            else:
-                solos.append(i)
-                seen.add(i)
-        # field average over everyone actually playing (both team members),
-        # not just the entrants of record — it stands in for a solo's partner
-        involved = sorted({i for pr in pairs for i in pr} | set(solos))
-        favg_players = float(ratings[involved].mean()) if involved else 1000.0
-        team_ratings = np.array(
-            [(ratings[i] + ratings[j]) / 2 for i, j in pairs]
-            + [(ratings[i] + favg_players) / 2 for i in solos]
-        )
-        dbl_teams = (pairs, solos, team_ratings)
-        for t, (i, j) in enumerate(pairs):
-            dbl_info[pdga_numbers[i]] = {"partner_name": player_names_by_i.get(j), "team_rating": round(float(team_ratings[t]), 1)}
-            dbl_info[pdga_numbers[j]] = {"partner_name": player_names_by_i.get(i), "team_rating": round(float(team_ratings[t]), 1)}
-        for t2, i in enumerate(solos):
-            dbl_info[pdga_numbers[i]] = {"partner_name": None, "team_rating": round(float(team_ratings[len(pairs) + t2]), 1)}
+# ----------------------------------------------------------------- doubles
 
-    live_tids = {r["tournament_id"] for r in live_now}
-    live_data: dict[int, tuple] = {}
-    live_place: dict[int, dict[int, int]] = {}
-    live_thru: dict[int, dict[int, int]] = {}
+@dataclass
+class _Doubles:
+    """Team pairings for the doubles championship (absent = ei is None)."""
+    ei: int | None = None                              # index into `remaining`
+    pairs: list[tuple[int, int]] = field(default_factory=list)
+    solos: list[int] = field(default_factory=list)
+    team_ratings: np.ndarray | None = None
+    info: dict[int, dict] = field(default_factory=dict)  # pdga -> partner/team rating
+
+    @property
+    def staged(self) -> bool:
+        return self.ei is not None and self.team_ratings is not None
+
+
+def _build_doubles(remaining: list[dict], roster: _Roster,
+                   event_probs: list[np.ndarray], division: str) -> _Doubles:
+    """Pair the doubles field; team rating = mean of the two players' ratings.
+
+    Pairings come from live_api.doubles_teams (PDGA Live once staged, DGS
+    registration until then — re-fetched every refresh so new teams appear
+    automatically). Registered players without a listed partner get a
+    field-average partner.
+    """
+    ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_DOUBLES), None)
+    if ei is None:
+        return _Doubles()
+
+    pairing = live_api.doubles_teams(config.TID_DOUBLES, division)
+    registered = [i for i in range(roster.n) if event_probs[ei][i] >= 0.999]
+    seen: set[int] = set()
+    pairs: list[tuple[int, int]] = []
+    solos: list[int] = []
+    for i in registered:
+        if i in seen:
+            continue
+        partner = pairing.get(roster.pdga_numbers[i], {}).get("partner")
+        j = roster.idx.get(partner) if partner else None
+        # Pair on the roster's own Teammates data alone. Do NOT also
+        # require the partner to appear in the registered list: PDGA Live
+        # lists ONE row per team (the entrant of record), so the partner
+        # is usually absent from it — requiring both collapsed every team
+        # into a "solo" with a phantom field-average partner and halved
+        # the field. A partner with no row in our table (unrated/am) still
+        # falls through to the solo model, which is what it's for.
+        if j is not None and j != i and j not in seen:
+            pairs.append((i, j))
+            seen.update((i, j))
+        else:
+            solos.append(i)
+            seen.add(i)
+
+    # field average over everyone actually playing (both team members),
+    # not just the entrants of record — it stands in for a solo's partner
+    rtg = roster.player_ratings
+    involved = sorted({i for pr in pairs for i in pr} | set(solos))
+    favg_players = float(rtg[involved].mean()) if involved else 1000.0
+    team_ratings = np.array(
+        [(rtg[i] + rtg[j]) / 2 for i, j in pairs]
+        + [(rtg[i] + favg_players) / 2 for i in solos]
+    )
+
+    names_by_i = {i: r["name"] for i, r in enumerate(roster.table)}
+    info: dict[int, dict] = {}
+    for t, (i, j) in enumerate(pairs):
+        info[roster.pdga_numbers[i]] = {"partner_name": names_by_i.get(j), "team_rating": round(float(team_ratings[t]), 1)}
+        info[roster.pdga_numbers[j]] = {"partner_name": names_by_i.get(i), "team_rating": round(float(team_ratings[t]), 1)}
+    for t2, i in enumerate(solos):
+        info[roster.pdga_numbers[i]] = {"partner_name": None, "team_rating": round(float(team_ratings[len(pairs) + t2]), 1)}
+
+    return _Doubles(ei=ei, pairs=pairs, solos=solos, team_ratings=team_ratings, info=info)
+
+
+# -------------------------------------------------------------- live state
+
+@dataclass
+class _LiveState:
+    """Current scores for events in progress, keyed by index into `remaining`."""
+    data: dict[int, tuple] = field(default_factory=dict)   # ev_i -> (cur, rem, in_field, favg)
+    place: dict[int, dict[int, int]] = field(default_factory=dict)  # ev_i -> {i: standing}
+    thru: dict[int, dict[int, int]] = field(default_factory=dict)   # ev_i -> {i: holes played}
+
+
+def _load_live_state(remaining: list[dict], roster: _Roster,
+                     live_tids: set[int], division: str) -> _LiveState:
+    """Lock in the score so far so only the holes left get simulated."""
+    live = _LiveState()
+    n = roster.n
     for ev_i, row in enumerate(remaining):
         if row["tournament_id"] not in live_tids:
             continue
@@ -244,147 +333,299 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         place_now: dict[int, int] = {}
         thru_now: dict[int, int] = {}
         for pdga, info in state.items():
-            if pdga in idx:
-                j = idx[pdga]
+            if pdga in roster.idx:
+                j = roster.idx[pdga]
                 cur[j], rem[j], in_field[j] = info["cur"], info["rem"], True
                 if info.get("place"):
                     place_now[j] = info["place"]
                 thru_now[j] = int(info.get("thru") or 0)
-        favg = float(ratings[in_field].mean()) if in_field.any() else 1000.0
-        live_data[ev_i] = (cur, rem, in_field, favg)
-        live_place[ev_i] = place_now
-        live_thru[ev_i] = thru_now
+        favg = float(roster.player_ratings[in_field].mean()) if in_field.any() else 1000.0
+        live.data[ev_i] = (cur, rem, in_field, favg)
+        live.place[ev_i] = place_now
+        live.thru[ev_i] = thru_now
+    return live
 
-    # playoff events (drawn last, with attendance gated on standings)
+
+# ---------------------------------------------------------- the event draw
+
+class _Drawer:
+    """Draws one event's points and finishing places for a chunk of sims.
+
+    Built once per run from inputs that never change, and it owns the
+    accumulators it writes: per-event attendance counts, the score-model
+    stats reported to the app, and the place histogram for a live event.
+    Chunk-varying values (`c`, `rows_ix`, `first_chunk`) are explicit
+    arguments — this used to be a closure nested in the chunk loop, capturing
+    twenty locals implicitly and being rebuilt on every iteration.
+    """
+
+    def __init__(self, division: str, roster: _Roster, remaining: list[dict],
+                 curves: dict[int, np.ndarray], doubles: _Doubles,
+                 live: _LiveState, rng: np.random.Generator, events_meta: list[dict]):
+        self.roster = roster
+        self.remaining = remaining
+        self.curves = curves
+        self.doubles = doubles
+        self.live = live
+        self.rng = rng
+        self.rpps = RATING_PTS_PER_STROKE[division]
+        self.events_meta = events_meta
+        self.att_count = np.zeros((len(remaining), roster.n))
+        self.place_hist = {ev_i: np.zeros((roster.n, LIVE_CAP), dtype=np.int64) for ev_i in live.data}
+
+    def draw(self, ev_i: int, plays: np.ndarray, c: int, rows_ix: np.ndarray,
+             first_chunk: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(points, place, plays) for `c` sims.
+
+        The returned `plays` is the participation actually used: the doubles
+        championship derives its own from the team pairings and ignores the
+        drawn one, so callers must use what comes back rather than what they
+        passed in.
+        """
+        if ev_i == self.doubles.ei and self.doubles.staged:
+            return self._draw_doubles(ev_i, c, rows_ix, first_chunk)
+        return self._draw_singles(ev_i, plays, c, rows_ix, first_chunk)
+
+    def _draw_doubles(self, ev_i: int, c: int, rows_ix: np.ndarray,
+                      first_chunk: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Team-level draw: one score per team, both members share it."""
+        n = self.roster.n
+        row = self.remaining[ev_i]
+        pairs, solos = self.doubles.pairs, self.doubles.solos
+        team_ratings = self.doubles.team_ratings
+        T = len(team_ratings)
+        n_rounds = ROUNDS.get(row["cls"], 3)
+        tavg = team_ratings.mean() if T else 1000.0
+        mu_t = -(team_ratings - tavg) / self.rpps * n_rounds
+        tscores = mu_t[None, :] + self.rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, T))
+        torder = np.argsort(tscores, axis=1)
+        tplace = np.empty_like(torder)
+        tplace[rows_ix, torder] = np.arange(1, T + 1)[None, :]
+        place = np.full((c, n), n + 1, dtype=np.int64)
+        plays = np.zeros((c, n), dtype=bool)
+        for t, (i2, j2) in enumerate(pairs):
+            place[:, i2] = place[:, j2] = tplace[:, t]
+            plays[:, i2] = plays[:, j2] = True
+        for t2, i2 in enumerate(solos):
+            place[:, i2] = tplace[:, len(pairs) + t2]
+            plays[:, i2] = True
+        if first_chunk:
+            meta = self.events_meta[ev_i]
+            meta["field_avg_rating"] = round(float(tavg), 1)
+            # std of an empty slice is NaN, which json.dump emits bare and
+            # JSON.parse rejects — see the note in _draw_singles
+            meta["opp_score_sd"] = round(float(np.std(tscores)), 2) if T else 0.0
+            meta["field_size"] = float(T)
+        self.att_count[ev_i] += plays.sum(axis=0)
+        pts = self.curves[row["tournament_id"]][np.minimum(place, n + 1)]
+        pts[~plays] = 0.0
+        return pts, place, plays
+
+    def _draw_singles(self, ev_i: int, plays: np.ndarray, c: int, rows_ix: np.ndarray,
+                      first_chunk: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        n = self.roster.n
+        rtg = self.roster.player_ratings
+        row = self.remaining[ev_i]
+        if ev_i in self.live.data:
+            # in progress: lock in the score so far, project the holes left
+            cur, rem, in_field, favg = self.live.data[ev_i]
+            plays = np.broadcast_to(in_field, (c, n))
+            mu = cur[None, :] - (rtg[None, :] - favg) / self.rpps * rem[None, :]
+            sd = ROUND_SD * np.sqrt(np.maximum(rem, 1e-9))
+            scores = mu + self.rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
+            scores = np.where(in_field[None, :], scores, np.inf)
+        else:
+            n_rounds = ROUNDS.get(row["cls"], 3)
+            fsum = (plays * rtg).sum(axis=1)
+            fcnt = plays.sum(axis=1)
+            avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
+            mu = -(rtg[None, :] - avg[:, None]) / self.rpps * n_rounds
+            scores = mu + self.rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
+            scores[~plays] = np.inf
+        if first_chunk:
+            played = np.where(plays, scores, np.nan)
+            meta = self.events_meta[ev_i]
+            meta["field_avg_rating"] = round(float((rtg[plays[0]].mean()) if plays[0].any() else 1000.0), 1)
+            # nanstd over an all-NaN slice is NaN, and json.dump writes that as
+            # a bare NaN: valid to Python, a SyntaxError to JSON.parse, so the
+            # browser drops the whole bundle and the page renders nothing. An
+            # event nobody is projected to play has no spread to report; the
+            # app only reads opp_score_sd when field_size is 0 too, and that
+            # path clamps to first place regardless.
+            meta["opp_score_sd"] = round(float(np.nanstd(played)), 2) if plays.any() else 0.0
+            meta["field_size"] = round(float(plays.sum(axis=1).mean()), 1)
+        order = np.argsort(scores, axis=1)
+        place = np.empty_like(order)
+        place[rows_ix, order] = np.arange(1, n + 1)[None, :]
+        if row["cls"] == "doubles":
+            place = (place + 1) // 2
+        self.att_count[ev_i] += plays.sum(axis=0)
+        if ev_i in self.place_hist:  # projected finish distribution for a live event
+            inf = self.live.data[ev_i][2]
+            cp = np.where(inf[None, :], np.minimum(place, LIVE_CAP), 0)
+            stride = LIVE_CAP + 1
+            flat = (np.arange(n) * stride)[None, :] + cp
+            self.place_hist[ev_i] += np.bincount(
+                flat.ravel(), minlength=n * stride
+            ).reshape(n, stride)[:, 1:]
+        pts = self.curves[row["tournament_id"]][np.minimum(place, n + 1)]
+        pts[~plays] = 0.0
+        return pts, place, plays
+
+
+def _rank_of(totals: np.ndarray, rows_ix: np.ndarray, n: int) -> np.ndarray:
+    """Standings rank (1 = most points) for each sim row."""
+    order = np.argsort(-totals, axis=1)
+    r = np.empty_like(order)
+    r[rows_ix, order] = np.arange(1, n + 1)[None, :]
+    return r
+
+
+def _top_k_by_place(place: np.ndarray, eligible: np.ndarray, k: int, n: int) -> np.ndarray:
+    """Mask of the k best finishers among `eligible` — the performance paths.
+
+    Ineligible players are padded to n + 1 so they can never take a slot. When
+    fewer than k players are eligible, the k-th smallest value *is* that
+    padding, so every eligible player qualifies — which is the intended rule.
+
+    k is clamped to n because np.partition indexes into the array's own width,
+    not the eligible count. A division holding fewer players than the
+    qualification constant (FPO's MVP-performance path admits 4) used to raise
+    `IndexError: index 3 is out of bounds for axis 1 with size 0` from inside
+    numpy. At k = n the k-th smallest is the row maximum, so every eligible
+    player qualifies — the same answer the padding already gives.
+    """
+    padded = np.where(eligible, place, n + 1)
+    kth = np.partition(padded, min(k, n) - 1, axis=1)[:, min(k, n) - 1]
+    return (padded <= kth[:, None]) & eligible
+
+
+# ------------------------------------------------------- playoff structure
+
+@dataclass
+class _Qual:
+    """Playoff/championship qualification rules and event positions."""
+    gmc_ei: int | None
+    mvp_ei: int | None
+    pre_eis: list[int]     # every non-playoff remaining event, drawn first
+    gmc_cut: int
+    gmc_fill: int
+    mvp_cut: int
+    mvp_perf: int
+    perf_champ: int        # championship spots earned on MVP performance
+    standings_cut: int
+
+
+def _build_qual(remaining: list[dict], division: str) -> _Qual:
     gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
     mvp_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_MVP), None)
     playoff_eis = {gmc_ei, mvp_ei} - {None}
-    pre_eis = [i for i in range(len(remaining)) if i not in playoff_eis]
-    gmc_cut = config.PLAYOFF_QUAL["gmc"]["cut"][division]
-    gmc_fill = config.PLAYOFF_QUAL["gmc"]["fill"][division]
-    mvp_cut = config.PLAYOFF_QUAL["mvp"]["cut"][division]
-    mvp_perf = config.PLAYOFF_QUAL["mvp"]["perf"][division]
+    return _Qual(
+        gmc_ei=gmc_ei,
+        mvp_ei=mvp_ei,
+        pre_eis=[i for i in range(len(remaining)) if i not in playoff_eis],
+        gmc_cut=config.PLAYOFF_QUAL["gmc"]["cut"][division],
+        gmc_fill=config.PLAYOFF_QUAL["gmc"]["fill"][division],
+        mvp_cut=config.PLAYOFF_QUAL["mvp"]["cut"][division],
+        mvp_perf=config.PLAYOFF_QUAL["mvp"]["perf"][division],
+        perf_champ=FIELD_SIZE[division] - STANDINGS_CUT[division],
+        standings_cut=STANDINGS_CUT[division],
+    )
 
-    perf_champ = FIELD_SIZE[division] - STANDINGS_CUT[division]  # MVP-performance spots
 
-    total_pts = np.zeros((n_sims, n))
-    total_rank = np.zeros((n_sims, n), dtype=np.int32)
-    rank_hist = np.zeros((n, MAX_HIST_RANK), dtype=np.int64)
-    live_place_hist = {ev_i: np.zeros((n, LIVE_CAP), dtype=np.int64) for ev_i in live_data}
-    att_count = np.zeros((len(remaining), n))  # realized plays per event per player
-    cutline = np.zeros(n_sims)
-    cutline2 = np.zeros(n_sims)
-    p_gmc_hits = np.zeros(n)        # rank before GMC within its points cut
-    p_mvp_hits = np.zeros(n)        # rank before MVP within its points cut
-    p_gmc_field_hits = np.zeros(n)  # actually in the GMC field (incl. fill)
-    p_mvp_field_hits = np.zeros(n)  # actually in the MVP field (incl. GMC-perf path)
-    p_mvp_qual_hits = np.zeros(n)  # earns championship via MVP performance
-    p_champ_hits = np.zeros(n)     # in the championship field (auto bid or MVP perf)
-    drop_dgpt_hits = np.zeros((n, max_banked))               # banked DGPT slot fell outside top-10
-    drop_major_hits = np.zeros((n, banked_majors.shape[1]))  # banked major slot fell outside top-2
-    events_meta = [
-        {
-            "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
-            "start_date": row["start_date"],
-            "rounds": ROUNDS.get(row["cls"], 3),
-            "is_major": row["tournament_id"] in major_tids,
-            "field_avg_rating": 0.0, "opp_score_sd": 0.0, "field_size": 0.0,
-        }
-        for row in remaining
-    ]
+# --------------------------------------------------------- the chunk loop
+
+@dataclass
+class _Totals:
+    """Everything the chunk loop accumulates across all sims."""
+    total_pts: np.ndarray
+    total_rank: np.ndarray
+    rank_hist: np.ndarray
+    cutline: np.ndarray
+    cutline2: np.ndarray
+    p_gmc_hits: np.ndarray        # rank before GMC within its points cut
+    p_mvp_hits: np.ndarray        # rank before MVP within its points cut
+    p_gmc_field_hits: np.ndarray  # actually in the GMC field (incl. fill)
+    p_mvp_field_hits: np.ndarray  # actually in the MVP field (incl. GMC-perf path)
+    p_mvp_qual_hits: np.ndarray   # earns championship via MVP performance
+    p_champ_hits: np.ndarray      # in the championship field (auto bid or MVP perf)
+    drop_dgpt_hits: np.ndarray    # banked DGPT slot fell outside the counted best-N
+    drop_major_hits: np.ndarray   # banked major slot fell outside the counted best-N
+
+
+def _apply_caps(banked: _Banked, sim_major: np.ndarray, dgpt_cols: list[np.ndarray],
+                jomez_cols: list[np.ndarray], c: int, n: int, t: _Totals) -> np.ndarray:
+    """Pre-playoff season points under the 2026 per-class caps.
+
+    Best COUNT_DGPT of the DGPT pool, best COUNT_MAJOR majors, all Jomez
+    bonus, plus banked playoff points. Also accumulates per-banked-event drop
+    odds into `t`: a banked event is dropped when it lands strictly below the
+    pool's k-th largest value (one holding the k-th slot still counts).
+    """
+    majors_all = np.concatenate(
+        [np.broadcast_to(banked.majors, (c, n, banked.majors.shape[1])), sim_major], axis=2
+    )
+    sorted_major = -np.sort(-majors_all, axis=2)
+    best_major = sorted_major[:, :, : config.COUNT_MAJOR].sum(axis=2)
+    dgpt_all = np.concatenate(
+        [np.broadcast_to(banked.dgpt, (c, n, banked.max_slots))] + [x[:, :, None] for x in dgpt_cols], axis=2
+    )
+    sorted_dgpt = -np.sort(-dgpt_all, axis=2)
+    best_dgpt = sorted_dgpt[:, :, : config.COUNT_DGPT].sum(axis=2)
+
+    if dgpt_all.shape[2] > config.COUNT_DGPT:
+        thr_d = sorted_dgpt[:, :, config.COUNT_DGPT - 1]
+        for j in range(banked.max_slots):
+            t.drop_dgpt_hits[:, j] += (banked.dgpt[None, :, j] < thr_d).sum(axis=0)
+    if majors_all.shape[2] > config.COUNT_MAJOR:
+        thr_m = sorted_major[:, :, config.COUNT_MAJOR - 1]
+        for j in range(banked.majors.shape[1]):
+            t.drop_major_hits[:, j] += (banked.majors[None, :, j] < thr_m).sum(axis=0)
+
+    jomez_total = banked.jomez_sum[None, :] + sum(jomez_cols, np.zeros((c, n)))
+    return best_dgpt + best_major + jomez_total + banked.playoff_sum[None, :]
+
+
+def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
+              drawer: _Drawer, event_probs: list[np.ndarray], live: _LiveState,
+              qual: _Qual, rng: np.random.Generator) -> _Totals:
+    """Draw every remaining event, apply the counting caps, rank the season."""
+    n = roster.n
+    t = _Totals(
+        total_pts=np.zeros((n_sims, n)),
+        total_rank=np.zeros((n_sims, n), dtype=np.int32),
+        rank_hist=np.zeros((n, MAX_HIST_RANK), dtype=np.int64),
+        cutline=np.zeros(n_sims),
+        cutline2=np.zeros(n_sims),
+        p_gmc_hits=np.zeros(n),
+        p_mvp_hits=np.zeros(n),
+        p_gmc_field_hits=np.zeros(n),
+        p_mvp_field_hits=np.zeros(n),
+        p_mvp_qual_hits=np.zeros(n),
+        p_champ_hits=np.zeros(n),
+        drop_dgpt_hits=np.zeros((n, banked.max_slots)),
+        drop_major_hits=np.zeros((n, banked.majors.shape[1])),
+    )
+    n_sim_majors = sum(1 for i in qual.pre_eis if drawer.remaining[i]["cls"] == "major")
 
     done = 0
     while done < n_sims:
         c = min(chunk, n_sims - done)
         rows_ix = np.arange(c)[:, None]
-
-        def draw_event(ev_i, plays):
-            """Draw one event's points + place (c, n); update place-hist + meta."""
-            row = remaining[ev_i]
-            if ev_i == dbl_ei and dbl_teams is not None:
-                # team-level doubles: one score per team, both members share it
-                pairs, solos, team_ratings = dbl_teams
-                T = len(team_ratings)
-                n_rounds = ROUNDS.get(row["cls"], 3)
-                tavg = team_ratings.mean() if T else 1000.0
-                mu_t = -(team_ratings - tavg) / rpps * n_rounds
-                tscores = mu_t[None, :] + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, T))
-                torder = np.argsort(tscores, axis=1)
-                tplace = np.empty_like(torder)
-                tplace[rows_ix, torder] = np.arange(1, T + 1)[None, :]
-                place = np.full((c, n), n + 1, dtype=np.int64)
-                plays = np.zeros((c, n), dtype=bool)
-                for t, (i2, j2) in enumerate(pairs):
-                    place[:, i2] = place[:, j2] = tplace[:, t]
-                    plays[:, i2] = plays[:, j2] = True
-                for t2, i2 in enumerate(solos):
-                    place[:, i2] = tplace[:, len(pairs) + t2]
-                    plays[:, i2] = True
-                if done == 0:
-                    events_meta[ev_i]["field_avg_rating"] = round(float(tavg), 1)
-                    events_meta[ev_i]["opp_score_sd"] = round(float(np.std(tscores)), 2)
-                    events_meta[ev_i]["field_size"] = float(T)
-                att_count[ev_i] += plays.sum(axis=0)
-                pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
-                pts[~plays] = 0.0
-                return pts, place
-            if ev_i in live_data:
-                # in progress: lock in the score so far, project the holes left
-                cur, rem, in_field, favg = live_data[ev_i]
-                plays = np.broadcast_to(in_field, (c, n))
-                mu = cur[None, :] - (ratings[None, :] - favg) / rpps * rem[None, :]
-                sd = ROUND_SD * np.sqrt(np.maximum(rem, 1e-9))
-                scores = mu + rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
-                scores = np.where(in_field[None, :], scores, np.inf)
-            else:
-                n_rounds = ROUNDS.get(row["cls"], 3)
-                fsum = (plays * ratings).sum(axis=1)
-                fcnt = plays.sum(axis=1)
-                avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
-                mu = -(ratings[None, :] - avg[:, None]) / rpps * n_rounds
-                scores = mu + rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, n))
-                scores[~plays] = np.inf
-            if done == 0:
-                played = np.where(plays, scores, np.nan)
-                events_meta[ev_i]["field_avg_rating"] = round(float((ratings[plays[0]].mean()) if plays[0].any() else 1000.0), 1)
-                events_meta[ev_i]["opp_score_sd"] = round(float(np.nanstd(played)), 2)
-                events_meta[ev_i]["field_size"] = round(float(plays.sum(axis=1).mean()), 1)
-            order = np.argsort(scores, axis=1)
-            place = np.empty_like(order)
-            place[rows_ix, order] = np.arange(1, n + 1)[None, :]
-            if row["cls"] == "doubles":
-                place = (place + 1) // 2
-            att_count[ev_i] += plays.sum(axis=0)
-            if ev_i in live_place_hist:  # projected finish distribution for a live event
-                inf = live_data[ev_i][2]
-                cp = np.where(inf[None, :], np.minimum(place, LIVE_CAP), 0)
-                stride = LIVE_CAP + 1
-                flat = (np.arange(n) * stride)[None, :] + cp
-                live_place_hist[ev_i] += np.bincount(
-                    flat.ravel(), minlength=n * stride
-                ).reshape(n, stride)[:, 1:]
-            pts = curves[row["tournament_id"]][np.minimum(place, n + 1)]
-            pts[~plays] = 0.0
-            return pts, place
-
-        def rank_of(totals):
-            order = np.argsort(-totals, axis=1)
-            r = np.empty_like(order)
-            r[rows_ix, order] = np.arange(1, n + 1)[None, :]
-            return r
+        first_chunk = done == 0
 
         # -- pre-playoff events, routed to their counting pool --
-        sim_major = np.zeros((c, n, sum(1 for i in pre_eis if remaining[i]["cls"] == "major")))
+        sim_major = np.zeros((c, n, n_sim_majors))
         dgpt_cols, jomez_cols = [], []
         mi = 0
         sim_win = np.zeros((c, n), dtype=bool)  # won a DGPT/Major event this sim
-        for ev_i in pre_eis:
-            if ev_i in live_data:
-                plays = np.broadcast_to(live_data[ev_i][2], (c, n))
+        for ev_i in qual.pre_eis:
+            if ev_i in live.data:
+                drawn = np.broadcast_to(live.data[ev_i][2], (c, n))
             else:
-                plays = rng.random((c, n)) < event_probs[ev_i]
-            pts, place = draw_event(ev_i, plays)
-            cls = remaining[ev_i]["cls"]
+                drawn = rng.random((c, n)) < event_probs[ev_i]
+            pts, place, plays = drawer.draw(ev_i, drawn, c, rows_ix, first_chunk)
+            cls = drawer.remaining[ev_i]["cls"]
             # a singles DGPT/Major win earns the Cup special invite; Jomez and
             # the doubles championship do not
             if cls not in ("jomez", "doubles"):
@@ -397,69 +638,44 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             else:  # dgpt / dgpt+ / doubles
                 dgpt_cols.append(pts)
 
-        # 2026 per-class caps: best COUNT_DGPT DGPT, best COUNT_MAJOR majors,
-        # both playoffs, all Jomez bonus (fixed once pre-events are drawn)
-        majors_all = np.concatenate(
-            [np.broadcast_to(banked_majors, (c, n, banked_majors.shape[1])), sim_major], axis=2
-        )
-        sorted_major = -np.sort(-majors_all, axis=2)
-        best_major = sorted_major[:, :, : config.COUNT_MAJOR].sum(axis=2)
-        dgpt_all = np.concatenate(
-            [np.broadcast_to(banked_dgpt_arr, (c, n, max_banked))] + [x[:, :, None] for x in dgpt_cols], axis=2
-        )
-        sorted_dgpt = -np.sort(-dgpt_all, axis=2)
-        best_dgpt = sorted_dgpt[:, :, : config.COUNT_DGPT].sum(axis=2)
+        base_total = _apply_caps(banked, sim_major, dgpt_cols, jomez_cols, c, n, t)
 
-        # per-banked-event drop odds: dropped when strictly below the pool's
-        # k-th largest value (an event holding the k-th slot still counts)
-        if dgpt_all.shape[2] > config.COUNT_DGPT:
-            thr_d = sorted_dgpt[:, :, config.COUNT_DGPT - 1]
-            for j in range(max_banked):
-                drop_dgpt_hits[:, j] += (banked_dgpt_arr[None, :, j] < thr_d).sum(axis=0)
-        if majors_all.shape[2] > config.COUNT_MAJOR:
-            thr_m = sorted_major[:, :, config.COUNT_MAJOR - 1]
-            for j in range(banked_majors.shape[1]):
-                drop_major_hits[:, j] += (banked_majors[None, :, j] < thr_m).sum(axis=0)
-        jomez_total = banked_jomez_sum[None, :] + sum((x for x in jomez_cols), np.zeros((c, n)))
-        base_total = best_dgpt + best_major + jomez_total + banked_playoff_sum[None, :]
-
-        def season_totals(extra):
+        def season_totals(extra: list[np.ndarray]) -> np.ndarray:
             # extra = playoff point columns (GMC, then MVP) — both count
-            return base_total + sum((x for x in extra), np.zeros((c, n)))
+            return base_total + sum(extra, np.zeros((c, n)))
 
-        extra = []  # playoff point columns, added as we go
+        extra: list[np.ndarray] = []  # playoff point columns, added as we go
         # -- Green Mountain: field = top gmc_fill in pre-GMC standings --
-        if gmc_ei is not None:
-            rank_pre_gmc = rank_of(season_totals(extra))
-            p_gmc_hits += (rank_pre_gmc <= gmc_cut).sum(axis=0)
-            gmc_plays = rank_pre_gmc <= gmc_fill
-            p_gmc_field_hits += gmc_plays.sum(axis=0)
-            gmc_pts, gmc_place = draw_event(gmc_ei, gmc_plays)
+        gmc_plays = gmc_place = None
+        if qual.gmc_ei is not None:
+            rank_pre_gmc = _rank_of(season_totals(extra), rows_ix, n)
+            t.p_gmc_hits += (rank_pre_gmc <= qual.gmc_cut).sum(axis=0)
+            gmc_plays = rank_pre_gmc <= qual.gmc_fill
+            t.p_gmc_field_hits += gmc_plays.sum(axis=0)
+            gmc_pts, gmc_place, gmc_plays = drawer.draw(qual.gmc_ei, gmc_plays, c, rows_ix, first_chunk)
             sim_win |= (gmc_place == 1) & gmc_plays
             extra.append(gmc_pts)
 
         # -- MVP Open: top mvp_cut in pre-MVP standings + top GMC performers --
         mvp_plays = None
         mvp_place = None
-        if mvp_ei is not None:
-            rank_pre_mvp = rank_of(season_totals(extra))
-            p_mvp_hits += (rank_pre_mvp <= mvp_cut).sum(axis=0)
-            mvp_plays = rank_pre_mvp <= mvp_cut
-            if gmc_ei is not None:  # GMC top-perf finishers outside the points cut advance
-                elig = gmc_plays & (rank_pre_mvp > mvp_cut)
-                gp = np.where(elig, gmc_place, n + 1)
-                kth = np.partition(gp, mvp_perf - 1, axis=1)[:, mvp_perf - 1]
-                mvp_plays = mvp_plays | ((gp <= kth[:, None]) & elig)
-            p_mvp_field_hits += mvp_plays.sum(axis=0)
-            mvp_pts, mvp_place = draw_event(mvp_ei, mvp_plays)
+        if qual.mvp_ei is not None:
+            rank_pre_mvp = _rank_of(season_totals(extra), rows_ix, n)
+            t.p_mvp_hits += (rank_pre_mvp <= qual.mvp_cut).sum(axis=0)
+            mvp_plays = rank_pre_mvp <= qual.mvp_cut
+            if qual.gmc_ei is not None:  # GMC top-perf finishers outside the points cut advance
+                elig = gmc_plays & (rank_pre_mvp > qual.mvp_cut)
+                mvp_plays = mvp_plays | _top_k_by_place(gmc_place, elig, qual.mvp_perf, n)
+            t.p_mvp_field_hits += mvp_plays.sum(axis=0)
+            mvp_pts, mvp_place, mvp_plays = drawer.draw(qual.mvp_ei, mvp_plays, c, rows_ix, first_chunk)
             sim_win |= (mvp_place == 1) & mvp_plays
             extra.append(mvp_pts)
 
-        cut_n = STANDINGS_CUT[division]
+        cut_n = qual.standings_cut
         totals = season_totals(extra)
-        ranks = rank_of(totals)
-        total_pts[done : done + c] = totals
-        total_rank[done : done + c] = ranks
+        ranks = _rank_of(totals, rows_ix, n)
+        t.total_pts[done : done + c] = totals
+        t.total_rank[done : done + c] = ranks
 
         # -- Championship field: auto bid + MVP-performance + event-winner invite --
         auto_bid = ranks <= cut_n
@@ -467,48 +683,44 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         if mvp_place is not None:
             # top perf_champ MVP finishers outside the standings cut earn a spot
             elig = mvp_plays & ~auto_bid
-            mp = np.where(elig, mvp_place, n + 1)
-            kth = np.partition(mp, perf_champ - 1, axis=1)[:, perf_champ - 1]
-            mvp_qual = (mp <= kth[:, None]) & elig
-            p_mvp_qual_hits += mvp_qual.sum(axis=0)
+            mvp_qual = _top_k_by_place(mvp_place, elig, qual.perf_champ, n)
+            t.p_mvp_qual_hits += mvp_qual.sum(axis=0)
             champ_field |= mvp_qual
         # DGPT/Major winners get a special invite (bottom seed) if not already in
-        champ_field |= has_banked_win[None, :] | sim_win
-        p_champ_hits += champ_field.sum(axis=0)
+        champ_field |= banked.has_win[None, :] | sim_win
+        t.p_champ_hits += champ_field.sum(axis=0)
 
         sorted_totals = -np.sort(-totals, axis=1)
-        cutline[done : done + c] = sorted_totals[:, cut_n - 1]
-        cutline2[done : done + c] = sorted_totals[:, cut_n]
+        # A division can hold fewer players than there are qualifying spots
+        # (a small early-season FPO field). Then everyone is in: the last
+        # filled spot is the lowest-ranked player, and there is no first spot
+        # outside the cut for cutline2 to report.
+        t.cutline[done : done + c] = sorted_totals[:, min(cut_n, n) - 1]
+        t.cutline2[done : done + c] = sorted_totals[:, cut_n] if n > cut_n else 0.0
         capped = np.minimum(ranks, MAX_HIST_RANK)  # one bincount for all players
         stride = MAX_HIST_RANK + 1
         flat = capped + (np.arange(n) * stride)[None, :]
-        rank_hist += np.bincount(flat.ravel(), minlength=n * stride).reshape(n, stride)[:, 1:]
+        t.rank_hist += np.bincount(flat.ravel(), minlength=n * stride).reshape(n, stride)[:, 1:]
         done += c
 
-    p_gmc = p_gmc_hits / n_sims
-    p_mvp = p_mvp_hits / n_sims
-    p_gmc_field = p_gmc_field_hits / n_sims
-    p_mvp_field = p_mvp_field_hits / n_sims
-    p_mvp_qual = p_mvp_qual_hits / n_sims
+    return t
 
-    # per-banked-event P(dropped by season end); playoff/jomez never drop
-    p_drop: list[dict[int, float]] = [{} for _ in range(n)]
-    for i in range(n):
-        for j, tid in enumerate(banked_dgpt_tids[i]):
-            p_drop[i][tid] = round(float(drop_dgpt_hits[i, j] / n_sims), 4)
-        for j, tid in enumerate(banked_major_tids[i]):
-            p_drop[i][tid] = round(float(drop_major_hits[i, j] / n_sims), 4)
-    p_champ = p_champ_hits / n_sims
-    att_probs = att_count / n_sims
 
-    # per-player live-event projections (finish + points) from the place hist
+# ------------------------------------------------------ live projections
+
+def _live_projections(drawer: _Drawer, roster: _Roster, live: _LiveState,
+                      remaining: list[dict], curves: dict[int, np.ndarray],
+                      division: str) -> dict[int, dict]:
+    """Per-player finish + points distribution for each event in progress."""
+    rpps = RATING_PTS_PER_STROKE[division]
+    rtg = roster.player_ratings
     live_stats: dict[int, dict] = {}
     places = np.arange(1, LIVE_CAP + 1)
     PRE_DRAWS = 4000
     rng_pre = np.random.default_rng(11)
-    for ev_i, hist in live_place_hist.items():
+    for ev_i, hist in drawer.place_hist.items():
         tid = remaining[ev_i]["tournament_id"]
-        cur, rem, in_field, favg_live = live_data[ev_i]
+        cur, rem, in_field, favg_live = live.data[ev_i]
         cv = curves[tid]
         pts_by_place = np.zeros(LIVE_CAP)
         m = min(LIVE_CAP, len(cv) - 1)
@@ -518,11 +730,11 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         # player's "what did we expect of them here?" baseline. Whole rounds,
         # not remaining holes: this is the projection as it stood at tee-off.
         ev_rounds = ROUNDS.get(remaining[ev_i]["cls"], 3)
-        opp_r = ratings[in_field]
+        opp_r = rtg[in_field]
         opp_draws = (-(opp_r - favg_live) / rpps * ev_rounds
                      + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), (PRE_DRAWS, len(opp_r))))
         per: dict[int, dict] = {}
-        for j in range(n):
+        for j in range(roster.n):
             if not in_field[j]:
                 continue
             w = hist[j]
@@ -530,20 +742,22 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             if tot == 0:
                 continue
             cum = np.cumsum(w[::-1])
-            def q(f: float) -> float:
+
+            def q(f: float, cum=cum, tot=tot) -> float:
                 return float(v_asc[min(int(np.searchsorted(cum, f * tot)), LIVE_CAP - 1)])
+
             # pre-event expectation: what this player's rating alone projected
             # against this field, ignoring the score so far. Comparing it to
             # mean_pts is the over/under-performing story the day tracker tells.
-            pre_mu = -(ratings[j] - favg_live) / rpps * ev_rounds
+            pre_mu = -(rtg[j] - favg_live) / rpps * ev_rounds
             pre_scores = pre_mu + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), PRE_DRAWS)
             beat = (opp_draws < pre_scores[:, None]).sum(axis=1)
             pre_place = np.clip(beat + 1, 1, LIVE_CAP)
-            per[pdga_numbers[j]] = {
+            per[roster.pdga_numbers[j]] = {
                 "cur": round(float(cur[j]), 1),
                 "rem": round(float(rem[j]), 2),
-                "thru": live_thru.get(ev_i, {}).get(j, 0),  # holes played
-                "place": live_place.get(ev_i, {}).get(j),   # current standing
+                "thru": live.thru.get(ev_i, {}).get(j, 0),  # holes played
+                "place": live.place.get(ev_i, {}).get(j),   # current standing
                 "win": round(float(w[0] / tot), 4),
                 "mean_place": round(float((places * w).sum() / tot), 1),
                 "mean_pts": round(float((pts_by_place * w).sum() / tot), 1),
@@ -552,39 +766,95 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
                 "p10": q(0.10), "p50": q(0.50), "p90": q(0.90),
             }
         live_stats[tid] = per
+    return live_stats
+
+
+# ------------------------------------------------------------------- run
+
+def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
+        chunk: int = 500) -> SimResult:
+    rng = np.random.default_rng(seed)
+    sched = schedule.load()
+    major_tids = config.MAJOR_TIDS_MPO if division == "MPO" else config.MAJOR_TIDS_FPO
+
+    roster = _build_roster(division, sched)
+    if roster.n == 0:
+        # Distinct from a small division, which simulates fine. Zero means
+        # standings.compute returned nothing AND every remaining event's
+        # registration roster was empty — both sources dark at once, which is
+        # an outage rather than a season state. Fail loudly here: the
+        # alternative is publishing an empty division to a live page, and a
+        # blank forecast that looks deliberate is worse than a red run.
+        raise ValueError(
+            f"{division}: no players with a known rating — standings are empty "
+            "and no remaining event returned a registration roster"
+        )
+    banked = _split_banked(roster, division, major_tids)
+    remaining = _remaining_events(sched, division)
+    event_probs = _attendance_probs(sched, roster, remaining, division, banked.player_events)
+    curves = {row["tournament_id"]: _curve_vector(division, row["cls"], roster.n) for row in remaining}
+    doubles = _build_doubles(remaining, roster, event_probs, division)
+    live = _load_live_state(
+        remaining, roster, {r["tournament_id"] for r in schedule.live_events(sched)}, division
+    )
+    qual = _build_qual(remaining, division)
+
+    events_meta = [
+        {
+            "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
+            "start_date": row["start_date"],
+            "rounds": ROUNDS.get(row["cls"], 3),
+            "is_major": row["tournament_id"] in major_tids,
+            "field_avg_rating": 0.0, "opp_score_sd": 0.0, "field_size": 0.0,
+        }
+        for row in remaining
+    ]
+    drawer = _Drawer(division, roster, remaining, curves, doubles, live, rng, events_meta)
+
+    t = _simulate(n_sims, chunk, roster, banked, drawer, event_probs, live, qual, rng)
+
+    # per-banked-event P(dropped by season end); playoff/jomez never drop
+    p_drop: list[dict[int, float]] = [{} for _ in range(roster.n)]
+    for i in range(roster.n):
+        for j, tid in enumerate(banked.dgpt_tids[i]):
+            p_drop[i][tid] = round(float(t.drop_dgpt_hits[i, j] / n_sims), 4)
+        for j, tid in enumerate(banked.major_tids[i]):
+            p_drop[i][tid] = round(float(t.drop_major_hits[i, j] / n_sims), 4)
+
+    live_stats = _live_projections(drawer, roster, live, remaining, curves, division)
 
     cut = STANDINGS_CUT[division]
     fsz = FIELD_SIZE[division]
     return SimResult(
         division=division,
         n_sims=n_sims,
-        names=[r["name"] for r in table],
-        pdga_numbers=pdga_numbers,
-        ratings=list(ratings),
-        current_points=[r["points"] for r in table],
-        current_rank=[r["rank"] for r in table],
-        mean_points=total_pts.mean(axis=0),
-        mean_rank=total_rank.mean(axis=0),
-        p_cut=(total_rank <= cut).mean(axis=0),
-        p_field=(total_rank <= fsz).mean(axis=0),
-        p_first=(total_rank == 1).mean(axis=0),
-        p_gmc=p_gmc,
-        p_mvp=p_mvp,
-        p_gmc_field=p_gmc_field,
-        p_mvp_field=p_mvp_field,
-        p_mvp_qual=p_mvp_qual,
-        p_champ=p_champ,
-        rank_hist=rank_hist,
-        cutline=cutline,
-        cutline2=cutline2,
-        att_probs=att_probs,
+        names=[r["name"] for r in roster.table],
+        pdga_numbers=roster.pdga_numbers,
+        ratings=list(roster.player_ratings),
+        current_points=[r["points"] for r in roster.table],
+        current_rank=[r["rank"] for r in roster.table],
+        mean_points=t.total_pts.mean(axis=0),
+        mean_rank=t.total_rank.mean(axis=0),
+        p_cut=(t.total_rank <= cut).mean(axis=0),
+        p_field=(t.total_rank <= fsz).mean(axis=0),
+        p_first=(t.total_rank == 1).mean(axis=0),
+        p_gmc=t.p_gmc_hits / n_sims,
+        p_mvp=t.p_mvp_hits / n_sims,
+        p_gmc_field=t.p_gmc_field_hits / n_sims,
+        p_mvp_field=t.p_mvp_field_hits / n_sims,
+        p_mvp_qual=t.p_mvp_qual_hits / n_sims,
+        p_champ=t.p_champ_hits / n_sims,
+        rank_hist=t.rank_hist,
+        cutline=t.cutline,
+        cutline2=t.cutline2,
+        att_probs=drawer.att_count / n_sims,
         events_meta=events_meta,
         banked=[
             [(tid, pts, tid in major_tids, place, p_drop[i].get(tid, 0.0)) for tid, pts, place, _ in r["events"]]
-            for i, r in enumerate(table)
+            for i, r in enumerate(roster.table)
         ],
         live_stats=live_stats,
-        dbl_info=dbl_info,
+        dbl_info=doubles.info,
     )
 
 
