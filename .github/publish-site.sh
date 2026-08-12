@@ -33,6 +33,17 @@
 # calls and must not see staged changes appear underneath it.
 set -euo pipefail
 
+# git commit-tree is plumbing: it will not invent a committer, and it fails
+# with `fatal: empty ident name` if the caller has not run `git config
+# user.name/user.email` first. Depending on that ordering is a trap — the
+# publish step runs before the state-commit step that used to set it, and a
+# local shell has an identity configured so the gap never shows up until CI.
+# Supply one here so the script is self-contained wherever it is called from.
+export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-github-actions[bot]}"
+export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-41898282+github-actions[bot]@users.noreply.github.com}"
+export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
 branch="${1:-site}"
 index="$(mktemp -u "${TMPDIR:-/tmp}/publish-index.XXXXXX")"
 trap 'rm -f "$index"' EXIT
