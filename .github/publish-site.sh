@@ -45,6 +45,22 @@ export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
 export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
 
 branch="${1:-site}"
+
+# Refuse to publish a site with no data. main does not track docs/data any
+# more, so a fresh checkout has the static pages and nothing else — and this
+# script force-pushes, so publishing that tree would replace the live bundle
+# with nothing and leave the page loading forever against a 404. The refresh
+# workflows generate the bundle before calling this; publish-docs.yml carries
+# the published one across. Either way it must be here by now.
+for required in docs/data/mpo.json docs/data/fpo.json; do
+  if [ ! -s "$required" ]; then
+    echo "refusing to publish: $required is missing or empty — the site would" >&2
+    echo "go up without its data. Run a refresh first, or carry the published" >&2
+    echo "bundle across (see .github/workflows/publish-docs.yml)." >&2
+    exit 1
+  fi
+done
+
 index="$(mktemp -u "${TMPDIR:-/tmp}/publish-index.XXXXXX")"
 trap 'rm -f "$index"' EXIT
 
@@ -54,12 +70,13 @@ tree="$(GIT_INDEX_FILE="$index" git write-tree)"
 commit="$(git commit-tree "$tree" -m "Publish site ($(date -u +'%F %H:%MZ'))")"
 
 for backoff in 0 2 4 8 16; do
-  [ "$backoff" = 0 ] || sleep "$backoff"
+  # announced before the wait, so the log never promises a retry that the
+  # last iteration is not going to make
+  [ "$backoff" = 0 ] || { echo "push to $branch failed; retrying in ${backoff}s" >&2; sleep "$backoff"; }
   if git push --force origin "$commit:refs/heads/$branch"; then
     echo "published tree $tree to $branch as $commit"
     exit 0
   fi
-  echo "push to $branch failed; retrying in $((backoff * 2 > 0 ? backoff * 2 : 2))s" >&2
 done
 
 echo "could not publish to $branch after retries" >&2
