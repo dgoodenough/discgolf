@@ -18,7 +18,7 @@ tournament_id,name,cls,start_date,end_date,mpo,fpo,fpo_points,completed
 100195,DGPT JomezPro Champions Landing Open presented by Dynamic Discs,jomez,2026-07-24,2026-07-26,True,True,True,True
 96414,DGPT+ Ledgestone Open,elite_plus,2026-07-30,2026-08-02,True,True,True,True
 96415,DGPT - Discmania Challenge presented by TruBank,elite,2026-08-07,2026-08-09,True,True,True,True
-96416,DGPT - Doubles Championship at The Preserve,doubles,2026-08-14,2026-08-16,True,True,True,False
+96416,2026 DGPT Doubles Championship at The Preserve presented by Simon Line,doubles,2026-08-14,2026-08-16,True,True,True,False
 97344,2026 PDGA Professional Disc Golf World Championships,major,2026-08-26,2026-08-30,True,True,True,False
 96417,DGPT - Open at Idlewild,elite,2026-09-04,2026-09-06,True,True,True,False
 96418,DGPT Playoffs - Green Mountain Championship,playoff,2026-09-17,2026-09-20,True,True,True,False
