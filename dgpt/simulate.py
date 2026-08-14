@@ -242,6 +242,11 @@ class _Doubles:
     solos: list[int] = field(default_factory=list)
     team_ratings: np.ndarray | None = None
     info: dict[int, dict] = field(default_factory=dict)  # pdga -> partner/team rating
+    # roster indices per team, in team_ratings order (pairs, then solos), and
+    # the reverse lookup. The draw and the live projection both work in teams;
+    # pairs/solos stay because the info block is built per pairing.
+    teams: list[list[int]] = field(default_factory=list)
+    team_of: dict[int, int] = field(default_factory=dict)
 
     @property
     def staged(self) -> bool:
@@ -303,7 +308,10 @@ def _build_doubles(remaining: list[dict], roster: _Roster,
     for t2, i in enumerate(solos):
         info[roster.pdga_numbers[i]] = {"partner_name": None, "team_rating": round(float(team_ratings[len(pairs) + t2]), 1)}
 
-    return _Doubles(ei=ei, pairs=pairs, solos=solos, team_ratings=team_ratings, info=info)
+    teams = [[i, j] for i, j in pairs] + [[i] for i in solos]
+    team_of = {i: t for t, members in enumerate(teams) for i in members}
+    return _Doubles(ei=ei, pairs=pairs, solos=solos, team_ratings=team_ratings,
+                    info=info, teams=teams, team_of=team_of)
 
 
 # -------------------------------------------------------------- live state
@@ -316,8 +324,30 @@ class _LiveState:
     thru: dict[int, dict[int, int]] = field(default_factory=dict)   # ev_i -> {i: holes played}
 
 
-def _load_live_state(remaining: list[dict], roster: _Roster,
-                     live_tids: set[int], division: str) -> _LiveState:
+def _share_team_state(cur: np.ndarray, rem: np.ndarray, in_field: np.ndarray,
+                      place_now: dict[int, int], thru_now: dict[int, int],
+                      pairs: list[tuple[int, int]]) -> None:
+    """Copy a doubles team's live position onto both of its members.
+
+    A team throws one scorecard, and PDGA Live carries it on the entrant of
+    record's row alone — the partner has no row on the sheet at all (the same
+    one-row-per-team shape `_build_doubles` pairs against). So live_field
+    returns half the players actually on the course, and without this the
+    partner reads as not-in-the-field: no locked-in score, no row in the day
+    tracker, and no points from a team the model has finishing first.
+    """
+    for i, j in pairs:
+        for a, b in ((i, j), (j, i)):
+            if not in_field[a] or in_field[b]:
+                continue
+            cur[b], rem[b], in_field[b] = cur[a], rem[a], True
+            thru_now[b] = thru_now.get(a, 0)
+            if a in place_now:
+                place_now[b] = place_now[a]
+
+
+def _load_live_state(remaining: list[dict], roster: _Roster, live_tids: set[int],
+                     division: str, doubles: _Doubles) -> _LiveState:
     """Lock in the score so far so only the holes left get simulated."""
     live = _LiveState()
     n = roster.n
@@ -339,6 +369,8 @@ def _load_live_state(remaining: list[dict], roster: _Roster,
                 if info.get("place"):
                     place_now[j] = info["place"]
                 thru_now[j] = int(info.get("thru") or 0)
+        if ev_i == doubles.ei and doubles.staged:
+            _share_team_state(cur, rem, in_field, place_now, thru_now, doubles.pairs)
         favg = float(roster.player_ratings[in_field].mean()) if in_field.any() else 1000.0
         live.data[ev_i] = (cur, rem, in_field, favg)
         live.place[ev_i] = place_now
@@ -388,38 +420,81 @@ class _Drawer:
 
     def _draw_doubles(self, ev_i: int, c: int, rows_ix: np.ndarray,
                       first_chunk: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Team-level draw: one score per team, both members share it."""
+        """Team-level draw: one score per team, both members share it.
+
+        Live-aware, exactly as _draw_singles is. This branch used to draw the
+        whole event from team ratings whatever the scoreboard said, because it
+        is chosen ahead of the live path in `draw` — so the one event with a
+        team draw was the one event whose live scores were ignored. The
+        doubles championship then sat frozen at its pre-event odds for three
+        days, and (since nothing filled place_hist) shipped no live projection
+        at all: `live_stats` for it was an empty dict, which the app reads as
+        "no event in progress" and hides the day tracker (2026-08-14).
+        """
         n = self.roster.n
         row = self.remaining[ev_i]
-        pairs, solos = self.doubles.pairs, self.doubles.solos
+        teams = self.doubles.teams
         team_ratings = self.doubles.team_ratings
         T = len(team_ratings)
-        n_rounds = ROUNDS.get(row["cls"], 3)
-        tavg = team_ratings.mean() if T else 1000.0
-        mu_t = -(team_ratings - tavg) / self.rpps * n_rounds
-        tscores = mu_t[None, :] + self.rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, T))
+        live = self.live.data.get(ev_i)
+        if live is not None:
+            # in progress: lock in the team's card, project the holes left.
+            # Both members carry the team's state (see _share_team_state), so
+            # either member's entry describes the team.
+            cur, rem, in_field, _ = live
+            t_in = np.array([any(in_field[i] for i in m) for m in teams], dtype=bool)
+            t_cur = np.array([next((cur[i] for i in m if in_field[i]), 0.0) for m in teams])
+            t_rem = np.array([next((rem[i] for i in m if in_field[i]), 0.0) for m in teams])
+            # field average over the teams actually playing, mirroring the
+            # singles live path (a registered team that never teed off is out)
+            tavg = float(team_ratings[t_in].mean()) if t_in.any() else 1000.0
+            mu_t = t_cur - (team_ratings - tavg) / self.rpps * t_rem
+            sd_t = ROUND_SD * np.sqrt(np.maximum(t_rem, 1e-9))
+            tscores = mu_t[None, :] + self.rng.normal(0.0, 1.0, (c, T)) * sd_t[None, :]
+            tscores = np.where(t_in[None, :], tscores, np.inf)
+        else:
+            n_rounds = ROUNDS.get(row["cls"], 3)
+            t_in = np.ones(T, dtype=bool)
+            tavg = team_ratings.mean() if T else 1000.0
+            mu_t = -(team_ratings - tavg) / self.rpps * n_rounds
+            tscores = mu_t[None, :] + self.rng.normal(0.0, ROUND_SD * np.sqrt(n_rounds), (c, T))
         torder = np.argsort(tscores, axis=1)
         tplace = np.empty_like(torder)
         tplace[rows_ix, torder] = np.arange(1, T + 1)[None, :]
         place = np.full((c, n), n + 1, dtype=np.int64)
         plays = np.zeros((c, n), dtype=bool)
-        for t, (i2, j2) in enumerate(pairs):
-            place[:, i2] = place[:, j2] = tplace[:, t]
-            plays[:, i2] = plays[:, j2] = True
-        for t2, i2 in enumerate(solos):
-            place[:, i2] = tplace[:, len(pairs) + t2]
-            plays[:, i2] = True
+        for t, members in enumerate(teams):
+            if not t_in[t]:
+                continue
+            for i2 in members:
+                place[:, i2] = tplace[:, t]
+                plays[:, i2] = True
         if first_chunk:
             meta = self.events_meta[ev_i]
             meta["field_avg_rating"] = round(float(tavg), 1)
             # std of an empty slice is NaN, which json.dump emits bare and
-            # JSON.parse rejects — see the note in _draw_singles
-            meta["opp_score_sd"] = round(float(np.std(tscores)), 2) if T else 0.0
-            meta["field_size"] = float(T)
+            # JSON.parse rejects — see the note in _draw_singles. Teams out of
+            # the field hold inf scores, so the spread is over the field only.
+            meta["opp_score_sd"] = round(float(np.std(tscores[:, t_in])), 2) if t_in.any() else 0.0
+            meta["field_size"] = float(int(t_in.sum()))
         self.att_count[ev_i] += plays.sum(axis=0)
+        self._record_live_places(ev_i, place)
         pts = self.curves[row["tournament_id"]][np.minimum(place, n + 1)]
         pts[~plays] = 0.0
         return pts, place, plays
+
+    def _record_live_places(self, ev_i: int, place: np.ndarray) -> None:
+        """Accumulate the projected finish distribution for an event in
+        progress — what _live_projections turns into the day tracker."""
+        hist = self.place_hist.get(ev_i)
+        if hist is None:
+            return
+        n = self.roster.n
+        in_field = self.live.data[ev_i][2]
+        cp = np.where(in_field[None, :], np.minimum(place, LIVE_CAP), 0)
+        stride = LIVE_CAP + 1
+        flat = (np.arange(n) * stride)[None, :] + cp
+        hist += np.bincount(flat.ravel(), minlength=n * stride).reshape(n, stride)[:, 1:]
 
     def _draw_singles(self, ev_i: int, plays: np.ndarray, c: int, rows_ix: np.ndarray,
                       first_chunk: bool) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -460,14 +535,7 @@ class _Drawer:
         if row["cls"] == "doubles":
             place = (place + 1) // 2
         self.att_count[ev_i] += plays.sum(axis=0)
-        if ev_i in self.place_hist:  # projected finish distribution for a live event
-            inf = self.live.data[ev_i][2]
-            cp = np.where(inf[None, :], np.minimum(place, LIVE_CAP), 0)
-            stride = LIVE_CAP + 1
-            flat = (np.arange(n) * stride)[None, :] + cp
-            self.place_hist[ev_i] += np.bincount(
-                flat.ravel(), minlength=n * stride
-            ).reshape(n, stride)[:, 1:]
+        self._record_live_places(ev_i, place)
         pts = self.curves[row["tournament_id"]][np.minimum(place, n + 1)]
         pts[~plays] = 0.0
         return pts, place, plays
@@ -710,7 +778,7 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
 
 def _live_projections(drawer: _Drawer, roster: _Roster, live: _LiveState,
                       remaining: list[dict], curves: dict[int, np.ndarray],
-                      division: str) -> dict[int, dict]:
+                      division: str, doubles: _Doubles) -> dict[int, dict]:
     """Per-player finish + points distribution for each event in progress."""
     rpps = RATING_PTS_PER_STROKE[division]
     rtg = roster.player_ratings
@@ -729,9 +797,25 @@ def _live_projections(drawer: _Drawer, roster: _Roster, live: _LiveState,
         # One shared draw of the field's pre-event scores, reused for every
         # player's "what did we expect of them here?" baseline. Whole rounds,
         # not remaining holes: this is the projection as it stood at tee-off.
+        #
+        # The unit of competition, at the doubles championship, is the TEAM:
+        # the place histogram holds team places and the points curve is
+        # indexed by them, so a baseline drawn player-against-player would be
+        # compared against twice as many opponents as there are teams and land
+        # at roughly double the place — reading the pre-event expectation off
+        # the team curve at the wrong depth.
         ev_rounds = ROUNDS.get(remaining[ev_i]["cls"], 3)
-        opp_r = rtg[in_field]
-        opp_draws = (-(opp_r - favg_live) / rpps * ev_rounds
+        unit_rtg, opp_r = rtg, rtg[in_field]
+        if ev_i == doubles.ei and doubles.staged:
+            t_in = np.array([any(in_field[i] for i in m) for m in doubles.teams], dtype=bool)
+            opp_r = doubles.team_ratings[t_in]
+            unit_rtg = np.array([
+                doubles.team_ratings[doubles.team_of[j]] if j in doubles.team_of else rtg[j]
+                for j in range(roster.n)
+            ])
+        # for singles this is exactly favg_live; for doubles, the team average
+        favg_unit = float(opp_r.mean()) if len(opp_r) else favg_live
+        opp_draws = (-(opp_r - favg_unit) / rpps * ev_rounds
                      + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), (PRE_DRAWS, len(opp_r))))
         per: dict[int, dict] = {}
         for j in range(roster.n):
@@ -749,7 +833,7 @@ def _live_projections(drawer: _Drawer, roster: _Roster, live: _LiveState,
             # pre-event expectation: what this player's rating alone projected
             # against this field, ignoring the score so far. Comparing it to
             # mean_pts is the over/under-performing story the day tracker tells.
-            pre_mu = -(rtg[j] - favg_live) / rpps * ev_rounds
+            pre_mu = -(unit_rtg[j] - favg_unit) / rpps * ev_rounds
             pre_scores = pre_mu + rng_pre.normal(0.0, ROUND_SD * np.sqrt(ev_rounds), PRE_DRAWS)
             beat = (opp_draws < pre_scores[:, None]).sum(axis=1)
             pre_place = np.clip(beat + 1, 1, LIVE_CAP)
@@ -795,7 +879,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     curves = {row["tournament_id"]: _curve_vector(division, row["cls"], roster.n) for row in remaining}
     doubles = _build_doubles(remaining, roster, event_probs, division)
     live = _load_live_state(
-        remaining, roster, {r["tournament_id"] for r in schedule.live_events(sched)}, division
+        remaining, roster, {r["tournament_id"] for r in schedule.live_events(sched)},
+        division, doubles,
     )
     qual = _build_qual(remaining, division)
 
@@ -821,7 +906,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         for j, tid in enumerate(banked.major_tids[i]):
             p_drop[i][tid] = round(float(t.drop_major_hits[i, j] / n_sims), 4)
 
-    live_stats = _live_projections(drawer, roster, live, remaining, curves, division)
+    live_stats = _live_projections(drawer, roster, live, remaining, curves, division, doubles)
 
     cut = STANDINGS_CUT[division]
     fsz = FIELD_SIZE[division]
