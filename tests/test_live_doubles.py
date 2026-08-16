@@ -127,6 +127,41 @@ def test_live_doubles_leader_is_the_favourite(doubles_live):
     assert per[LEADER]["win"] > 0.8
 
 
+def test_a_playoff_result_is_not_a_coin_flip(tiny_world, fake_api):
+    """An event decided in sudden death.
+
+    A playoff is scored on its own sheet and its strokes are never folded into
+    anyone's total, so the teams that went to it stay level on score with no
+    holes left. Ranked on score alone that reads as a coin flip after the
+    event is over — the 2026 doubles championship published the team that WON
+    the playoff at 49.78% and the team it beat at 50.22%. The sheet's
+    RunningPlace is the resolved answer and has to decide it.
+    """
+    today = dt.date.today()
+    end = today.isoformat()
+    _reschedule_doubles((today - dt.timedelta(days=2)).isoformat(), end, False)
+
+    # three rounds played; the top two teams tie on score, the sheet resolves
+    # them 1 and 2 (as it does once the playoff is over)
+    total = {LEADER: -26.0, CHASER: -26.0, SOLO: -20.0}
+    place = {LEADER: 1, CHASER: 2, SOLO: 3}
+    fake_api.event(config.TID_DOUBLES,
+                   event_payload("Test Doubles", 3, [("MPO", 3)], end_date=end))
+    for rnd in (1, 2, 3):
+        fake_api.round(config.TID_DOUBLES, "MPO", rnd, round_payload([
+            row(p, NAMES[p], RATINGS[p], round_to_par=total[p] / 3, played=18,
+                has_score=True, running_place=place[p], teammates=MATES[p])
+            for p in ENTRANTS
+        ]))
+
+    per = simulate.run("MPO", n_sims=N_SIMS, chunk=200).live_stats[config.TID_DOUBLES]
+    assert per[LEADER]["rem"] == 0.0 and per[LEADER]["thru"] == 54
+    assert per[LEADER]["cur"] == per[CHASER]["cur"]     # level on score
+    assert per[LEADER]["win"] == 1.0                    # ... but the playoff is decided
+    assert per[LEADER_MATE]["win"] == 1.0
+    assert per[CHASER]["win"] == 0.0
+
+
 # ------------------------------------------------------------------ banking
 
 def _doubles_banked(table: list[dict]) -> dict[int, tuple[float, int]]:

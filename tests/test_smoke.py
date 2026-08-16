@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from dgpt import export, invariants, movers, points, schedule, simulate, snapshot, standings
+from tests.conftest import event_payload, round_payload, row
 
 N_SIMS = 400
 
@@ -74,6 +75,35 @@ def test_live_event_is_modeled_from_current_scores(sim_result):
     # the leader must be likelier to win than the trailing player
     worst = max(per.values(), key=lambda s: s["cur"])
     assert star["win"] > worst["win"]
+
+
+def test_live_event_decided_in_a_playoff_is_not_a_coin_flip(tiny_world, fake_api):
+    """A playoff is scored on its own sheet and its strokes never reach anyone's
+    total, so the players who went to it stay level on score with no holes
+    left. Ranked on score alone the winner and the runner-up split the win
+    50/50 after the event has been decided; the sheet's RunningPlace resolves
+    it, and the ranking has to follow it (see simulate.TIE_EPS)."""
+    world = tiny_world
+    players = world.players[:20]
+    # two players tie the tournament on score; the sheet ranks them 1 and 2
+    totals = {p: (-30.0 if i < 2 else -25.0 + i) for i, (p, _, _) in enumerate(players)}
+    order = sorted(totals, key=lambda p: totals[p])
+    place = {p: i for i, p in enumerate(order, 1)}
+    winner, runner_up = order[0], order[1]
+
+    fake_api.event(900003, event_payload("Test Live Open", 3, [("MPO", 3)]))
+    for rnd in (1, 2, 3):
+        fake_api.round(900003, "MPO", rnd, round_payload([
+            row(p, n, r, round_to_par=totals[p] / 3, played=18, has_score=True,
+                running_place=place[p])
+            for p, n, r in players
+        ]))
+
+    per = simulate.run("MPO", n_sims=N_SIMS, chunk=200).live_stats[world.live_tid]
+    assert per[winner]["cur"] == per[runner_up]["cur"]   # level on score
+    assert per[winner]["rem"] == 0.0
+    assert per[winner]["win"] == 1.0
+    assert per[runner_up]["win"] == 0.0
 
 
 def test_roster_added_first_timer_gets_a_row(sim_result):

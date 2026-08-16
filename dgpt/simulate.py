@@ -322,6 +322,26 @@ class _LiveState:
     data: dict[int, tuple] = field(default_factory=dict)   # ev_i -> (cur, rem, in_field, favg)
     place: dict[int, dict[int, int]] = field(default_factory=dict)  # ev_i -> {i: standing}
     thru: dict[int, dict[int, int]] = field(default_factory=dict)   # ev_i -> {i: holes played}
+    tie: dict[int, np.ndarray] = field(default_factory=dict)        # ev_i -> (n,) tie-break
+
+
+# A nudge, in strokes, applied per unit of the sheet's own RunningPlace, so
+# that players level on score are ranked the way PDGA ranks them.
+#
+# It exists for the end of an event: a sudden-death PLAYOFF is scored on its
+# own sheet and its strokes are never folded into anyone's total, so the
+# players who went to it stay tied on score forever. Ranking them on score
+# alone therefore left the result a coin flip after it had been decided — the
+# 2026 doubles championship published Saarinen/Allen, who won the playoff and
+# hold RunningPlace 1, at 49.78% with the team they beat at 50.22%
+# (2026-08-16). The sheet's RunningPlace is the resolved answer, which is why
+# live_field already prefers it for the standing it displays; this carries the
+# same ordering into the ranking.
+#
+# Small enough to change nothing else: one stroke is 10,000 of these, and even
+# a 130-deep field moves the last row by 0.013 against a per-round SD of 4.2.
+# It decides an exact tie and nothing more.
+TIE_EPS = 1e-4
 
 
 def _share_team_state(cur: np.ndarray, rem: np.ndarray, in_field: np.ndarray,
@@ -372,9 +392,13 @@ def _load_live_state(remaining: list[dict], roster: _Roster, live_tids: set[int]
         if ev_i == doubles.ei and doubles.staged:
             _share_team_state(cur, rem, in_field, place_now, thru_now, doubles.pairs)
         favg = float(roster.player_ratings[in_field].mean()) if in_field.any() else 1000.0
+        tie = np.zeros(n)
+        for j, standing in place_now.items():
+            tie[j] = TIE_EPS * standing
         live.data[ev_i] = (cur, rem, in_field, favg)
         live.place[ev_i] = place_now
         live.thru[ev_i] = thru_now
+        live.tie[ev_i] = tie
     return live
 
 
@@ -448,8 +472,11 @@ class _Drawer:
             # field average over the teams actually playing, mirroring the
             # singles live path (a registered team that never teed off is out)
             tavg = float(team_ratings[t_in].mean()) if t_in.any() else 1000.0
-            mu_t = t_cur - (team_ratings - tavg) / self.rpps * t_rem
-            sd_t = ROUND_SD * np.sqrt(np.maximum(t_rem, 1e-9))
+            # the team's standing, off either member (see _share_team_state)
+            tie = self.live.tie[ev_i]
+            t_tie = np.array([next((tie[i] for i in m if in_field[i]), 0.0) for m in teams])
+            mu_t = t_cur - (team_ratings - tavg) / self.rpps * t_rem + t_tie
+            sd_t = ROUND_SD * np.sqrt(t_rem)
             tscores = mu_t[None, :] + self.rng.normal(0.0, 1.0, (c, T)) * sd_t[None, :]
             tscores = np.where(t_in[None, :], tscores, np.inf)
         else:
@@ -505,8 +532,9 @@ class _Drawer:
             # in progress: lock in the score so far, project the holes left
             cur, rem, in_field, favg = self.live.data[ev_i]
             plays = np.broadcast_to(in_field, (c, n))
-            mu = cur[None, :] - (rtg[None, :] - favg) / self.rpps * rem[None, :]
-            sd = ROUND_SD * np.sqrt(np.maximum(rem, 1e-9))
+            mu = (cur[None, :] - (rtg[None, :] - favg) / self.rpps * rem[None, :]
+                  + self.live.tie[ev_i][None, :])
+            sd = ROUND_SD * np.sqrt(rem)
             scores = mu + self.rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
             scores = np.where(in_field[None, :], scores, np.inf)
         else:
