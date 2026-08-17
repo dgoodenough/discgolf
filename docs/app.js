@@ -235,8 +235,9 @@ function moversHtml(d, div) {
 
 /* ---------- shared bits ---------- */
 
-/* Ledger conditional-formatting fills: green = effectively in, yellow =
-   live bubble, plain = long shot */
+/* Ledger conditional formatting: green = effectively in, yellow = live bubble,
+   dimmed = long shot. Callers put this on the number itself, which style.css
+   colours; put it on a <td> instead and tokens.css fills the whole cell. */
 function probClass(p) {
   if (p >= 0.99) return "pos";
   if (p >= 0.02) return "pend";
