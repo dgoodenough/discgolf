@@ -75,24 +75,38 @@ def build(client: PDGAClient | None = None) -> list[dict]:
 def live_events(rows: list[dict] | None = None) -> list[dict]:
     """Points events currently in progress.
 
-    An event stays "live" for one grace day past its end date until a refresh
-    has marked it completed. Sunday final rounds in US time zones finish after
-    00:00 UTC (6pm CDT = 23:00Z), so a purely date-based window shuts the live
-    loop down mid-final-round: Ledgestone 2026 froze on the second-to-last
-    hole at 23:17Z and nothing recomputed until the Monday cron (the site
-    showed the winner at 23% all night). With the grace day the loop keeps
-    polling across the UTC rollover; the first refresh after the last scores
-    post banks the event, commits completed=True, and the window closes.
+    The window runs from the start date to one grace day past the end date,
+    and closes the moment a refresh banks the event. Both halves are needed,
+    and they pull in opposite directions.
+
+    The grace day extends the window past the calendar. Sunday final rounds in
+    US time zones finish after 00:00 UTC (6pm CDT = 23:00Z), so a purely
+    date-based window shuts the live loop down mid-final-round: Ledgestone
+    2026 froze on the second-to-last hole at 23:17Z and nothing recomputed
+    until the Monday cron (the site showed the winner at 23% all night).
+
+    `completed` closes it early, and this half used to be missing: an event
+    finishes hours before its own last day is over, and the in-window test
+    ignored the flag entirely, so a banked event went on reporting itself
+    live. The 2026 doubles championship banked on the Sunday afternoon and the
+    page kept flying the "LIVE now" banner over it — while the freshness
+    check, held to the 25-minute threshold it uses during play, reddened the
+    header for staleness when nothing further was coming (2026-08-16). It also
+    stranded the post-event StatMando cross-check, which the live loop only
+    runs once nothing is live.
+
+    So: the scoreboard closes the window and the calendar only bounds it —
+    the same order of authority `_row` applies when it decides to bank.
     """
     rows = rows if rows is not None else load()
     today = dt.date.today()
     out = []
     for r in rows:
+        if r["completed"]:
+            continue
         start = dt.date.fromisoformat(r["start_date"])
         end = dt.date.fromisoformat(r["end_date"])
-        if start <= today <= end:
-            out.append(r)
-        elif end < today <= end + dt.timedelta(days=1) and not r["completed"]:
+        if start <= today <= end + dt.timedelta(days=1):
             out.append(r)
     return out
 

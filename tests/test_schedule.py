@@ -30,6 +30,21 @@ def test_in_window_event_is_live():
     assert schedule.live_events(rows) == rows
 
 
+def test_banked_on_its_own_last_day_is_not_live():
+    # an event finishes hours before its final day is over. Once the refresh
+    # has banked it the page must stop calling it live — otherwise the "LIVE
+    # now" banner stays up over a finished event and the freshness check holds
+    # the header to its 25-minute in-play threshold with nothing left to come
+    rows = [_row(TODAY - D(days=2), TODAY, completed=True)]
+    assert schedule.live_events(rows) == []
+
+
+def test_in_window_unbanked_event_is_still_live():
+    # the same last day, before the banking refresh: very much still live
+    rows = [_row(TODAY - D(days=2), TODAY, completed=False)]
+    assert schedule.live_events(rows) == rows
+
+
 def test_ended_yesterday_unbanked_stays_live_through_grace_day():
     # Sunday finish, Monday 00:xx UTC: no refresh has banked it yet
     rows = [_row(TODAY - D(days=3), TODAY - D(days=1), completed=False)]
