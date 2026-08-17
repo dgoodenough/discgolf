@@ -73,6 +73,20 @@ tbody tr.expandable:hover td { background: var(--pos-fill); }
 tbody tr.detail > td { background: var(--chrome-2, var(--paper-2)) !important; padding: var(--pad-2) 14px 14px; }
 .dim { color: var(--ink-3); }
 
+/* Ledger conditional formatting for the probability columns.
+   tokens.css defines .pos/.pend only as td *fills*, and probClass puts the
+   class on the number rather than the cell — so until this rule the green and
+   yellow the function promises never rendered anywhere, and the columns read
+   as flat ink with only the long shots dimmed.
+
+   Colouring the number rather than filling the cell is deliberate: five
+   adjacent filled columns is a wall of green, and a filled cell also swallows
+   the row-hover fill (tr.expandable:hover), which is the table's main
+   affordance for "click me". Both hues clear 5.7:1 against the paper and the
+   hover fill alike, in dark, newsprint, and print. */
+.table-ledger td .pos { color: var(--pos); }
+.table-ledger td .pend { color: var(--pend); }
+
 /* PDGA-required player/event links: quiet in the tables, obvious on hover */
 a.plink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
 a.plink:hover { color: var(--accent); border-bottom-color: var(--accent); }
@@ -172,6 +186,95 @@ td.msparkcell { width: 84px; padding-top: 3px; padding-bottom: 3px; }
 .reg-chip { display: inline-block; font-size: var(--fs-caption); padding: 0 5px; border-radius: var(--radius); border: 1px solid var(--grid); white-space: nowrap; }
 .reg-chip.reg-in { color: var(--pos); background: var(--pos-fill); }
 .reg-chip.reg-out { color: var(--neg); background: var(--neg-fill); }
+
+/* ==========================================================================
+   "What's left" view. Colour keeps its Ledger meaning throughout: green =
+   in / have, yellow = pending / still contested, red = out, and greyscale
+   carries structure. Nothing here defines a hue of its own.
+   ========================================================================== */
+.pv-intro { font-size: var(--fs-body); color: var(--ink-2); margin: 2px 0 16px; max-width: 78ch; }
+.pv-intro b { color: var(--ink); }
+.pv-panel { border: 1px solid var(--grid); background: var(--paper); margin: 0 0 14px; }
+.pv-head { background: var(--band); color: var(--band-ink); padding: 6px 10px;
+           display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pv-head h2 { margin: 0; font-size: var(--fs-small); font-weight: 700; letter-spacing: .2px; }
+.pv-form { font-size: var(--fs-caption); color: var(--ink-2); text-transform: uppercase; letter-spacing: .5px; }
+.pv-body { padding: 10px 10px 12px; }
+.pv-lede { margin: 0 0 8px; font-size: var(--fs-small); color: var(--ink); max-width: 88ch; }
+.pv-note { margin: 8px 0 0; font-size: var(--fs-caption); color: var(--ink-2); max-width: 88ch; }
+.pv-note b { color: var(--ink); }
+/* every chart scrolls inside its own panel rather than stretching the page */
+.pv-scroll { overflow-x: auto; }
+.pv-tall { max-height: 460px; overflow-y: auto; }
+.pv-tall .table-ledger th { position: sticky; top: 0; z-index: 2; }
+.pv-tbl { margin: 0; }
+.pv-svg { display: block; width: 100%; height: auto; }
+.pv-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.pv-seg { width: max-content; }
+.pv-seg button { padding: 3px 11px; font-size: var(--fs-small); }
+.pv-legend { font-size: var(--fs-caption); color: var(--ink-2); }
+/* legend swatches carry the cloud's fills as backgrounds — the .pc-* rules
+   below are SVG `fill`, which does nothing on an HTML element */
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin: 0 4px 0 8px; vertical-align: -1px; }
+.pv-legend .sw:first-child { margin-left: 0; }
+.sw.pc-in { background: var(--pos); }
+.sw.pc-out { background: var(--ink-3); }
+.sw.pc-over { background: var(--neg); }
+
+/* possibility cloud — the row sparkline's palette, one row per player */
+.pcloud { display: block; }
+.pcloud .pc-in { fill: var(--pos); }
+/* mid-grey, not the sparkline's --grid-strong: these cells are drawn at a
+   range of opacities and the darker token disappears against --paper */
+.pcloud .pc-out { fill: var(--ink-3); }
+.pcloud .pc-over { fill: var(--neg); }
+.pcloud { cursor: crosshair; }
+.pc-name { fill: var(--ink-2); font-size: 9.5px; }
+.pc-rank { fill: var(--ink-3); font-size: 9px; font-variant-numeric: tabular-nums; }
+.pc-tick { fill: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
+.pc-cut { stroke: var(--ink); stroke-width: 1.5; }
+.pc-cutlabel { fill: var(--ink); font-size: 10px; font-weight: 700; }
+
+/* contested-positions area + cutline histogram */
+.pv-grid { stroke: var(--grid); stroke-width: 1; }
+.pv-axis { stroke: var(--grid-strong); stroke-width: 1; }
+.pv-area { fill: var(--pend); opacity: .18; }
+.pv-line { fill: none; stroke: var(--pend); stroke-width: 2; stroke-linejoin: round; }
+.pv-dot { fill: var(--pend); stroke: var(--paper); stroke-width: 2; }
+.pv-mark { fill: var(--ink); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#pcutline { cursor: crosshair; }
+.pv-bar { fill: var(--ink-3); opacity: .5; }
+.pv-tick { stroke-width: 2.5; }
+.pv-tick.pos { stroke: var(--pos); }
+.pv-tick.pend { stroke: var(--pend); }
+.pv-tick.dim { stroke: var(--neg); }
+.pv-gap { stroke: var(--pend); stroke-width: 1.5; opacity: .85; }
+.pv-gapdot { fill: var(--pend); }
+.pv-gaplabel { fill: var(--ink-2); font-size: 10.5px; }
+.pv-gapnum { fill: var(--ink); font-weight: 700; }
+
+/* ways in — two semantic hues plus a structural grey for the invite, which is
+   an entitlement rather than a competitive route */
+.doorbar { display: flex; height: 11px; gap: 2px; min-width: 120px; }
+.doorbar i { display: block; border-radius: 2px; }
+.doorbar i.dr-auto { background: var(--pos); }
+.doorbar i.dr-mvp { background: var(--pend); }
+.doorbar i.dr-inv { background: var(--grid-strong); }
+.side-door { font-size: var(--fs-caption); color: var(--pend); cursor: help; white-space: nowrap; }
+
+/* leverage grid: fixed-width value columns so it reads as a grid rather than
+   as four wide event columns with a number pinned to the right of each */
+.lev-tbl td.lev, .lev-tbl td.lev-na, .lev-tbl td.lev-wait { width: 96px; }
+.lev-tbl th { font-size: var(--fs-caption); }
+td.lev { position: relative; text-align: right; font-variant-numeric: tabular-nums; }
+.lev-fill { position: absolute; inset: 1px; background: var(--pend); border-radius: 2px; }
+.lev-t { position: relative; }
+.lev-t.on { color: var(--band); font-weight: 700; }
+td.lev-na, td.lev-wait { color: var(--ink-3); }
+.lev-opt { position: relative; color: var(--ink-3); font-size: var(--fs-caption); cursor: help; }
+.lev-tbl td.lev { cursor: crosshair; }
+.lev-status { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
 /* explainer / static pages */
 .page { max-width: 780px; margin: 0 auto; padding: 0 16px 40px; }
