@@ -80,6 +80,14 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 "p_mvp_cut": round(float(res.p_mvp[i]), 5),
                 "p_mvp_qual": round(float(res.p_mvp_qual[i]), 5),
                 "p_champ": round(float(res.p_champ[i]), 5),
+                # 1 = on the published playoff signup list, so in that field
+                # whatever the standings do. 0 covers both "not signed up" and
+                # "no list published yet"; meta.gmc_signups says which.
+                "reg_gmc": int(bool(res.reg_gmc[i])),
+                "reg_mvp": int(bool(res.reg_mvp[i])),
+                # P(plays their way into Worlds through the play-in). Present
+                # only for entrants — everyone else is a flat 0.
+                "p_playin": round(float(res.p_playin[i]), 5),
                 "p_first": round(float(res.p_first[i]), 5),
                 "mean_pts": round(float(res.mean_points[i]), 1),
                 "mean_rank": round(float(res.mean_rank[i]), 1),
@@ -125,7 +133,34 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             "mvp_tid": config.TID_MVP,
             "dbl_tid": config.TID_DOUBLES,
             "gmc_cut": config.PLAYOFF_QUAL["gmc"]["cut"][division],
+            "gmc_fill": config.PLAYOFF_QUAL["gmc"]["fill"][division],
             "mvp_cut": config.PLAYOFF_QUAL["mvp"]["cut"][division],
+            "mvp_perf": config.PLAYOFF_QUAL["mvp"]["perf"][division],
+            # How many players are on each published playoff signup list. 0
+            # means no list yet, which is what the page says instead of
+            # implying nobody entered.
+            "gmc_signups": int(res.reg_gmc.sum()),
+            "mvp_signups": int(res.reg_mvp.sum()),
+            # true once the list is the field rather than a floor: nobody else
+            # gets in on points any more
+            "gmc_field_set": bool(res.gmc_final),
+            "mvp_field_set": bool(res.mvp_final),
+            "reg_phases": {
+                key: [
+                    {"opens": ph["opens"], "label": ph["label"],
+                     **({"top": ph["top"][division]} if "top" in ph else {}),
+                     **({"min_rating": ph["min_rating"][division]} if "min_rating" in ph else {})}
+                    for ph in phases
+                ]
+                for key, phases in config.REG_PHASES.items()
+            },
+            # Pro Worlds play-in: a one-round qualifier for the spots Worlds
+            # left open. Awards no points itself, so it has no schedule row —
+            # players who can win through carry a p_playin instead.
+            "worlds_tid": config.TID_WORLDS,
+            "playin_tid": config.TID_WORLDS_PLAYIN,
+            "playin_spots": config.WORLDS_PLAYIN_SPOTS[division],
+            "playin_entrants": int((res.p_playin > 0).sum()),
         },
         # `live` is schedule.live_events()' answer, shipped rather than
         # re-derived. It is the single definition of "in progress" for the

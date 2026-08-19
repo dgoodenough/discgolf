@@ -36,8 +36,13 @@ def _isolate(monkeypatch, tmp_path):
     """Per-test reset of process-level caches, a hard network guard, and
     disk-cache paths pointed away from the repo's real data/cache."""
     live_api._memo.clear()
+    live_api._page_memo.clear()
     points.refresh_classes()
     monkeypatch.setattr(ratings, "_memo", None)
+    # The one fetch that isn't the live API: PDGA's public event page, which
+    # is where playoff/play-in signups come from. Default is "no page", so a
+    # test only sees signups if it asks for them (see fake_pages).
+    monkeypatch.setattr(live_api, "_fetch_page", lambda url: "")
     monkeypatch.setattr(live_api, "LIVE_CACHE", tmp_path / "_cache" / "live")
     monkeypatch.setattr(live_api, "RESULTS_CACHE", tmp_path / "_cache" / "results")
     monkeypatch.setattr(live_api, "FLIGHT_DIR", tmp_path / "_cache" / "flight")
@@ -48,6 +53,7 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(urllib.request, "urlopen", _no_network)
     yield
     live_api._memo.clear()
+    live_api._page_memo.clear()
     points.refresh_classes()
 
 
@@ -79,6 +85,33 @@ def fake_api(monkeypatch) -> FakeLiveAPI:
     api = FakeLiveAPI()
     monkeypatch.setattr(live_api, "_get", api.get)
     return api
+
+
+class FakePages:
+    """Serves live_api._fetch_page; every other URL comes back empty."""
+
+    def __init__(self):
+        self.pages: dict[str, str] = {}
+
+    def signups(self, tid: int, pdga_numbers) -> None:
+        """A registration page listing `pdga_numbers`, in PDGA's link shape."""
+        links = "".join(f'<a href="/player/{p}">P{p}</a>' for p in pdga_numbers)
+        self.pages[live_api.EVENT_PAGE.format(tid=tid)] = (
+            f'<h4>Registered Players</h4><div id="registered-players">{links}</div>'
+        )
+
+    def raw(self, tid: int, html: str) -> None:
+        self.pages[live_api.EVENT_PAGE.format(tid=tid)] = html
+
+    def fetch(self, url: str) -> str:
+        return self.pages.get(url, "")
+
+
+@pytest.fixture
+def fake_pages(monkeypatch) -> FakePages:
+    pages = FakePages()
+    monkeypatch.setattr(live_api, "_fetch_page", pages.fetch)
+    return pages
 
 
 # ----------------------------------------------------------------- builders

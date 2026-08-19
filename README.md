@@ -25,8 +25,11 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   points equal one stroke per round in MPO (7.3 in FPO), with a 4.2-stroke
   event-level round spread. Fields use real registration lists where they
   exist and cohort-based participation rates (tour card, European) where
-  they don't. Playoff fields are gated by the standings, as in the real
-  qualification ladder.
+  they don't. The playoffs read their published signup lists and take them
+  literally — an entered player is in that field however the standings
+  finish — and fall back to the qualification ladder only for players whose
+  registration wave hasn't opened. Worlds includes its one-round play-in:
+  6 MPO / 2 FPO spots, raced against the real entry list.
 - **Live events, modeled mid-round.** During play, each player's current
   score is locked in and only their remaining holes are simulated, so odds
   track the actual tournament instead of resetting to priors.
@@ -55,9 +58,10 @@ model from cached rounds.
 ## Data sources
 
 - [PDGA REST API](https://www.pdga.com/dev/api/rest/v1/services) (schedule,
-  ratings; requires developer credentials) and PDGA live scoring (results,
-  registrations). Event and player data © 2026 PDGA. PDGA Authorized
-  Developer.
+  ratings; requires developer credentials), PDGA live scoring (results,
+  registrations), and PDGA event pages (signup lists for the playoffs and the
+  Worlds play-in, which live scoring doesn't carry until event week). Event
+  and player data © 2026 PDGA. PDGA Authorized Developer.
 - [DGPT points structure](https://www.dgpt.com/announcements/2026-points-structure/)
   and [playoff qualification](https://www.dgpt.com/announcements/playoff-qualification-update/)
 - [StatMando](https://statmando.com/rankings/dgpt/mpo) for validation only

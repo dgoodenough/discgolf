@@ -244,6 +244,62 @@ function probClass(p) {
   return "dim";
 }
 
+/* Playoff-field cell. A signed-up player is a fact, not a forecast — mark it
+   so 100% here reads differently from a 100% the standings produced. */
+function fieldCell(prob, signedUp, eventName) {
+  if (signedUp) return `<b class="pos" title="Signed up for the ${eventName} — in the field regardless of where the standings finish">✓ in</b>`;
+  return `<span class="${probClass(prob)}">${fmtPct(prob)}</span>`;
+}
+
+const monthDay = (iso) => {
+  const t = new Date(iso);
+  return isNaN(t) ? "" : `${t.getMonth() + 1}/${t.getDate()}`;
+};
+
+/* Registration waves that haven't opened yet — the reason an unsigned player
+   still has playoff-field odds instead of a zero. */
+function pendingWaves(m, keys) {
+  const now = Date.now();
+  const out = [];
+  for (const [key, label] of [["gmc", "GMC"], ["mvp", "MVP"]]) {
+    if (!keys.includes(key)) continue;
+    for (const ph of ((m.reg_phases || {})[key] || [])) {
+      if (ph.top && Date.parse(ph.opens) > now) out.push(`${label} top ${ph.top} on ${monthDay(ph.opens)}`);
+    }
+  }
+  return out;
+}
+
+/* What the playoff and Worlds fields currently rest on. Signups where a list
+   exists, the qualification gate for everyone the remaining waves haven't
+   reached — and, at Worlds, the play-in for the players with no other way in. */
+function playoffNote(m) {
+  const evs = [
+    { key: "gmc", label: "GMC", n: m.gmc_signups || 0, done: !!m.gmc_field_set },
+    { key: "mvp", label: "the MVP Open", n: m.mvp_signups || 0, done: !!m.mvp_field_set },
+  ];
+  const playin = !m.playin_entrants ? "" :
+    ` <b>Worlds:</b> ${m.playin_entrants} player${m.playin_entrants === 1 ? "" : "s"} in this table
+      missed direct qualification and can only get in by winning one of the ${m.playin_spots}
+      spots at the one-round play-in.`;
+  const listed = evs.filter((e) => e.n);
+  if (!listed.length) {
+    return `<b>Playoff assumption:</b> no GMC or MVP Open signup list has been published yet,
+      so both fields come from the qualification gate alone and assume every qualifier attends.${playin}`;
+  }
+  const said = listed.map((e) => e.done
+    ? `${e.label}'s field is final at <b>${e.n}</b>`
+    : `<b>${e.n}</b> have entered ${e.label}`).join(", and ");
+  const open = evs.filter((e) => !e.done);
+  const waves = pendingWaves(m, open.map((e) => e.key));
+  const tail = !open.length ? "" :
+    ` Everyone else still qualifies for ${open.map((e) => e.label).join(" and ")} on points${
+      waves.length ? `, because ${waves.join(" and ")} ${waves.length > 1 ? "have" : "has"} yet to open` : ""
+    }.`;
+  return `<b>Playoff fields:</b> ${said} — read literally, so those players are in whatever
+    the standings do.${tail}${playin}`;
+}
+
 /* PDGA attribution requirements (pdga.com/dev/developer-program): player
    names link to the player profile, event names to the event page */
 const playerLink = (p) =>
@@ -355,8 +411,8 @@ function forecastCols(meta, adv = false) {
     { key: "spark", label: "Finish distribution", hide: "t1", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
     { key: "p_cut", label: "Auto Bid", hide: "t2", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
     { key: "p_mvp_qual", label: "MVP Bid", hide: "t2", title: `P(earns a Cup spot via a top-${perf} MVP Open finish, outside the standings cut)`, num: true, get: (p) => p.p_mvp_qual, cell: (p) => `<span class="${probClass(p.p_mvp_qual)}">${fmtPct(p.p_mvp_qual)}</span>`, dir0: "desc" },
-    { key: "p_gmc", label: "GMC", hide: "t3", title: `P(makes the Green Mountain Championship field — top ${meta.gmc_cut} on points, expanding to 120 if it doesn't fill). Assumes every qualifier attends; playoff signups aren't open yet.`, num: true, get: (p) => p.p_gmc, cell: (p) => `<span class="${probClass(p.p_gmc)}">${fmtPct(p.p_gmc)}</span>`, dir0: "desc" },
-    { key: "p_mvp", label: "MVP", hide: "t3", title: `P(makes the MVP Open field — top ${meta.mvp_cut} on points plus the top GMC finishers outside that). Assumes every qualifier attends; playoff signups aren't open yet.`, num: true, get: (p) => p.p_mvp, cell: (p) => `<span class="${probClass(p.p_mvp)}">${fmtPct(p.p_mvp)}</span>`, dir0: "desc" },
+    { key: "p_gmc", label: "GMC", hide: "t3", title: `P(makes the Green Mountain Championship field — signed up already, or reached by a later registration wave: top ${meta.gmc_cut} on points, expanding to ${meta.gmc_fill || 120} if it doesn't fill)`, num: true, get: (p) => p.p_gmc, cell: (p) => fieldCell(p.p_gmc, p.reg_gmc, "Green Mountain Championship"), dir0: "desc" },
+    { key: "p_mvp", label: "MVP", hide: "t3", title: `P(makes the MVP Open field — signed up already, or reached by a later invite tier: top ${meta.mvp_cut} on points, plus the top ${meta.mvp_perf || 8} GMC finishers from outside the field)`, num: true, get: (p) => p.p_mvp, cell: (p) => fieldCell(p.p_mvp, p.reg_mvp, "MVP Open"), dir0: "desc" },
     { key: "rating", label: "Rating", hide: "t4", num: true, get: (p) => p.rating || 0, cell: (p) => `<span class="dim">${p.rating || ""}</span>`, dir0: "desc" },
     { key: "starts", label: "Starts", hide: "t4", num: true, get: (p) => p.banked.length, cell: (p) => `<span class="dim">${p.banked.length}</span>`, dir0: "desc" },
     { key: "mean_rank", label: "Proj. rank", hide: "t4", num: true, get: (p) => p.mean_rank, cell: (p) => `<span class="dim">${p.mean_rank.toFixed(1)}</span>`, dir0: "asc" },
@@ -407,7 +463,7 @@ function renderForecast(d) {
     </div>
     <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event breakdown and inline what-if · hover the sparkline for exact odds · <b>Cup</b> = Auto Bid + MVP Bid + event-winner invites.
     🥇 = won a points event this year; a DGPT Elite or Major win earns a guaranteed Cup spot via special invite (Cup = 100%), so these odds already include winning a remaining event.
-    <br><b>Playoff assumption:</b> GMC and MVP fields assume every player who qualifies will attend — signups aren't open yet, so those odds will shift once they are.</p>`;
+    <br>${playoffNote(meta)}</p>`;
 
   // switching the movers window re-renders, so remember the panel was open
   el.querySelectorAll(".movers-seg button").forEach((b) =>
@@ -509,7 +565,9 @@ function wireWhatif(detail, p, d) {
 // place shown next to a single event's points, small + dim
 const placeTag = (place) => (place ? ` <span class="place">${ordinal(place)}</span>` : "");
 const DOUBLES_NOTE = "No partner listed yet — projected with a field-average partner. Teams refresh automatically from registration.";
-const PLAYOFF_NOTE = "Playoff registration isn't open yet — the model assumes every player who qualifies for this field will attend. Real signups will shift these odds.";
+const PLAYOFF_NOTE = "Not signed up yet. Registration opens in waves off the standings, and the later ones haven't — so this field is still modelled from the qualification gate.";
+const SIGNED_NOTE = "On the published signup list — in this field in every simulation, whatever the standings do.";
+const PLAYIN_NOTE = "Not directly qualified for Worlds: in the field only by winning through the one-round play-in.";
 
 /* projection of a player's finish if they played event e; live events use the
    sim's remaining-holes result, future events a quick from-scratch Monte Carlo.
@@ -644,7 +702,19 @@ function detailHtml(p, d) {
         ? ` <span class="chip" title="Doubles team — projected with the averaged team rating (${p.dbl.team_rating})">w/ ${p.dbl.partner_name}</span>`
         : ` <span class="note-flag" title="${DOUBLES_NOTE}">⚑ ${p.dbl ? "partner TBD" : "teams TBD"}</span>`;
     }
-    if (e.cls === "playoff") note += ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ assumes qualifiers attend</span>`;
+    if (e.cls === "playoff") {
+      const isGmc = e.tid === meta.gmc_tid;
+      const signed = isGmc ? p.reg_gmc : e.tid === meta.mvp_tid ? p.reg_mvp : 0;
+      const done = isGmc ? meta.gmc_field_set : meta.mvp_field_set;
+      note += signed ? ` <span class="chip" title="${SIGNED_NOTE}">signed up</span>`
+        : done ? ""   // field is final and they are not in it: nothing to caveat
+        : ` <span class="note-flag" title="${PLAYOFF_NOTE}">⚑ qualification only</span>`;
+    }
+    // Worlds via the play-in: no schedule row of its own (it awards no
+    // points), so it shows up as a qualifier on the event it feeds
+    if (e.tid === meta.worlds_tid && p.p_playin > 0) {
+      note += ` <span class="note-flag" title="${PLAYIN_NOTE}">⚑ play-in ${fmtPct(p.p_playin)}</span>`;
+    }
     if (isLive) {
       // A player with no holes played is still on their pre-tournament even
       // par — show that instead of a misleading "now +0".
@@ -1288,7 +1358,7 @@ function renderPossible(d) {
       doorsHtml(d),
       `${sideDoor ? `<b>${sideDoor}</b> player${sideDoor === 1 ? " is" : "s are"} likelier to reach the
        Cup through the MVP Open than through the standings — for them the season is one
-       weekend, not four events. ` : ""}Playoff fields assume every qualifier attends.`)}
+       weekend, not four events. ` : ""}${playoffNote(m)}`)}
 
     ${panel("leverage", "Where the season actually gets decided", "auto-bid swing per event",
       `Per contender, per remaining event: the swing in automatic-bid odds between a

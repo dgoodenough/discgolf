@@ -50,6 +50,15 @@ TID_MVP = 96419            # MVP Open x OTB (playoff 2)
 TID_CHAMPIONSHIP = 96421   # DGPT Powerball Cup (no points)
 TID_USWDGC = 97341         # Major, FPO field only
 TID_USDGC = 97346          # XM tier, non-points
+TID_WORLDS = 97344         # Pro Worlds (major); part of its field comes from the play-in
+
+# Pro Worlds play-in (pdga.com/tour/event/106696): a single-round qualifier
+# played into the spots Worlds left open, for players who did not qualify
+# directly. The winners join the Worlds field and can bank major points, so
+# it is the one non-points event whose result moves the World Standings.
+TID_WORLDS_PLAYIN = 106696
+WORLDS_PLAYIN_SPOTS = {"MPO": 6, "FPO": 2}   # open Worlds spots, per event 97344
+PLAYIN_ROUNDS = 1
 
 # Playoff qualification (dgpt.com/announcements/playoff-qualification-update).
 # Field is set by World Standings rank *before* each playoff event; "cut" is
@@ -61,7 +70,35 @@ PLAYOFF_QUAL = {
     "mvp": {"cut": {"MPO": 72, "FPO": 36}, "perf": {"MPO": 8, "FPO": 4}},
 }
 
-MAJOR_TIDS_MPO = {97336, 97339, 97344}            # Champions Cup, European Open, Pro Worlds
+# When each playoff registration window OPENS (the PDGA event pages, converted
+# from EDT). Windows are cumulative: once one opens it stays open, so today's
+# signup list is everyone eligible under every phase that has already passed.
+#
+# The model does NOT re-derive eligibility from this table — it reads the real
+# signup lists and takes them literally (see fields.signups). The phases are
+# what justify still carrying a standings gate for players who have NOT signed
+# up: a 70th-ranked MPO player could not register for GMC before Sep 1, so
+# their absence from the list today says nothing about whether they will play.
+# That is also why the tour-card phase needs no probabilistic model — it opened
+# in March, so anyone taking it is already on the list.
+REG_PHASES = {
+    "gmc": [
+        {"opens": "2026-03-23T18:00:00Z", "label": "Full Tour Card holders",
+         "min_rating": {"MPO": 1010, "FPO": 930}},
+        {"opens": "2026-08-13T16:00:00Z", "label": "DGPT standings wave 1",
+         "top": {"MPO": 60, "FPO": 30}},
+        {"opens": "2026-09-01T16:00:00Z", "label": "DGPT standings wave 2",
+         "top": {"MPO": 100, "FPO": 50}},
+    ],
+    "mvp": [
+        {"opens": "2026-08-13T22:00:00Z", "label": "Tier 1 invites (post-Ledgestone)",
+         "top": {"MPO": 50, "FPO": 25}},
+        {"opens": "2026-09-01T16:00:00Z", "label": "Tier 2 invites (post-Worlds)",
+         "top": {"MPO": 72, "FPO": 36}},
+    ],
+}
+
+MAJOR_TIDS_MPO = {97336, 97339, TID_WORLDS}       # Champions Cup, European Open, Pro Worlds
 MAJOR_TIDS_FPO = MAJOR_TIDS_MPO | {TID_USWDGC}
 
 # JomezPro Series 2026 (bonus points, before Powerball Cup). WACO confirmed;
