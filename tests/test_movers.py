@@ -12,13 +12,19 @@ import json
 
 import pytest
 
-from dgpt import config, movers
+from dgpt import config, movers, snapshot
 
 FIELDS = [
     "snapshot_date", "taken_at", "events_completed", "division", "pdga_number",
     "name", "rating", "cur_rank", "cur_points", "p_champ", "p_cut", "p_gmc",
     "p_mvp", "p_mvp_qual", "p_first", "mean_pts", "mean_rank", "registered",
+    "signed",
 ]
+# The snapshot schema is this module's input contract, and the two silently
+# drifted apart once already (a column added there, the writer here still on
+# the old list, every test failing on a csv fieldname error that named the
+# symptom and not the cause).
+assert FIELDS == snapshot.FIELDS, "test schema drifted from snapshot.FIELDS"
 
 
 @pytest.fixture
@@ -32,7 +38,8 @@ def world(tmp_path, monkeypatch):
 
     def build(history: dict[str, dict[int, float]], *, live: dict[int, float],
               players=(1, 2), ratings=None, registered="", events=(), schedule=(),
-              banked=None, ranks=None, meta=None, mranks=None, mrank_live=None):
+              banked=None, ranks=None, meta=None, mranks=None, mrank_live=None,
+              signed="", signed_live=None):
         """history: {date: {pdga: p_champ}}; live: {pdga: p_champ}.
         mranks: {date: {pdga: mean_rank}}; mrank_live: {pdga: mean_rank}."""
         rows = []
@@ -43,7 +50,7 @@ def world(tmp_path, monkeypatch):
                     "snapshot_date": date, "taken_at": f"{date}T00:00:00",
                     "division": "MPO", "pdga_number": pdga, "name": f"P{pdga}",
                     "rating": (ratings or {}).get(pdga, 1000), "cur_rank": pdga,
-                    "p_champ": p, "registered": registered,
+                    "p_champ": p, "registered": registered, "signed": signed,
                     "mean_rank": (mranks or {}).get(date, {}).get(pdga, ""),
                 })
         path = tmp_path / "predictions" / "history_mpo.csv"
@@ -59,6 +66,7 @@ def world(tmp_path, monkeypatch):
                 {"pdga": p, "name": f"P{p}", "rank": (ranks or {}).get(p, p),
                  "rating": (ratings or {}).get(p, 1000),
                  "p_champ": live[p], "att": [1.0] * len(events),
+                 **((signed_live or {}).get(p) or {}),
                  "mean_rank": (mrank_live or {}).get(p, ""),
                  "banked": list((banked or {}).get(p, []))}
                 for p in players if p in live
@@ -285,3 +293,59 @@ def test_missing_mean_rank_still_movers_on_odds_with_null_seed_fields(world, mon
     assert m["delta"] == pytest.approx(0.30)
     assert m["proj_rank_from"] is None and m["proj_rank_delta"] is None
     assert m["proj_rank_to"] == 12.0
+
+
+# ---------------------------------------------- playoff sign-ups vs the gate
+
+GMC_SCHED = [{"tid": config.TID_GMC, "end": "2026-09-20", "completed": False,
+              "cls": "playoff", "name": "GMC"},
+             {"tid": config.TID_MVP, "end": "2026-09-27", "completed": False,
+              "cls": "playoff", "name": "MVP"}]
+
+
+def test_playoff_signup_shows_as_a_registration_change(world, monkeypatch):
+    """A player entering GMC is a registration fact — unpredictable, and the
+    reason the column exists. It must show even though the playoff class is
+    excluded from the attendance-based signal."""
+    world({"2026-07-26": {1: 0.40}}, live={1: 0.60}, schedule=GMC_SCHED,
+          signed="-",                                     # entered nothing before
+          signed_live={1: {"reg_gmc": 1, "reg_mvp": 0}})  # entered GMC since
+
+    m = _run(monkeypatch, dt.date(2026, 7, 27))["mpo"]["day"]["movers"][0]
+    assert m["reg_added"] == [config.TID_GMC]
+    assert m["reg_removed"] == []
+
+
+def test_playoff_withdrawal_shows_too(world, monkeypatch):
+    world({"2026-07-26": {1: 0.60}}, live={1: 0.40}, schedule=GMC_SCHED,
+          signed=f"{config.TID_GMC};{config.TID_MVP}",
+          signed_live={1: {"reg_gmc": 1, "reg_mvp": 0}})
+
+    m = _run(monkeypatch, dt.date(2026, 7, 27))["mpo"]["day"]["movers"][0]
+    assert m["reg_removed"] == [config.TID_MVP]
+
+
+def test_crossing_the_qualification_cutline_is_not_a_signup(world, monkeypatch):
+    """The other half of the distinction. Attendance at a playoff event is the
+    signup list unioned with the standings gate, so a player crossing it may
+    simply have climbed into the top 100 — a qualification swing the GMC/MVP
+    column already reports, and not registration churn."""
+    world({"2026-07-26": {1: 0.40}}, live={1: 0.60}, registered="",
+          events=(config.TID_GMC,), schedule=GMC_SCHED,
+          signed="-", signed_live={1: {"reg_gmc": 0, "reg_mvp": 0}})
+
+    m = _run(monkeypatch, dt.date(2026, 7, 27))["mpo"]["day"]["movers"][0]
+    assert m["reg_added"] == []     # att crossed to 1.0, but they did not enter
+    assert m["reg_removed"] == []
+
+
+def test_a_baseline_predating_the_signup_column_is_not_diffed(world, monkeypatch):
+    """Blank means "unknowable", not "entered nothing". The schema rewrite
+    blanks old rows, and reporting every entrant as newly added on the first
+    run after it would be fabrication — which is why "-" exists."""
+    world({"2026-07-26": {1: 0.40}}, live={1: 0.60}, schedule=GMC_SCHED,
+          signed="",                                      # pre-schema row
+          signed_live={1: {"reg_gmc": 1, "reg_mvp": 1}})
+
+    m = _run(monkeypatch, dt.date(2026, 7, 27))["mpo"]["day"]["movers"][0]
+    assert m["reg_added"] == []
