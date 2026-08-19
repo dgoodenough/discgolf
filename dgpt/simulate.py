@@ -13,6 +13,8 @@ Shape of a run (`run` is the orchestration; everything else is a phase):
     _remaining_events    what is left to simulate
     _attendance_probs    P(plays) per event per player
     _build_doubles       team pairings for the doubles championship
+    _build_qual          playoff qualification: signup lists + standings gates
+    _build_playin        the Worlds play-in field, and who it can promote
     _load_live_state     current scores for an event in progress
     _Drawer              draws one event's points + places for a chunk of sims
     _simulate            the chunk loop: draws events, applies the caps, ranks
@@ -68,6 +70,11 @@ class SimResult:
     p_mvp_field: np.ndarray  # P(actually in the MVP field, incl. GMC-performance path)
     p_mvp_qual: np.ndarray   # P(earns a championship spot via MVP-performance path)
     p_champ: np.ndarray      # P(in the championship field) = p_cut + p_mvp_qual
+    p_playin: np.ndarray     # P(wins a Worlds spot out of the play-in); 0 if not entered
+    reg_gmc: np.ndarray      # already signed up for GMC (all False if no list yet)
+    reg_mvp: np.ndarray      # already signed up for the MVP Open
+    gmc_final: bool          # the GMC list is the field, not a floor
+    mvp_final: bool
     # extras for the web app / what-if replay
     rank_hist: np.ndarray    # (n_players, MAX_HIST_RANK) counts of final rank
     cutline: np.ndarray      # per sim: points of the last direct-qualification spot
@@ -610,12 +617,54 @@ class _Qual:
     mvp_perf: int
     perf_champ: int        # championship spots earned on MVP performance
     standings_cut: int
+    # Published signup lists, as (n,) masks — None until a list exists. A
+    # player on one is in that field in every sim regardless of the standings;
+    # a player off one still qualifies through the gate, because the later
+    # registration waves (config.REG_PHASES) have not opened yet. Once the
+    # list is final (*_final) the gate is gone: the field is the list.
+    gmc_reg: np.ndarray | None = None
+    mvp_reg: np.ndarray | None = None
+    gmc_final: bool = False
+    mvp_final: bool = False
 
 
-def _build_qual(remaining: list[dict], division: str) -> _Qual:
+def _signup_mask(tid: int, division: str, roster: _Roster) -> tuple[np.ndarray | None, bool]:
+    signed = fields.signed_up(tid, division, roster.pdga_numbers)
+    if signed is None:
+        return None, False
+    mask = np.array([p in signed.players for p in roster.pdga_numbers], dtype=bool)
+    return mask, signed.final
+
+
+def _playoff_field(reg: np.ndarray | None, final: bool, gate: np.ndarray) -> np.ndarray:
+    """Who is in a playoff field: the signup list, the standings gate, or both.
+
+    Three states, and the middle one is the whole point of the exercise:
+
+    - no list published        -> the gate alone (how this ran all season)
+    - a list, still growing    -> the union; the waves that would reach an
+                                  unsigned contender have not opened yet, so
+                                  their absence from it means nothing
+    - a final list             -> the list alone; PDGA Live only carries an
+                                  event once the field is set, and unioning a
+                                  settled 120-player field with everyone the
+                                  gate would admit invents entrants
+    """
+    if reg is None:
+        return gate
+    if final:
+        return np.tile(reg, (gate.shape[0], 1))
+    return gate | reg[None, :]
+
+
+def _build_qual(remaining: list[dict], division: str, roster: _Roster) -> _Qual:
     gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
     mvp_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_MVP), None)
     playoff_eis = {gmc_ei, mvp_ei} - {None}
+    gmc_reg, gmc_final = (_signup_mask(config.TID_GMC, division, roster)
+                          if gmc_ei is not None else (None, False))
+    mvp_reg, mvp_final = (_signup_mask(config.TID_MVP, division, roster)
+                          if mvp_ei is not None else (None, False))
     return _Qual(
         gmc_ei=gmc_ei,
         mvp_ei=mvp_ei,
@@ -626,6 +675,99 @@ def _build_qual(remaining: list[dict], division: str) -> _Qual:
         mvp_perf=config.PLAYOFF_QUAL["mvp"]["perf"][division],
         perf_champ=FIELD_SIZE[division] - STANDINGS_CUT[division],
         standings_cut=STANDINGS_CUT[division],
+        gmc_reg=gmc_reg, gmc_final=gmc_final,
+        mvp_reg=mvp_reg, mvp_final=mvp_final,
+    )
+
+
+# ------------------------------------------------------- Worlds play-in
+
+@dataclass
+class _Playin:
+    """The single-round qualifier into the spots Pro Worlds left open.
+
+    It awards no World Standings points itself, but it is a door into a major
+    that does, so it has to be drawn: a player who wins through can bank major
+    points that change the Cup race. Everything else about it is invisible to
+    the model — no schedule row, no points curve, no what-if toggle.
+
+    The entry list runs to a hundred-odd players, most of whom have no
+    standings row and no realistic path to the Cup, so they are not added to
+    the roster (which is what the app renders). They still have to be *raced*,
+    though, or the handful of rostered entrants would be competing for six
+    spots among themselves: `other_ratings` is the rest of the field, drawn as
+    unnamed opponents purely to set the bar.
+    """
+    ei: int                       # index of Worlds in `remaining`
+    entered: np.ndarray           # (n,) rostered players in the play-in
+    other_ratings: np.ndarray     # ratings of entrants without a roster row
+    spots: int
+    rpps: float
+    hits: np.ndarray              # (n,) sims in which the player advanced
+
+    def advance(self, ratings_arr: np.ndarray, c: int, rng: np.random.Generator) -> np.ndarray:
+        """(c, n) mask of rostered entrants who win a Worlds spot."""
+        n = ratings_arr.shape[0]
+        ix = np.flatnonzero(self.entered)
+        out = np.zeros((c, n), dtype=bool)
+        if ix.size == 0 or self.spots <= 0:
+            return out
+        field_rtg = np.concatenate([ratings_arr[ix], self.other_ratings])
+        favg = float(field_rtg.mean())
+        mu = -(field_rtg - favg) / self.rpps * config.PLAYIN_ROUNDS
+        sd = ROUND_SD * np.sqrt(config.PLAYIN_ROUNDS)
+        scores = mu[None, :] + rng.normal(0.0, sd, (c, field_rtg.size))
+        order = np.argsort(scores, axis=1)
+        place = np.empty_like(order)
+        place[np.arange(c)[:, None], order] = np.arange(1, field_rtg.size + 1)[None, :]
+        out[:, ix] = place[:, : ix.size] <= self.spots
+        self.hits[ix] += out[:, ix].sum(axis=0)
+        return out
+
+
+def _build_playin(remaining: list[dict], roster: _Roster, division: str,
+                  event_probs: list[np.ndarray]) -> _Playin | None:
+    """Read the play-in entry list, split it into rostered and everyone else."""
+    ei = next((i for i, r in enumerate(remaining)
+               if r["tournament_id"] == config.TID_WORLDS), None)
+    if ei is None:
+        return None
+    listed = live_api.registration_list(config.TID_WORLDS_PLAYIN, division)
+    if listed is None:
+        return None
+    entries, _final = listed
+
+    # Division scoping for the opponent pool. A staged PDGA Live roster is
+    # already one division; the event page is not, and carries no ratings at
+    # all — so the only rating an unrostered page entrant can pick up is the
+    # official one, and ratings.current() is per-division. An entrant from
+    # the other division simply finds nothing and drops out of the race,
+    # which is what should happen. The cost is that a page entrant this
+    # season's ratings sweep has never seen drops out too, shrinking the
+    # modelled field slightly; PDGA Live carries the real roster by event
+    # week, which is when these odds start to matter.
+    official = ratings.current(division)
+    already_in = event_probs[ei] >= 0.999   # qualified for Worlds directly
+    entered = np.zeros(roster.n, dtype=bool)
+    others: list[float] = []
+    for pdga, info in entries.items():
+        i = roster.idx.get(pdga)
+        if i is not None:
+            # Registered for Worlds itself as well: the direct spot is the one
+            # they use, and letting them also take a play-in spot would hand
+            # the field a free qualifier.
+            if not already_in[i]:
+                entered[i] = True
+            continue
+        rtg = official.get(pdga) or info.get("rating")
+        if rtg:
+            others.append(float(rtg))
+    if not entered.any():
+        return None
+    return _Playin(
+        ei=ei, entered=entered, other_ratings=np.array(others, dtype=float),
+        spots=config.WORLDS_PLAYIN_SPOTS[division],
+        rpps=RATING_PTS_PER_STROKE[division], hits=np.zeros(roster.n),
     )
 
 
@@ -684,7 +826,8 @@ def _apply_caps(banked: _Banked, sim_major: np.ndarray, dgpt_cols: list[np.ndarr
 
 def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
               drawer: _Drawer, event_probs: list[np.ndarray], live: _LiveState,
-              qual: _Qual, rng: np.random.Generator) -> _Totals:
+              qual: _Qual, rng: np.random.Generator,
+              playin: _Playin | None = None) -> _Totals:
     """Draw every remaining event, apply the counting caps, rank the season."""
     n = roster.n
     t = _Totals(
@@ -720,6 +863,10 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
                 drawn = np.broadcast_to(live.data[ev_i][2], (c, n))
             else:
                 drawn = rng.random((c, n)) < event_probs[ev_i]
+            if playin is not None and ev_i == playin.ei:
+                # the play-in is decided immediately before Worlds and adds
+                # its winners to that field (they are drawn with everyone else)
+                drawn = drawn | playin.advance(roster.player_ratings, c, rng)
             pts, place, plays = drawer.draw(ev_i, drawn, c, rows_ix, first_chunk)
             cls = drawer.remaining[ev_i]["cls"]
             # a singles DGPT/Major win earns the Cup special invite; Jomez and
@@ -746,7 +893,12 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         if qual.gmc_ei is not None:
             rank_pre_gmc = _rank_of(season_totals(extra), rows_ix, n)
             t.p_gmc_hits += (rank_pre_gmc <= qual.gmc_cut).sum(axis=0)
-            gmc_plays = rank_pre_gmc <= qual.gmc_fill
+            # A union while signups are still open, not a race for a fixed
+            # number of slots: the DGPT sizes the field around its invitees,
+            # and a tour-card holder who entered in March never consumed one
+            # of the standings slots.
+            gmc_plays = _playoff_field(qual.gmc_reg, qual.gmc_final,
+                                       rank_pre_gmc <= qual.gmc_fill)
             t.p_gmc_field_hits += gmc_plays.sum(axis=0)
             gmc_pts, gmc_place, gmc_plays = drawer.draw(qual.gmc_ei, gmc_plays, c, rows_ix, first_chunk)
             sim_win |= (gmc_place == 1) & gmc_plays
@@ -758,9 +910,14 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         if qual.mvp_ei is not None:
             rank_pre_mvp = _rank_of(season_totals(extra), rows_ix, n)
             t.p_mvp_hits += (rank_pre_mvp <= qual.mvp_cut).sum(axis=0)
-            mvp_plays = rank_pre_mvp <= qual.mvp_cut
-            if qual.gmc_ei is not None:  # GMC top-perf finishers outside the points cut advance
-                elig = gmc_plays & (rank_pre_mvp > qual.mvp_cut)
+            mvp_plays = _playoff_field(qual.mvp_reg, qual.mvp_final,
+                                       rank_pre_mvp <= qual.mvp_cut)
+            if qual.gmc_ei is not None and not qual.mvp_final:  # GMC top-perf finishers outside the field advance
+                # Eligible = played GMC and is not in the MVP field by any
+                # other route. Keyed off the field rather than the points cut
+                # so a signed-up player never burns one of the 8/4 spots they
+                # do not need.
+                elig = gmc_plays & ~mvp_plays
                 mvp_plays = mvp_plays | _top_k_by_place(gmc_place, elig, qual.mvp_perf, n)
             t.p_mvp_field_hits += mvp_plays.sum(axis=0)
             mvp_pts, mvp_place, mvp_plays = drawer.draw(qual.mvp_ei, mvp_plays, c, rows_ix, first_chunk)
@@ -910,7 +1067,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         remaining, roster, {r["tournament_id"] for r in schedule.live_events(sched)},
         division, doubles,
     )
-    qual = _build_qual(remaining, division)
+    qual = _build_qual(remaining, division, roster)
+    playin = _build_playin(remaining, roster, division, event_probs)
 
     events_meta = [
         {
@@ -924,7 +1082,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
     ]
     drawer = _Drawer(division, roster, remaining, curves, doubles, live, rng, events_meta)
 
-    t = _simulate(n_sims, chunk, roster, banked, drawer, event_probs, live, qual, rng)
+    t = _simulate(n_sims, chunk, roster, banked, drawer, event_probs, live, qual, rng, playin)
 
     # per-banked-event P(dropped by season end); playoff/jomez never drop
     p_drop: list[dict[int, float]] = [{} for _ in range(roster.n)]
@@ -957,6 +1115,11 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         p_mvp_field=t.p_mvp_field_hits / n_sims,
         p_mvp_qual=t.p_mvp_qual_hits / n_sims,
         p_champ=t.p_champ_hits / n_sims,
+        p_playin=(playin.hits / n_sims) if playin else np.zeros(roster.n),
+        reg_gmc=qual.gmc_reg if qual.gmc_reg is not None else np.zeros(roster.n, dtype=bool),
+        reg_mvp=qual.mvp_reg if qual.mvp_reg is not None else np.zeros(roster.n, dtype=bool),
+        gmc_final=qual.gmc_final,
+        mvp_final=qual.mvp_final,
         rank_hist=t.rank_hist,
         cutline=t.cutline,
         cutline2=t.cutline2,

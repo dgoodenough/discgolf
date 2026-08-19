@@ -345,6 +345,83 @@ def registered_roster(tournament_id: int, division: str) -> dict[int, dict]:
     }
 
 
+# --------------------------------------------------- public signup lists
+
+EVENT_PAGE = "https://www.pdga.com/tour/event/{tid}"
+# A page with a signup list says so; without this marker a parse would be
+# reading some other page (a 404 shell, a redirect, a markup rewrite).
+PAGE_MARKERS = ("Registered Players", "registered-players", "Registration is")
+MIN_PAGE_REGISTRANTS = 8
+_page_memo: dict[int, frozenset[int]] = {}
+
+
+def _fetch_page(url: str) -> str:
+    """Seam for the one non-API fetch: PDGA's public event page."""
+    req = urllib.request.Request(url, headers={"User-Agent": UA["User-Agent"]})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def page_registrants(tournament_id: int) -> frozenset[int]:
+    """PDGA numbers linked from an event page's public signup list.
+
+    Division-blind on purpose. The page lists every division at once, and
+    every caller intersects the result with a division roster, which is
+    already division-exclusive — an FPO entrant simply has no MPO row to
+    match against. Splitting the page by division would mean guessing at
+    per-division markup for no gain.
+
+    Guarded twice, because a silent mis-parse here would invent a field: the
+    page must carry a registration marker, and must yield at least
+    MIN_PAGE_REGISTRANTS players. A page that links only its TD, or whose
+    markup moved, reads as "no list" and the caller falls back.
+
+    This is the source for the qualification-gated events (the playoffs and
+    the Worlds play-in), whose signups are public months before a TD stages
+    them for live scoring — which is the only thing PDGA Live knows about.
+    """
+    import re
+
+    if tournament_id in _page_memo:
+        return _page_memo[tournament_id]
+    found: frozenset[int] = frozenset()
+    try:
+        raw = _fetch_page(EVENT_PAGE.format(tid=tournament_id))
+        if any(m in raw for m in PAGE_MARKERS):
+            nums = {int(m) for m in re.findall(r'href="[^"]*/player/(\d+)', raw)}
+            if len(nums) >= MIN_PAGE_REGISTRANTS:
+                found = frozenset(nums)
+    except Exception:  # noqa: BLE001 - a signup list is never worth a failed refresh
+        pass
+    _page_memo[tournament_id] = found
+    return found
+
+
+def registration_list(tournament_id: int, division: str) -> tuple[dict[int, dict], bool] | None:
+    """Everyone signed up for an event, and whether that list is the final field.
+
+    Returns ({pdga_number: {name, rating}}, staged). PDGA Live first —
+    structured, cached, division-scoped, and what every other field read in
+    the pipeline uses; a TD only stages an event there once the field is set,
+    so staged=True means "this IS the field", the same trust the rest of the
+    pipeline already places in it.
+
+    Until then, a qualification-gated event (the playoffs, the Worlds play-in)
+    publishes its signups on the PDGA event page months ahead. That list is
+    real but still growing, so staged=False: callers keep whatever other route
+    into the field they were modelling. Page entries carry no name or rating —
+    and no division, so callers must scope them themselves.
+
+    None means neither source published a list, which is distinct from an
+    empty one: it is the signal to keep the pre-signup assumption entirely.
+    """
+    roster = registered_roster(tournament_id, division)
+    if roster:
+        return roster, True
+    nums = page_registrants(tournament_id)
+    return ({p: {"name": None, "rating": None} for p in nums}, False) if nums else None
+
+
 def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     """Current standing of an in-progress event, for the remaining-holes model.
 

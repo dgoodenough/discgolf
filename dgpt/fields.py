@@ -8,6 +8,11 @@ Priority order:
    cohort prior. Cohorts are (2026 tour-card qualified x European), per
    event group (US stops / European swing / JomezPro Series) — card holders
    play nearly everything stateside; only some Europeans cross the pond.
+
+The qualification-gated events (the two playoffs, the Worlds play-in) take
+none of that: they are invited in waves off the standings, so simulate.py
+builds their fields from the published signup list (`signed_up`) unioned with
+the standings gate for players whose window has not opened yet.
 """
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ import csv
 import unicodedata
 import urllib.error
 from collections import defaultdict
+from typing import NamedTuple
 
 from . import config, live_api
 
@@ -120,6 +126,43 @@ def registered_field(tournament_id: int, division: str) -> set[int] | None:
     return field or None
 
 
+class Signups(NamedTuple):
+    """Who has entered a qualification-gated event, and how done that list is.
+
+    `final` is the difference between "these players are in, and others may
+    still join" and "this is the field". Callers union a non-final list with
+    whatever other route into the field they model; a final one replaces it.
+    """
+    players: set[int]
+    final: bool
+
+
+def signed_up(tournament_id: int, division: str, players: list[int]) -> Signups | None:
+    """Which of `players` have actually signed up for a qualification-gated event.
+
+    The playoffs and the Worlds play-in do not take open registration: the
+    DGPT and the PDGA invite in waves, and the list is public on the event
+    page long before PDGA Live knows the event exists. Once a list exists we
+    take it literally — a player on it plays, whatever the standings say, and
+    a tour-card holder who entered GMC in March needs no separate model.
+
+    Returns None when no list has been published, which is the signal to keep
+    the pre-signup assumption (a pure standings gate) rather than to read an
+    empty list as "nobody is playing". Manual overrides in
+    data/overrides/fields.csv win over the published list, in both directions
+    — and an override makes the list non-final, since the reason to write one
+    is that the published list is wrong or incomplete.
+    """
+    listed = live_api.registration_list(tournament_id, division)
+    ov = {pdga: plays for (tid, pdga), plays in load_overrides().items()
+          if tid == tournament_id}
+    if listed is None and not ov:
+        return None
+    entries, final = listed if listed is not None else ({}, False)
+    seen = set(entries)
+    return Signups({p for p in players if ov.get(p, p in seen)}, final and not ov)
+
+
 def load_overrides() -> dict[tuple[int, int], bool]:
     out: dict[tuple[int, int], bool] = {}
     if OVERRIDES_CSV.exists():
@@ -136,8 +179,11 @@ def play_probabilities(row: dict, division: str, players: list[int],
     # Trust the PDGA Live registration list whenever it exists. Large fields
     # (e.g. Ledgestone ~150, Pro Worlds ~200) are real: those events split
     # MPO/FPO across separate courses, so the field runs bigger than a normal
-    # Elite stop. Only the playoffs + Powerball Cup lack registrations (they
-    # are qualification-based), where we fall back to participation rates.
+    # Elite stop. Only the playoffs + Powerball Cup lack one here (they are
+    # qualification-based), where we fall back to participation rates — and
+    # for the playoffs that answer is discarded anyway: simulate.py rebuilds
+    # their fields from signups + the standings gate, which it can only do
+    # once the standings for that sim exist.
     known = registered_field(row["tournament_id"], division)
     group = _event_group(row)
     probs: dict[int, float] = {}
