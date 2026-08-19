@@ -691,12 +691,18 @@ class _Playin:
     points that change the Cup race. Everything else about it is invisible to
     the model — no schedule row, no points curve, no what-if toggle.
 
-    The entry list runs to a hundred-odd players, most of whom have no
-    standings row and no realistic path to the Cup, so they are not added to
-    the roster (which is what the app renders). They still have to be *raced*,
-    though, or the handful of rostered entrants would be competing for six
-    spots among themselves: `other_ratings` is the rest of the field, drawn as
-    unnamed opponents purely to set the bar.
+    Entrants without a standings row are not added to the roster (which is
+    what the app renders): they have no realistic path to the Cup, and 2026's
+    MPO list alone would have added 44 of them. They still have to be *raced*,
+    or the rostered entrants would be competing for six spots among
+    themselves — `other_ratings` is the rest of the field, drawn as unnamed
+    opponents purely to set the bar.
+
+    The two divisions are shaped nothing alike, which is why neither the
+    field size nor the outside pool is assumed anywhere: 2026 MPO drew 53
+    entrants for 6 spots, 9 of them rostered and none near the Cup, while FPO
+    drew 5 for 2 spots — all rostered, no outside field at all, and one of
+    them (29th in the standings) at 77% to play their way in.
     """
     ei: int                       # index of Worlds in `remaining`
     entered: np.ndarray           # (n,) rostered players in the play-in
