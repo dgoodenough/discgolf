@@ -21,7 +21,7 @@ FIELDS = [
     "snapshot_date", "taken_at", "events_completed", "division",
     "pdga_number", "name", "rating", "cur_rank", "cur_points",
     "p_champ", "p_cut", "p_gmc", "p_mvp", "p_mvp_qual", "p_first",
-    "mean_pts", "mean_rank", "registered",
+    "mean_pts", "mean_rank", "registered", "signed",
 ]
 # columns whose change makes a snapshot "new" (exclude timestamps/names)
 _PRED_KEYS = ["pdga_number", "cur_points", "p_champ", "p_cut", "p_gmc",
@@ -37,6 +37,19 @@ def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[d
         registered = ";".join(
             str(reg_tids[e]) for e in range(len(reg_tids)) if res.att_probs[e, i] >= 0.999
         )
+        # Playoff signups, tracked apart from attendance because attendance
+        # there is a BLEND: p_gmc_field is the signup list unioned with the
+        # qualification gate, so a player crossing it may have signed up or
+        # may simply have climbed the standings. Only this column is a
+        # registration fact. "-" (not blank) means "signed up for nothing" —
+        # blank is reserved for pre-schema rows, and most players are on no
+        # playoff list, so the two must stay distinguishable or every first
+        # sign-up would look like missing history.
+        signed = ";".join(
+            str(tid) for tid, flags in
+            ((config.TID_GMC, res.reg_gmc), (config.TID_MVP, res.reg_mvp))
+            if flags[i]
+        ) or "-"
         rows.append({
             "snapshot_date": date,
             "taken_at": taken,
@@ -56,6 +69,7 @@ def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[d
             "mean_pts": round(float(res.mean_points[i]), 1),
             "mean_rank": round(float(res.mean_rank[i]), 1),
             "registered": registered,
+            "signed": signed,
         })
     rows.sort(key=lambda r: r["pdga_number"])
     return rows

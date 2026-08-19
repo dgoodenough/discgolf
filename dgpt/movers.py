@@ -61,17 +61,22 @@ SPARK_N = {"day": 7, "week": 7}
 # Season window is measured in standings PLACES, not odds — see _season_movers.
 MIN_PLACES = 3
 
-# Attendance for these classes is gated by standings qualification, not a
-# registration list, so a player crossing the ~100% attendance threshold there
-# is a projected-qualification change, not a sign-up — it must NOT appear in the
-# "Registration changes" column (that signal already lives in the GMC/MVP % ).
-# RE-ADD WHEN PLAYOFF REGISTRATION OPENS: once the model consumes the real
-# playoff roster (simulate.run gating the GMC/MVP field on registered_field
-# instead of standings rank), drop the relevant class here so genuine playoff
-# sign-ups/withdrawals show again. Do NOT auto-lift on roster existence alone —
-# that would re-expose standings gating as registration until the model change
-# lands. See MODEL_IDEAS.md.
+# ATTENDANCE for these classes is never a sign-up on its own, so a player
+# crossing the ~100% threshold there must NOT reach the "Registration changes"
+# column: for the Cup it is pure qualification, and for the playoffs it is a
+# BLEND — p_gmc_field is the signup list unioned with the standings gate, so
+# crossing it may mean "entered" or may mean "climbed into the top 100". That
+# distinction is the whole point: a waitlist move is unpredictable and worth
+# reporting, where a player drifting across a qualification cutline is
+# something the model already predicts and already shows in the GMC/MVP %.
+#
+# Playoff sign-ups therefore come from the `signed` column instead (see
+# snapshot._rows), which is a registration fact and nothing else. This list
+# stays as it is; do not "lift" it.
 REG_GATED_CLASSES = ("playoff", "championship")
+
+# Playoff events whose signup list is tracked, in the order the column reads.
+SIGNUP_TIDS = (config.TID_GMC, config.TID_MVP)
 
 
 def _load_bundle(division: str) -> dict:
@@ -97,6 +102,12 @@ def _live_endpoint(bundle: dict) -> dict[int, dict]:
             "cur_rank": p["rank"],
             "rating": p.get("rating") or "",
             "registered": registered,
+            # mirrors snapshot._rows: "-" = on no playoff list, blank/absent =
+            # a bundle predating the signup fields, which we cannot diff
+            "signed": ";".join(
+                str(tid) for tid, key in
+                zip(SIGNUP_TIDS, ("reg_gmc", "reg_mvp")) if p.get(key)
+            ) or ("-" if "reg_gmc" in p else ""),
             "mean_rank": p.get("mean_rank", ""),
         }
     return out
@@ -235,6 +246,18 @@ def _division_movers(division: str, window: str, rows: list[dict], dates: list[s
             reg_added = sorted(t for t in (rc - rb) if t not in gated_tids)
             reg_removed = sorted(
                 t for t in (rb - rc) if t not in gated_tids and t not in completed_tids
+            )
+        # Playoff sign-ups and withdrawals, off the signup list rather than
+        # attendance. Same guard as above and for the same reason: a baseline
+        # that predates the column is unknowable, and reporting every entrant
+        # as newly added on the first run after the schema grew would be
+        # fabrication. "-" is a real answer (entered nothing) and diffs fine.
+        if b and b.get("signed") and c.get("signed"):
+            sb = {int(t) for t in str(b["signed"]).split(";") if t.isdigit()}
+            sc = {int(t) for t in str(c["signed"]).split(";") if t.isdigit()}
+            reg_added = sorted(set(reg_added) | (sc - sb))
+            reg_removed = sorted(
+                set(reg_removed) | {t for t in (sb - sc) if t not in completed_tids}
             )
         r_from, r_to = _rating(b), _rating(c)
         movers.append({

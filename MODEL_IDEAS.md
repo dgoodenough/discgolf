@@ -113,14 +113,14 @@ If the effect is real but tiny, log it as "confirmed, immaterial" and move on.
 
 _Add new hunches here as they come up; promote to a full section when we dig in._
 
-- **[In-season TODO, ~Aug/Sep] Consume real playoff rosters, then re-enable playoff
-  registration tracking.** `simulate.run` gates the GMC/MVP fields on standings
-  rank, never on a registration list, so the model assumes every qualifier
-  attends. When DGPT playoff sign-ups open, teach the sim to use
-  `registered_field` for those events, then remove `playoff`/`championship` from
-  `movers.REG_GATED_CLASSES` so genuine playoff sign-ups/withdrawals show in the
-  Biggest Movers "Registration changes" column again. Until both land, that
-  column correctly hides playoff/Cup attendance (it's a qualification swing, not
-  a sign-up). Don't lift the exclusion on roster existence alone — PDGA may open
-  the roster before the model change, which would re-expose standings gating as
-  fake registration churn.
+- **[Done, 2026-08] Consume real playoff rosters, then re-enable playoff
+  registration tracking.** Shipped, though not the way this entry expected:
+  `movers.REG_GATED_CLASSES` was NOT lifted. Playoff attendance stayed excluded
+  because it never became a pure registration signal — `p_gmc_field` is the
+  signup list unioned with the standings gate while later waves are pending, so
+  crossing it still conflates "entered" with "climbed into the top 100".
+  Sign-ups are reported off a separate `signed` snapshot column instead, which
+  is a registration fact and nothing else. The distinction that matters is
+  predictability: a waitlist move or a withdrawal can't be modelled, so it gets
+  reported; a player drifting across a qualification cutline is already in the
+  forecast and would be double-counted as news.
