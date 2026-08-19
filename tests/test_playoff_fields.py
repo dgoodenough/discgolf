@@ -8,6 +8,7 @@ than on points.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import json
 
 import numpy as np
@@ -32,6 +33,12 @@ def tight_qual(monkeypatch):
         "gmc": {"cut": {"MPO": 8, "FPO": 8}, "fill": {"MPO": 10, "FPO": 10}},
         "mvp": {"cut": {"MPO": 6, "FPO": 6}, "perf": {"MPO": 2, "FPO": 2}},
     })
+
+
+@pytest.fixture
+def waves_open(monkeypatch):
+    """Every registration window has opened, so a staged roster can be final."""
+    monkeypatch.setattr(fields, "_waves_all_open", lambda tid, now=None: True)
 
 
 # ------------------------------------------------------------ signup lists
@@ -169,8 +176,47 @@ def test_mvp_signup_does_not_burn_a_gmc_performance_spot(tiny_world, fake_pages,
     assert np.all(res.p_mvp_field[is_signed] == pytest.approx(1.0))
 
 
+def test_a_roster_staged_before_the_last_wave_is_not_final(fake_api, fake_pages, monkeypatch):
+    """The DGPT stages events weeks ahead — Idlewild was live on PDGA Live 17
+    days out — and GMC's last wave opens Sep 1, six days before that lead time
+    would reach it. A roster staged in the gap looks authoritative and is
+    missing everyone wave 2 admits, so it must not close the field."""
+    fake_api.round(config.TID_GMC, "MPO", 1, round_payload(
+        [row(p, f"P{p}", 1000, played=0) for p in range(7001, 7021)]))
+
+    class FrozenClock(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2026, 8, 31, 12, 0, tzinfo=dt.timezone.utc)
+
+    monkeypatch.setattr(dt, "datetime", FrozenClock)
+    signed = fields.signed_up(config.TID_GMC, "MPO", list(range(7001, 7021)))
+    assert len(signed.players) == 20
+    assert signed.final is False   # wave 2 has not opened: still a floor
+
+
+def test_the_same_roster_is_final_once_every_wave_has_opened(fake_api, monkeypatch):
+    fake_api.round(config.TID_GMC, "MPO", 1, round_payload(
+        [row(p, f"P{p}", 1000, played=0) for p in range(7001, 7021)]))
+
+    class FrozenClock(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2026, 9, 2, 12, 0, tzinfo=dt.timezone.utc)
+
+    monkeypatch.setattr(dt, "datetime", FrozenClock)
+    assert fields.signed_up(config.TID_GMC, "MPO", list(range(7001, 7021))).final is True
+
+
+def test_the_play_in_has_no_waves_to_wait_for(fake_api):
+    """Nothing gates entry to the play-in, so a staged roster is the field."""
+    fake_api.round(config.TID_WORLDS_PLAYIN, "MPO", 1, round_payload(
+        [row(p, f"P{p}", 1000, played=0) for p in range(7001, 7021)]))
+    assert fields.signed_up(config.TID_WORLDS_PLAYIN, "MPO", list(range(7001, 7021))).final is True
+
+
 def test_a_staged_roster_replaces_the_gate_instead_of_widening_it(
-        tiny_world, fake_api, tight_qual):
+        tiny_world, fake_api, tight_qual, waves_open):
     """PDGA Live only carries an event once the field is set. Unioning that
     settled field with everyone the standings gate would admit invents
     entrants — and GMC points count, so it would invent points too."""
@@ -188,7 +234,7 @@ def test_a_staged_roster_replaces_the_gate_instead_of_widening_it(
     assert res.p_gmc[res.pdga_numbers.index(tiny_world.star)] > 0.9
 
 
-def test_a_final_mvp_field_needs_no_performance_spots(tiny_world, fake_api, tight_qual):
+def test_a_final_mvp_field_needs_no_performance_spots(tiny_world, fake_api, tight_qual, waves_open):
     """The 8/4 GMC-performance places are already counted in a staged roster —
     handing out more would put players in the field twice over."""
     standings.write_csv("MPO", standings.compute("MPO"))
