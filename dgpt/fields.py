@@ -17,6 +17,7 @@ the standings gate for players whose window has not opened yet.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import unicodedata
 import urllib.error
 from collections import defaultdict
@@ -126,6 +127,34 @@ def registered_field(tournament_id: int, division: str) -> set[int] | None:
     return field or None
 
 
+# Which registration-phase schedule governs an event, for _waves_all_open.
+PHASE_KEY_BY_TID = {config.TID_GMC: "gmc", config.TID_MVP: "mvp"}
+
+
+def _waves_all_open(tid: int, now: dt.datetime | None = None) -> bool:
+    """Has every registration window for this event opened yet?
+
+    A staged PDGA Live roster is normally the final field — but the DGPT
+    stages an event well before it is played (Idlewild, Sep 4, was live on
+    PDGA Live by Aug 18), and GMC's last wave does not open until Sep 1. Stage
+    GMC on Aug 31 and its roster is a real, authoritative-looking list that is
+    still missing everyone wave 2 will admit: exactly the rank 61-100 bubble.
+    Treating that as final would zero out their playoff points three weeks
+    early, which is worse than the over-admission the union risks.
+
+    So a roster only becomes final once nobody else can still enter. Events
+    with no wave schedule (the Worlds play-in) have nothing to wait for.
+    """
+    key = PHASE_KEY_BY_TID.get(tid)
+    if key is None:
+        return True
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return all(
+        dt.datetime.fromisoformat(ph["opens"].replace("Z", "+00:00")) <= now
+        for ph in config.REG_PHASES[key]
+    )
+
+
 class Signups(NamedTuple):
     """Who has entered a qualification-gated event, and how done that list is.
 
@@ -158,9 +187,10 @@ def signed_up(tournament_id: int, division: str, players: list[int]) -> Signups 
           if tid == tournament_id}
     if listed is None and not ov:
         return None
-    entries, final = listed if listed is not None else ({}, False)
+    entries, staged = listed if listed is not None else ({}, False)
     seen = set(entries)
-    return Signups({p for p in players if ov.get(p, p in seen)}, final and not ov)
+    final = staged and not ov and _waves_all_open(tournament_id)
+    return Signups({p for p in players if ov.get(p, p in seen)}, final)
 
 
 def load_overrides() -> dict[tuple[int, int], bool]:

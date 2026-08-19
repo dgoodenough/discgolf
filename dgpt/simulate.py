@@ -645,10 +645,14 @@ def _playoff_field(reg: np.ndarray | None, final: bool, gate: np.ndarray) -> np.
     - a list, still growing    -> the union; the waves that would reach an
                                   unsigned contender have not opened yet, so
                                   their absence from it means nothing
-    - a final list             -> the list alone; PDGA Live only carries an
-                                  event once the field is set, and unioning a
-                                  settled 120-player field with everyone the
-                                  gate would admit invents entrants
+    - a final list             -> the list alone; unioning a settled
+                                  120-player field with everyone the gate
+                                  would admit invents entrants, and GMC
+                                  points count, so it invents points too
+
+    "Final" is a staged PDGA Live roster AND every registration wave open
+    (fields._waves_all_open) — staging alone is not enough, because the DGPT
+    stages events weeks ahead of the last wave.
     """
     if reg is None:
         return gate
