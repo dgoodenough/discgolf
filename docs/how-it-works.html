@@ -111,7 +111,10 @@
   spots stay as scarce in the model as they are on the course — and the two
   divisions look nothing alike. The 2026 MPO play-in drew 53 players, nine of
   them with a standings row and none of them near the Cup; the FPO play-in
-  drew five, all five ranked, competing for two spots.</p>
+  drew five, all five ranked, competing for two spots. Once it has actually
+  been played the flag comes off and the forecast stops: the winners are in
+  the Worlds field like anyone else on the roster, and the players who missed
+  out are simply not at Worlds.</p>
 
   <div class="band">5 · What the forecast does with all this</div>
   <p>The forecast simulates the rest of the season 100,000 times: each
@@ -126,6 +129,7 @@
   <div class="band">Changelog</div>
   <table class="table-ledger">
     <tbody>
+      <tr><td class="changelog-date">Aug 23</td><td><b>The Worlds play-in is no longer forecast after it has been played.</b> Its winners joined the Worlds field correctly from the real roster — but the entrants who missed out were still being raced for spots that were already taken, and their odds <i>rose</i> as the winners left the race ahead of them. One FPO entrant read 96% to play her way into a major she had already missed, which put a major's worth of points she cannot earn into her Powerball Cup odds.</td></tr>
       <tr><td class="changelog-date">Aug 19</td><td><b>Playoff signups are now taken literally.</b> GMC and MVP Open registration opened in August, so anyone already entered is in that field in every simulation regardless of the standings — and only players the later waves haven't reached are still modelled on points. The <b>Worlds play-in</b> is modelled too: 6 MPO / 2 FPO spots, decided over one round, which is the only way into Worlds for entrants who missed direct qualification.</td></tr>
       <tr><td class="changelog-date">Aug 12</td><td>Behind the scenes: the simulation was reorganized without changing a single projected number (every output checked identical, run for run), the published data moved off the project's main branch, and two latent crash paths were closed. Nothing you see should have changed.</td></tr>
       <tr><td class="changelog-date">Aug 10</td><td><b>The header now says how old the numbers are</b>, and flags a publish later than the refresh cadence allows. This also fixes a bug where a Sunday final round running past 00:00 UTC read as already over: live scores stopped updating and the page could sit frozen on the lead card mid-round.</td></tr>

@@ -737,11 +737,26 @@ class _Playin:
 
 def _build_playin(remaining: list[dict], roster: _Roster, division: str,
                   event_probs: list[np.ndarray]) -> _Playin | None:
-    """Read the play-in entry list, split it into rostered and everyone else."""
+    """Read the play-in entry list, split it into rostered and everyone else.
+
+    None once the play-in has been played, or was never listed: either way
+    there is no race left to draw."""
     ei = next((i for i, r in enumerate(remaining)
                if r["tournament_id"] == config.TID_WORLDS), None)
     if ei is None:
         return None
+
+    # Once it has been played the play-in is a fact, not a forecast: its
+    # winners are on the Worlds roster — which is where their attendance comes
+    # from — and everyone else is out. Racing it anyway strands the losers in a
+    # contest for spots that are already taken, and because each winner leaves
+    # the race as they appear on that roster, the losers' odds *climb* as the
+    # players who beat them drop out. FPO 2026: the 29th-ranked entrant read
+    # 77% before the play-in and 96% the morning after she missed out, carrying
+    # a phantom major into a visible 18.8% Cup number.
+    if live_api.event_played(config.TID_WORLDS_PLAYIN, division):
+        return None
+
     listed = live_api.registration_list(config.TID_WORLDS_PLAYIN, division)
     if listed is None:
         return None

@@ -249,8 +249,12 @@ def test_a_final_mvp_field_needs_no_performance_spots(tiny_world, fake_api, tigh
 # ------------------------------------------------------------- the play-in
 
 def _worlds_world(tiny_world, fake_api, *, worlds_field, playin_field, pages=None,
-                  ratings_by_pdga=None):
-    """Re-cast the tiny world's future major as Pro Worlds, with a play-in."""
+                  ratings_by_pdga=None, playin_played=False):
+    """Re-cast the tiny world's future major as Pro Worlds, with a play-in.
+
+    `playin_played` posts scores on the play-in sheet: the entry list is the
+    same either way, so it is the scores alone that separate a race still to
+    come from one already decided."""
     rows = schedule.load()
     for r in rows:
         if r["tournament_id"] == 900004:
@@ -268,8 +272,10 @@ def _worlds_world(tiny_world, fake_api, *, worlds_field, playin_field, pages=Non
     if pages is not None:
         pages.signups(config.TID_WORLDS_PLAYIN, playin_field)
     else:
+        played = ({"played": 18, "has_score": True} if playin_played
+                  else {"played": 0})
         fake_api.round(config.TID_WORLDS_PLAYIN, "MPO", 1, round_payload(
-            [row(p, f"P{p}", rate.get(p, 1000), played=0) for p in playin_field]))
+            [row(p, f"P{p}", rate.get(p, 1000), **played) for p in playin_field]))
     standings.write_csv("MPO", standings.compute("MPO"))
 
 
@@ -342,6 +348,64 @@ def test_play_in_reads_the_event_page_when_live_scoring_is_dark(tiny_world, fake
     res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
     p = np.array([res.p_playin[res.pdga_numbers.index(x)] for x in entrants])
     assert p.sum() == pytest.approx(config.WORLDS_PLAYIN_SPOTS["MPO"], abs=1e-9)
+
+
+def test_a_played_play_in_is_not_raced_again(tiny_world, fake_api):
+    """The play-in is a forecast only until it tees off. After that the race is
+    over and nobody is still winning their way in — every entrant's Worlds
+    attendance is whatever the Worlds roster says it is."""
+    entrants = [p for p, _, _ in tiny_world.players[10:22]]
+    _worlds_world(tiny_world, fake_api,
+                  worlds_field=[p for p, _, _ in tiny_world.players[:10]],
+                  playin_field=entrants, playin_played=True)
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    worlds_ei = next(i for i, e in enumerate(res.events_meta)
+                     if e["tid"] == config.TID_WORLDS)
+    assert np.all(res.p_playin == 0.0)
+    for pdga in entrants:
+        i = res.pdga_numbers.index(pdga)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(0.0)
+
+
+def test_a_decided_play_in_reads_its_winners_off_the_worlds_roster(tiny_world, fake_api):
+    """The real shape of the morning after: some entrants won and are on the
+    Worlds roster, the rest lost and are not. Attendance follows the roster
+    alone — the losers must not keep racing for spots the winners have taken,
+    which is what left an FPO entrant at 96% to play her way into a major she
+    had already missed."""
+    winners = [p for p, _, _ in tiny_world.players[10:16]]
+    losers = [p for p, _, _ in tiny_world.players[16:24]]
+    _worlds_world(tiny_world, fake_api,
+                  worlds_field=[p for p, _, _ in tiny_world.players[:10]] + winners,
+                  playin_field=winners + losers, playin_played=True)
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    worlds_ei = next(i for i, e in enumerate(res.events_meta)
+                     if e["tid"] == config.TID_WORLDS)
+    assert np.all(res.p_playin == 0.0)
+    for pdga in winners:
+        i = res.pdga_numbers.index(pdga)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(1.0)
+    for pdga in losers:
+        i = res.pdga_numbers.index(pdga)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(0.0)
+
+
+def test_an_unstaged_play_in_is_settled_by_its_end_date(tiny_world, fake_api, fake_pages):
+    """Live scoring may never stage the play-in at all — its field can come
+    from the event page alone, and then there is no round sheet to read a
+    score off. An end date in the past settles it just as well, so the fix
+    cannot quietly no-op on the one event it exists for."""
+    entrants = [p for p, _, _ in tiny_world.players[10:22]]
+    _worlds_world(tiny_world, fake_api,
+                  worlds_field=[p for p, _, _ in tiny_world.players[:10]],
+                  playin_field=entrants, pages=fake_pages)
+    fake_api.event(config.TID_WORLDS_PLAYIN,
+                   event_payload("Play-in", 1, [("MPO", 1)], end_date="2026-01-01"))
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    assert np.all(res.p_playin == 0.0)
 
 
 def test_no_play_in_list_leaves_the_worlds_field_alone(tiny_world, fake_api):

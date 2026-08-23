@@ -345,6 +345,33 @@ def registered_roster(tournament_id: int, division: str) -> dict[int, dict]:
     }
 
 
+def event_played(tournament_id: int, division: str) -> bool:
+    """Has this event been played — is its result a fact rather than a forecast?
+
+    Two independent reads, because an event we track but never score (the
+    Worlds play-in has no schedule row and no points curve) may or may not be
+    staged in live scoring at all: a posted round score says play has started,
+    an end date in the past says it is over. Either one settles it, and they
+    cover for each other — the score catches an event being played today,
+    which the date test deliberately does not.
+
+    False when neither answers. That is the honest default: a signup list
+    published months ahead of a sheet is the normal state here, and it must
+    not read as a played round.
+    """
+    try:
+        scores = fetch_round(tournament_id, division, 1).get("scores") or []
+        if any(s.get("HasRoundScore") or (s.get("Played") or 0) > 0 for s in scores):
+            return True
+    except (urllib.error.HTTPError, KeyError):
+        pass
+    try:
+        end = fetch_event(tournament_id).get("EndDate")
+        return bool(end) and date.fromisoformat(end) < date.today()
+    except (urllib.error.HTTPError, KeyError, ValueError):
+        return False
+
+
 # --------------------------------------------------- public signup lists
 
 EVENT_PAGE = "https://www.pdga.com/tour/event/{tid}"
