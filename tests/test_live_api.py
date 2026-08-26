@@ -8,6 +8,8 @@ probe workflow.
 """
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from dgpt import live_api
@@ -433,3 +435,57 @@ def test_live_scoring_still_wins_over_the_event_page(fake_api, fake_pages):
     fake_pages.signups(1, list(range(9001, 9021)))
 
     assert set(live_api.registered_roster(1, "MPO")) == {9001}
+
+
+def _known_fields(monkeypatch, tmp_path, payload):
+    path = tmp_path / "known_fields.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(live_api, "KNOWN_FIELDS", path)
+    monkeypatch.setattr(live_api, "_known_memo", None)
+
+
+def test_last_known_field_carries_a_dark_event(fake_api, monkeypatch, tmp_path):
+    """Worlds lost its staged roster mid-tournament and the event page carries
+    no signup list once play starts, so both live sources went dark on the
+    biggest field of the season. The committed last-known roster carries it,
+    names and ratings included, so _build_roster can rebuild the rows of
+    entrants who have no standings line."""
+    _known_fields(monkeypatch, tmp_path, {"97344": {"MPO": [
+        {"pdga": 9001, "name": "A", "rating": 1010},
+        {"pdga": 9002, "name": "B", "rating": 995},
+    ]}})
+    fake_api.event(97344, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=97344&Division=MPO&Round=1"
+    ] = {"data": []}
+
+    roster = live_api.registered_roster(97344, "MPO")
+    assert set(roster) == {9001, 9002}
+    assert roster[9001] == {"name": "A", "rating": 1010}
+
+
+def test_a_live_roster_retires_the_last_known_one(fake_api, monkeypatch, tmp_path):
+    """The whole point of ranking it last: PDGA republishing the roster
+    silently supersedes the file, so there is no stale pin to remember to
+    delete. An override would have kept winning here."""
+    _known_fields(monkeypatch, tmp_path, {"97344": {"MPO": [
+        {"pdga": 9001, "name": "A", "rating": 1010},
+        {"pdga": 9002, "name": "B", "rating": 995},
+    ]}})
+    fake_api.event(97344, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.round(97344, "MPO", 1, round_payload([row(9003, "C", 1020, played=0)]))
+
+    assert set(live_api.registered_roster(97344, "MPO")) == {9003}
+
+
+def test_the_event_page_still_outranks_the_last_known_field(fake_api, fake_pages, monkeypatch, tmp_path):
+    _known_fields(monkeypatch, tmp_path, {"97344": {"MPO": [
+        {"pdga": 9001, "name": "A", "rating": 1010},
+    ]}})
+    fake_api.event(97344, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=97344&Division=MPO&Round=1"
+    ] = {"data": []}
+    fake_pages.signups(97344, list(range(9100, 9120)))
+
+    assert set(live_api.registered_roster(97344, "MPO")) == set(range(9100, 9120))

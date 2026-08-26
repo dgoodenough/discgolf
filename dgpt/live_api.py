@@ -382,7 +382,42 @@ def registered_roster(tournament_id: int, division: str) -> dict[int, dict]:
     """
     return (_live_roster(tournament_id, division)
             or {p: {"name": None, "rating": None}
-                for p in page_registrants(tournament_id)})
+                for p in page_registrants(tournament_id)}
+            or known_field(tournament_id, division))
+
+
+KNOWN_FIELDS = config.DATA_DIR / "known_fields.json"
+_known_memo: dict | None = None
+
+
+def known_field(tournament_id: int, division: str) -> dict[int, dict]:
+    """Last-known-good roster for an event, when both live sources are dark.
+
+    Pro Worlds 2026 lost its staged roster on the morning of the tournament and
+    the event page carries no signup list once play has started, so the model
+    fell back to participation rates for the biggest event of the season: a
+    114-player smear with nobody excluded and nobody certain, and the 71
+    entrants with no standings row dropped off the site entirely.
+
+    Deliberately the LAST tier, not an override. A manual entry in
+    data/overrides/fields.csv outranks the published list on purpose — the
+    reason to write one is that the list is wrong — but this file exists for
+    the opposite case, where the list is merely missing. Ranking it below both
+    live sources is what makes it safe to leave in place: PDGA republishing
+    the roster silently retires it, with no stale pin to remember to delete.
+
+    Carries name and rating so _build_roster can rebuild the rows of entrants
+    who have no standings line of their own.
+    """
+    global _known_memo
+    if _known_memo is None:
+        try:
+            _known_memo = json.loads(KNOWN_FIELDS.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _known_memo = {}
+    entries = (_known_memo.get(str(tournament_id)) or {}).get(division) or []
+    return {int(e["pdga"]): {"name": e.get("name"), "rating": e.get("rating")}
+            for e in entries}
 
 
 def _live_roster(tournament_id: int, division: str) -> dict[int, dict]:

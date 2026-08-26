@@ -1,0 +1,1508 @@
+{
+ "97344": {
+  "MPO": [
+   {
+    "pdga": 7495,
+    "name": "Avery Jenkins",
+    "rating": 985
+   },
+   {
+    "pdga": 8332,
+    "name": "Simon Lizotte",
+    "rating": 1032
+   },
+   {
+    "pdga": 11534,
+    "name": "Nikko Locastro",
+    "rating": 1013
+   },
+   {
+    "pdga": 13864,
+    "name": "Garrett Gurthie",
+    "rating": 1022
+   },
+   {
+    "pdga": 17295,
+    "name": "James Conrad",
+    "rating": 1018
+   },
+   {
+    "pdga": 18330,
+    "name": "Matthew Orum",
+    "rating": 1029
+   },
+   {
+    "pdga": 24341,
+    "name": "Cale Leiviska",
+    "rating": 1035
+   },
+   {
+    "pdga": 25541,
+    "name": "Chandler Fry",
+    "rating": 1005
+   },
+   {
+    "pdga": 27171,
+    "name": "Paul Ulibarri",
+    "rating": 1030
+   },
+   {
+    "pdga": 27523,
+    "name": "Paul McBeth",
+    "rating": 1048
+   },
+   {
+    "pdga": 28560,
+    "name": "Cam Rico",
+    "rating": 1011
+   },
+   {
+    "pdga": 28567,
+    "name": "Patrick Burke",
+    "rating": 995
+   },
+   {
+    "pdga": 29215,
+    "name": "Sander Bahnerth",
+    "rating": 960
+   },
+   {
+    "pdga": 31509,
+    "name": "James Bates",
+    "rating": 984
+   },
+   {
+    "pdga": 31644,
+    "name": "Bradley Williams",
+    "rating": 1031
+   },
+   {
+    "pdga": 32492,
+    "name": "Tyler Hamilton",
+    "rating": 986
+   },
+   {
+    "pdga": 33838,
+    "name": "Nicholas Gill",
+    "rating": 1014
+   },
+   {
+    "pdga": 35449,
+    "name": "Aaron Gossage",
+    "rating": 1035
+   },
+   {
+    "pdga": 35798,
+    "name": "Shane Anderson",
+    "rating": 993
+   },
+   {
+    "pdga": 35876,
+    "name": "Colten Montgomery",
+    "rating": 1001
+   },
+   {
+    "pdga": 37009,
+    "name": "Sam Smigiel",
+    "rating": 1004
+   },
+   {
+    "pdga": 37817,
+    "name": "Eagle McMahon",
+    "rating": 1045
+   },
+   {
+    "pdga": 38008,
+    "name": "Richard Wysocki",
+    "rating": 1053
+   },
+   {
+    "pdga": 38631,
+    "name": "Zach Melton",
+    "rating": 996
+   },
+   {
+    "pdga": 38737,
+    "name": "Jeremiah Kraus",
+    "rating": 991
+   },
+   {
+    "pdga": 39015,
+    "name": "Benjamin Callaway",
+    "rating": 1018
+   },
+   {
+    "pdga": 39469,
+    "name": "Martin Hendel",
+    "rating": 1015
+   },
+   {
+    "pdga": 39491,
+    "name": "Parker Welck",
+    "rating": 1030
+   },
+   {
+    "pdga": 39562,
+    "name": "Jason Sosnowski",
+    "rating": 991
+   },
+   {
+    "pdga": 40128,
+    "name": "Kyle Williams",
+    "rating": 1006
+   },
+   {
+    "pdga": 41220,
+    "name": "Nate Metzler",
+    "rating": 1006
+   },
+   {
+    "pdga": 41760,
+    "name": "Kevin Jones",
+    "rating": 1009
+   },
+   {
+    "pdga": 43762,
+    "name": "Jake Hebenheimer",
+    "rating": 1025
+   },
+   {
+    "pdga": 43834,
+    "name": "John Jones",
+    "rating": 998
+   },
+   {
+    "pdga": 44382,
+    "name": "Anthony Barela",
+    "rating": 1038
+   },
+   {
+    "pdga": 44512,
+    "name": "Corey Ellis",
+    "rating": 1031
+   },
+   {
+    "pdga": 44800,
+    "name": "Nate Corder",
+    "rating": 989
+   },
+   {
+    "pdga": 45971,
+    "name": "Calvin Heimburg",
+    "rating": 1052
+   },
+   {
+    "pdga": 46192,
+    "name": "Xaelen Nash",
+    "rating": 1025
+   },
+   {
+    "pdga": 47472,
+    "name": "Emerson Keith",
+    "rating": 1026
+   },
+   {
+    "pdga": 47589,
+    "name": "Nick Schultz",
+    "rating": 1000
+   },
+   {
+    "pdga": 48346,
+    "name": "Drew Gibson",
+    "rating": 1024
+   },
+   {
+    "pdga": 48950,
+    "name": "Matt Bell",
+    "rating": 1013
+   },
+   {
+    "pdga": 49225,
+    "name": "George Beno",
+    "rating": 992
+   },
+   {
+    "pdga": 49885,
+    "name": "G.T. Hancock",
+    "rating": 1022
+   },
+   {
+    "pdga": 50401,
+    "name": "Chris Clemons",
+    "rating": 1017
+   },
+   {
+    "pdga": 50670,
+    "name": "Isaac Robinson",
+    "rating": 1048
+   },
+   {
+    "pdga": 50671,
+    "name": "Ezra Robinson",
+    "rating": 1034
+   },
+   {
+    "pdga": 51685,
+    "name": "Randon Latta",
+    "rating": 1001
+   },
+   {
+    "pdga": 51894,
+    "name": "Alex Anderson",
+    "rating": 992
+   },
+   {
+    "pdga": 53332,
+    "name": "Tim Barham",
+    "rating": 1019
+   },
+   {
+    "pdga": 54049,
+    "name": "Austin Turner",
+    "rating": 1030
+   },
+   {
+    "pdga": 54106,
+    "name": "Thomas Earhart",
+    "rating": 1020
+   },
+   {
+    "pdga": 54302,
+    "name": "Andrew Martin",
+    "rating": 1010
+   },
+   {
+    "pdga": 56555,
+    "name": "Noah Meintsma",
+    "rating": 1022
+   },
+   {
+    "pdga": 57365,
+    "name": "Adam Hammes",
+    "rating": 1039
+   },
+   {
+    "pdga": 57425,
+    "name": "Sias Elmore",
+    "rating": 1009
+   },
+   {
+    "pdga": 58320,
+    "name": "Andrew Fish",
+    "rating": 1002
+   },
+   {
+    "pdga": 58923,
+    "name": "Jesse Nieminen",
+    "rating": 1031
+   },
+   {
+    "pdga": 58926,
+    "name": "Joona Heinänen",
+    "rating": 1028
+   },
+   {
+    "pdga": 59419,
+    "name": "Luke Samson",
+    "rating": 1014
+   },
+   {
+    "pdga": 59635,
+    "name": "Väinö Mäkelä",
+    "rating": 1030
+   },
+   {
+    "pdga": 60259,
+    "name": "Harper Thompson",
+    "rating": 1025
+   },
+   {
+    "pdga": 60435,
+    "name": "Ian Burchett",
+    "rating": 1014
+   },
+   {
+    "pdga": 62088,
+    "name": "Tee Vetne",
+    "rating": 1000
+   },
+   {
+    "pdga": 62467,
+    "name": "Chris Dickerson",
+    "rating": 1043
+   },
+   {
+    "pdga": 63765,
+    "name": "Andrew Presnell",
+    "rating": 1029
+   },
+   {
+    "pdga": 65266,
+    "name": "Zach Arlinghaus",
+    "rating": 1021
+   },
+   {
+    "pdga": 65715,
+    "name": "Tuomas Hyytiäinen",
+    "rating": 1016
+   },
+   {
+    "pdga": 67172,
+    "name": "Trevon Crowe",
+    "rating": 997
+   },
+   {
+    "pdga": 68237,
+    "name": "Jakub Knápek",
+    "rating": 1022
+   },
+   {
+    "pdga": 68286,
+    "name": "Nathan Queen",
+    "rating": 1020
+   },
+   {
+    "pdga": 68815,
+    "name": "Jamie Kiep",
+    "rating": 1019
+   },
+   {
+    "pdga": 68986,
+    "name": "Emmanuel Torres",
+    "rating": 1023
+   },
+   {
+    "pdga": 72844,
+    "name": "Mason Ford",
+    "rating": 1035
+   },
+   {
+    "pdga": 74823,
+    "name": "Trevor Dominy",
+    "rating": 993
+   },
+   {
+    "pdga": 75412,
+    "name": "Gannon Buhr",
+    "rating": 1062
+   },
+   {
+    "pdga": 75590,
+    "name": "Andrew Marwede",
+    "rating": 1037
+   },
+   {
+    "pdga": 76456,
+    "name": "Daniel Davidsson",
+    "rating": 1036
+   },
+   {
+    "pdga": 76669,
+    "name": "Albert Tamm",
+    "rating": 1020
+   },
+   {
+    "pdga": 78268,
+    "name": "Charlie Moore",
+    "rating": 1005
+   },
+   {
+    "pdga": 78817,
+    "name": "Sullivan Tipton",
+    "rating": 1041
+   },
+   {
+    "pdga": 79047,
+    "name": "Silas Schultz",
+    "rating": 1033
+   },
+   {
+    "pdga": 79748,
+    "name": "Cole Redalen",
+    "rating": 1038
+   },
+   {
+    "pdga": 80331,
+    "name": "Gavin Babcock",
+    "rating": 1038
+   },
+   {
+    "pdga": 80858,
+    "name": "Matias Kalaoja",
+    "rating": 1002
+   },
+   {
+    "pdga": 80904,
+    "name": "Thomas Tomaselli",
+    "rating": 1002
+   },
+   {
+    "pdga": 81739,
+    "name": "Casey White",
+    "rating": 1036
+   },
+   {
+    "pdga": 82297,
+    "name": "Lauri Lehtinen",
+    "rating": 1035
+   },
+   {
+    "pdga": 85132,
+    "name": "Kyle Klein",
+    "rating": 1036
+   },
+   {
+    "pdga": 85850,
+    "name": "Thomas Gilbert",
+    "rating": 1027
+   },
+   {
+    "pdga": 86291,
+    "name": "Michael Babbitt",
+    "rating": 1008
+   },
+   {
+    "pdga": 87143,
+    "name": "Bo McLaughlin",
+    "rating": 1018
+   },
+   {
+    "pdga": 88212,
+    "name": "Raven Newsom",
+    "rating": 1030
+   },
+   {
+    "pdga": 89394,
+    "name": "Evan Scott",
+    "rating": 1028
+   },
+   {
+    "pdga": 89460,
+    "name": "Wyatt Mahoney",
+    "rating": 1021
+   },
+   {
+    "pdga": 89959,
+    "name": "Ty Love",
+    "rating": 1024
+   },
+   {
+    "pdga": 90439,
+    "name": "Lucas Oberholtzer Hess",
+    "rating": 1020
+   },
+   {
+    "pdga": 91249,
+    "name": "Niklas Anttila",
+    "rating": 1042
+   },
+   {
+    "pdga": 91397,
+    "name": "Clay Edwards",
+    "rating": 1023
+   },
+   {
+    "pdga": 91543,
+    "name": "Miles Sayer",
+    "rating": 1013
+   },
+   {
+    "pdga": 91925,
+    "name": "Jakub Semerád",
+    "rating": 1028
+   },
+   {
+    "pdga": 94844,
+    "name": "Elijah Bickel",
+    "rating": 1023
+   },
+   {
+    "pdga": 94883,
+    "name": "Rico Garcia",
+    "rating": 1000
+   },
+   {
+    "pdga": 96512,
+    "name": "Robert Burridge",
+    "rating": 1022
+   },
+   {
+    "pdga": 97115,
+    "name": "Kevin Kiefer III",
+    "rating": 1022
+   },
+   {
+    "pdga": 98091,
+    "name": "Alden Harris",
+    "rating": 1019
+   },
+   {
+    "pdga": 98130,
+    "name": "Dennis Augustsson",
+    "rating": 1019
+   },
+   {
+    "pdga": 98161,
+    "name": "Justin Rosak",
+    "rating": 996
+   },
+   {
+    "pdga": 98164,
+    "name": "Garett Everson",
+    "rating": 1015
+   },
+   {
+    "pdga": 98722,
+    "name": "Jake Monn",
+    "rating": 1028
+   },
+   {
+    "pdga": 99092,
+    "name": "Frank Smith",
+    "rating": 1012
+   },
+   {
+    "pdga": 99153,
+    "name": "Noah Fiveash",
+    "rating": 983
+   },
+   {
+    "pdga": 99246,
+    "name": "Aidan Scott",
+    "rating": 1026
+   },
+   {
+    "pdga": 99648,
+    "name": "Connor O'Reilly",
+    "rating": 1014
+   },
+   {
+    "pdga": 100061,
+    "name": "Alexander Krause",
+    "rating": 1016
+   },
+   {
+    "pdga": 101197,
+    "name": "Zachary Nash",
+    "rating": 1035
+   },
+   {
+    "pdga": 101574,
+    "name": "Evan Smith",
+    "rating": 1043
+   },
+   {
+    "pdga": 101944,
+    "name": "Caleb Bruce",
+    "rating": 1006
+   },
+   {
+    "pdga": 102119,
+    "name": "Luke Taylor",
+    "rating": 1041
+   },
+   {
+    "pdga": 103693,
+    "name": "Tomáš Mozola",
+    "rating": 993
+   },
+   {
+    "pdga": 104894,
+    "name": "Adrian Chevalier",
+    "rating": 1007
+   },
+   {
+    "pdga": 107074,
+    "name": "Collin Thompson",
+    "rating": 996
+   },
+   {
+    "pdga": 107197,
+    "name": "Mauri Villmann",
+    "rating": 1042
+   },
+   {
+    "pdga": 107567,
+    "name": "Teemu Lampainen",
+    "rating": 1028
+   },
+   {
+    "pdga": 110035,
+    "name": "Benjamin Vansumeren",
+    "rating": 990
+   },
+   {
+    "pdga": 110462,
+    "name": "Nestori Tuhkanen",
+    "rating": 1029
+   },
+   {
+    "pdga": 115713,
+    "name": "Titus Davie",
+    "rating": 1014
+   },
+   {
+    "pdga": 116137,
+    "name": "Hjalmar Fredriksson",
+    "rating": 1018
+   },
+   {
+    "pdga": 116692,
+    "name": "David Perry",
+    "rating": 1022
+   },
+   {
+    "pdga": 118179,
+    "name": "Levi Stout",
+    "rating": 1020
+   },
+   {
+    "pdga": 118412,
+    "name": "Kyle Holt",
+    "rating": 1010
+   },
+   {
+    "pdga": 118426,
+    "name": "Andrew Miranda",
+    "rating": 1021
+   },
+   {
+    "pdga": 118469,
+    "name": "Nathaniel Weaver",
+    "rating": 980
+   },
+   {
+    "pdga": 119504,
+    "name": "Gavin Phillips",
+    "rating": 1018
+   },
+   {
+    "pdga": 119628,
+    "name": "Arvid Håkansson",
+    "rating": 1021
+   },
+   {
+    "pdga": 119794,
+    "name": "Jonathan Borzick",
+    "rating": 1031
+   },
+   {
+    "pdga": 120743,
+    "name": "Axel Olson",
+    "rating": 1011
+   },
+   {
+    "pdga": 121715,
+    "name": "Ezra Aderhold",
+    "rating": 1022
+   },
+   {
+    "pdga": 122140,
+    "name": "Stephen Becker",
+    "rating": 994
+   },
+   {
+    "pdga": 122356,
+    "name": "Joseph Anderson",
+    "rating": 1032
+   },
+   {
+    "pdga": 123741,
+    "name": "Bennett Doemland",
+    "rating": 996
+   },
+   {
+    "pdga": 124016,
+    "name": "Hayden Carroll",
+    "rating": 1006
+   },
+   {
+    "pdga": 124607,
+    "name": "Gillis MacDougall",
+    "rating": 1007
+   },
+   {
+    "pdga": 126080,
+    "name": "Nathan Miske",
+    "rating": 994
+   },
+   {
+    "pdga": 127048,
+    "name": "Nick Robertson",
+    "rating": 1010
+   },
+   {
+    "pdga": 127492,
+    "name": "Aviel Gomez",
+    "rating": 1026
+   },
+   {
+    "pdga": 128278,
+    "name": "Calvin Delamere",
+    "rating": 996
+   },
+   {
+    "pdga": 128836,
+    "name": "Jacky Chen",
+    "rating": 1019
+   },
+   {
+    "pdga": 129332,
+    "name": "David Fleck",
+    "rating": 1009
+   },
+   {
+    "pdga": 129632,
+    "name": "Lucas Wright",
+    "rating": 999
+   },
+   {
+    "pdga": 129963,
+    "name": "Braeden Sides",
+    "rating": 1026
+   },
+   {
+    "pdga": 130709,
+    "name": "Colin Bryant",
+    "rating": 1033
+   },
+   {
+    "pdga": 130724,
+    "name": "Austen Bates",
+    "rating": 1027
+   },
+   {
+    "pdga": 131330,
+    "name": "Sylus Williams",
+    "rating": 1013
+   },
+   {
+    "pdga": 131546,
+    "name": "Harry Chace",
+    "rating": 1024
+   },
+   {
+    "pdga": 132521,
+    "name": "Paul Krans",
+    "rating": 1036
+   },
+   {
+    "pdga": 134643,
+    "name": "Gavin King",
+    "rating": 1004
+   },
+   {
+    "pdga": 135125,
+    "name": "Fritiof Fagergren",
+    "rating": 1018
+   },
+   {
+    "pdga": 136325,
+    "name": "Rasmus Saukkoriipi",
+    "rating": 1018
+   },
+   {
+    "pdga": 138089,
+    "name": "Dallas Garber",
+    "rating": 1021
+   },
+   {
+    "pdga": 138103,
+    "name": "Matthew Alexander",
+    "rating": 1006
+   },
+   {
+    "pdga": 139058,
+    "name": "James Corder",
+    "rating": 1004
+   },
+   {
+    "pdga": 139228,
+    "name": "Chandler Kramer",
+    "rating": 1025
+   },
+   {
+    "pdga": 140065,
+    "name": "Tanner Boggs",
+    "rating": 1009
+   },
+   {
+    "pdga": 143853,
+    "name": "Elijah Rider Brandt",
+    "rating": 1010
+   },
+   {
+    "pdga": 144929,
+    "name": "Ryan Monn",
+    "rating": 1021
+   },
+   {
+    "pdga": 145206,
+    "name": "Calvin Lonnquist",
+    "rating": 1014
+   },
+   {
+    "pdga": 145729,
+    "name": "Aidan Hosler",
+    "rating": 1000
+   },
+   {
+    "pdga": 146679,
+    "name": "Colton Lawless",
+    "rating": 1001
+   },
+   {
+    "pdga": 146804,
+    "name": "Kevin Fodrey",
+    "rating": 1002
+   },
+   {
+    "pdga": 147951,
+    "name": "Guthrie Collins",
+    "rating": 1007
+   },
+   {
+    "pdga": 149546,
+    "name": "Jesse Longenecker",
+    "rating": 1027
+   },
+   {
+    "pdga": 151146,
+    "name": "Lucas Carmichael",
+    "rating": 1006
+   },
+   {
+    "pdga": 152023,
+    "name": "Ellert Georgsson",
+    "rating": 994
+   },
+   {
+    "pdga": 152206,
+    "name": "Jedd Berger",
+    "rating": 1011
+   },
+   {
+    "pdga": 153363,
+    "name": "Jaden Rye",
+    "rating": 1029
+   },
+   {
+    "pdga": 153763,
+    "name": "Ethan Hine",
+    "rating": 991
+   },
+   {
+    "pdga": 154511,
+    "name": "Kyle Krieckhaus",
+    "rating": 1016
+   },
+   {
+    "pdga": 156874,
+    "name": "Matthew Henderson",
+    "rating": 995
+   },
+   {
+    "pdga": 158640,
+    "name": "Rainers Balodis",
+    "rating": 1029
+   },
+   {
+    "pdga": 159317,
+    "name": "Otto Mäkinen",
+    "rating": 1021
+   },
+   {
+    "pdga": 161625,
+    "name": "Edgars Saulitis",
+    "rating": 994
+   },
+   {
+    "pdga": 163272,
+    "name": "Blaz Petrovic",
+    "rating": 969
+   },
+   {
+    "pdga": 163350,
+    "name": "Carson Ham",
+    "rating": 1004
+   },
+   {
+    "pdga": 165234,
+    "name": "Herbert Grünsteidl",
+    "rating": 957
+   },
+   {
+    "pdga": 165881,
+    "name": "Parker Austin",
+    "rating": 1005
+   },
+   {
+    "pdga": 166025,
+    "name": "Matt Doughten",
+    "rating": 991
+   },
+   {
+    "pdga": 167837,
+    "name": "Elijah Garrison",
+    "rating": 1003
+   },
+   {
+    "pdga": 170839,
+    "name": "J.J. Campbell",
+    "rating": 1013
+   },
+   {
+    "pdga": 174343,
+    "name": "Ben Holding",
+    "rating": 982
+   },
+   {
+    "pdga": 177435,
+    "name": "Joshua Bizzle",
+    "rating": 1007
+   },
+   {
+    "pdga": 180216,
+    "name": "Ryan Jewell",
+    "rating": 1003
+   },
+   {
+    "pdga": 182651,
+    "name": "Tim Alderson",
+    "rating": 994
+   },
+   {
+    "pdga": 186647,
+    "name": "Brock Tennyson",
+    "rating": 983
+   },
+   {
+    "pdga": 188651,
+    "name": "Henry Schlabach",
+    "rating": 1007
+   },
+   {
+    "pdga": 189000,
+    "name": "Andrew Zinck",
+    "rating": 998
+   },
+   {
+    "pdga": 190731,
+    "name": "Evan Walker",
+    "rating": 1028
+   },
+   {
+    "pdga": 198236,
+    "name": "Alan Vazquez",
+    "rating": 1004
+   },
+   {
+    "pdga": 202561,
+    "name": "ZACH PETERS",
+    "rating": 1007
+   },
+   {
+    "pdga": 203055,
+    "name": "Yehuda Shenvald",
+    "rating": 962
+   },
+   {
+    "pdga": 206380,
+    "name": "Chris Kelley",
+    "rating": 993
+   },
+   {
+    "pdga": 210677,
+    "name": "Oskar Żuchliński",
+    "rating": 981
+   },
+   {
+    "pdga": 216216,
+    "name": "Giorgio Diena",
+    "rating": 976
+   },
+   {
+    "pdga": 218255,
+    "name": "Ross Kimbrell",
+    "rating": 985
+   },
+   {
+    "pdga": 235458,
+    "name": "Amos Kauder",
+    "rating": 1003
+   },
+   {
+    "pdga": 251455,
+    "name": "Jaime Velasquez",
+    "rating": 958
+   },
+   {
+    "pdga": 258421,
+    "name": "Daniel Vasquez",
+    "rating": 968
+   }
+  ],
+  "FPO": [
+   {
+    "pdga": 3024,
+    "name": "Chris O'Cleary",
+    "rating": 914
+   },
+   {
+    "pdga": 3090,
+    "name": "Elaine King",
+    "rating": 892
+   },
+   {
+    "pdga": 15354,
+    "name": "Jennifer Allen",
+    "rating": 966
+   },
+   {
+    "pdga": 27832,
+    "name": "Kona Star Montgomery",
+    "rating": 950
+   },
+   {
+    "pdga": 29190,
+    "name": "Paige Pierce",
+    "rating": 963
+   },
+   {
+    "pdga": 32654,
+    "name": "Lisa Fajkus",
+    "rating": 959
+   },
+   {
+    "pdga": 32917,
+    "name": "Rebecca Cox",
+    "rating": 949
+   },
+   {
+    "pdga": 34563,
+    "name": "Sarah Hokom",
+    "rating": 947
+   },
+   {
+    "pdga": 36307,
+    "name": "Amanda Branch",
+    "rating": 887
+   },
+   {
+    "pdga": 44184,
+    "name": "Catrina Allen",
+    "rating": 968
+   },
+   {
+    "pdga": 48976,
+    "name": "Ohn Scoggins",
+    "rating": 989
+   },
+   {
+    "pdga": 50656,
+    "name": "Jessica Gurthie",
+    "rating": 956
+   },
+   {
+    "pdga": 51277,
+    "name": "Holly Finley",
+    "rating": 937
+   },
+   {
+    "pdga": 58303,
+    "name": "Sai Ananda",
+    "rating": 959
+   },
+   {
+    "pdga": 59227,
+    "name": "Henna Blomroos",
+    "rating": 968
+   },
+   {
+    "pdga": 59431,
+    "name": "Madison Walker",
+    "rating": 953
+   },
+   {
+    "pdga": 62879,
+    "name": "Valerie Mandujano",
+    "rating": 972
+   },
+   {
+    "pdga": 62880,
+    "name": "Alexis Mandujano",
+    "rating": 960
+   },
+   {
+    "pdga": 63257,
+    "name": "Maria Oliva",
+    "rating": 920
+   },
+   {
+    "pdga": 64927,
+    "name": "Eveliina Salonen",
+    "rating": 988
+   },
+   {
+    "pdga": 65489,
+    "name": "Lauren Butler",
+    "rating": 912
+   },
+   {
+    "pdga": 66599,
+    "name": "Heidi Laine",
+    "rating": 963
+   },
+   {
+    "pdga": 71262,
+    "name": "Erika Stinchcomb",
+    "rating": 922
+   },
+   {
+    "pdga": 75029,
+    "name": "Cynthia Ricciotti",
+    "rating": 923
+   },
+   {
+    "pdga": 78232,
+    "name": "Tiger Borth",
+    "rating": 899
+   },
+   {
+    "pdga": 79233,
+    "name": "Cadence Burge",
+    "rating": 966
+   },
+   {
+    "pdga": 80935,
+    "name": "Lindsey Maas",
+    "rating": 905
+   },
+   {
+    "pdga": 85484,
+    "name": "Anneli Tõugjas-Männiste",
+    "rating": 959
+   },
+   {
+    "pdga": 85942,
+    "name": "Missy Gannon",
+    "rating": 986
+   },
+   {
+    "pdga": 87094,
+    "name": "Rose Shertick",
+    "rating": 921
+   },
+   {
+    "pdga": 99455,
+    "name": "Kat Mertsch",
+    "rating": 965
+   },
+   {
+    "pdga": 103743,
+    "name": "Karen Martel",
+    "rating": 923
+   },
+   {
+    "pdga": 104187,
+    "name": "Macie Velediaz",
+    "rating": 952
+   },
+   {
+    "pdga": 104314,
+    "name": "Violet Main",
+    "rating": 940
+   },
+   {
+    "pdga": 107335,
+    "name": "Silva Saarinen",
+    "rating": 991
+   },
+   {
+    "pdga": 109996,
+    "name": "Anniken Kristiansen Steen",
+    "rating": 966
+   },
+   {
+    "pdga": 111487,
+    "name": "Emily Weatherman",
+    "rating": 960
+   },
+   {
+    "pdga": 112346,
+    "name": "Caryn Ballou",
+    "rating": 853
+   },
+   {
+    "pdga": 112647,
+    "name": "Hanna Huynh",
+    "rating": 961
+   },
+   {
+    "pdga": 115503,
+    "name": "Olivia Kindstedt",
+    "rating": 949
+   },
+   {
+    "pdga": 120770,
+    "name": "Jami Gust",
+    "rating": 884
+   },
+   {
+    "pdga": 130187,
+    "name": "Kat Johnson",
+    "rating": 915
+   },
+   {
+    "pdga": 130342,
+    "name": "Chantel Budinsky",
+    "rating": 956
+   },
+   {
+    "pdga": 133547,
+    "name": "Holyn Handley",
+    "rating": 984
+   },
+   {
+    "pdga": 138272,
+    "name": "Raven Klein",
+    "rating": 942
+   },
+   {
+    "pdga": 139109,
+    "name": "Leah Tsinajinnie",
+    "rating": 926
+   },
+   {
+    "pdga": 139738,
+    "name": "Megan Dophal",
+    "rating": 908
+   },
+   {
+    "pdga": 140947,
+    "name": "Nina Bennett",
+    "rating": 949
+   },
+   {
+    "pdga": 142259,
+    "name": "Katheryn Maloney",
+    "rating": 901
+   },
+   {
+    "pdga": 142354,
+    "name": "Alexis Kerman",
+    "rating": 926
+   },
+   {
+    "pdga": 143423,
+    "name": "Ember Simonis",
+    "rating": 916
+   },
+   {
+    "pdga": 144112,
+    "name": "Ella Hansen",
+    "rating": 977
+   },
+   {
+    "pdga": 144791,
+    "name": "Emily Yale",
+    "rating": 898
+   },
+   {
+    "pdga": 146137,
+    "name": "Dani K. Hart",
+    "rating": 947
+   },
+   {
+    "pdga": 146304,
+    "name": "MJ Gager",
+    "rating": 948
+   },
+   {
+    "pdga": 149548,
+    "name": "VicToria Scott",
+    "rating": 889
+   },
+   {
+    "pdga": 152191,
+    "name": "Kelley Foster",
+    "rating": 936
+   },
+   {
+    "pdga": 154098,
+    "name": "Ariel Walker",
+    "rating": 927
+   },
+   {
+    "pdga": 156781,
+    "name": "Audrey Wicklander",
+    "rating": 894
+   },
+   {
+    "pdga": 157471,
+    "name": "Nid Ovathanasin",
+    "rating": 933
+   },
+   {
+    "pdga": 160103,
+    "name": "Jacquelyn DeLude",
+    "rating": 877
+   },
+   {
+    "pdga": 161918,
+    "name": "Addison Woodard",
+    "rating": 956
+   },
+   {
+    "pdga": 162896,
+    "name": "Therese Cuevas",
+    "rating": 939
+   },
+   {
+    "pdga": 164788,
+    "name": "Alecia Hinkson",
+    "rating": 926
+   },
+   {
+    "pdga": 165652,
+    "name": "Ceci Vollbrecht",
+    "rating": 896
+   },
+   {
+    "pdga": 168863,
+    "name": "Trinity Bryant",
+    "rating": 925
+   },
+   {
+    "pdga": 176242,
+    "name": "Morgan Lynds",
+    "rating": 934
+   },
+   {
+    "pdga": 176243,
+    "name": "Jordan Lynds",
+    "rating": 942
+   },
+   {
+    "pdga": 176481,
+    "name": "Karissa Dedmon",
+    "rating": 921
+   },
+   {
+    "pdga": 181772,
+    "name": "Ida Emilie Nesse",
+    "rating": 945
+   },
+   {
+    "pdga": 184609,
+    "name": "Elva-Kate Preston",
+    "rating": 914
+   },
+   {
+    "pdga": 184736,
+    "name": "Jennifer Smiley",
+    "rating": 929
+   },
+   {
+    "pdga": 185057,
+    "name": "Josefine Johansson",
+    "rating": 930
+   },
+   {
+    "pdga": 193215,
+    "name": "Lexi Marx",
+    "rating": 930
+   },
+   {
+    "pdga": 195549,
+    "name": "Kylie Kohut",
+    "rating": 940
+   },
+   {
+    "pdga": 198446,
+    "name": "Eliezra Midtlyng",
+    "rating": 952
+   },
+   {
+    "pdga": 202571,
+    "name": "Elizabete Pēkšena",
+    "rating": 938
+   },
+   {
+    "pdga": 208576,
+    "name": "Rebecca Don",
+    "rating": 962
+   },
+   {
+    "pdga": 210972,
+    "name": "Kristýna Jurčíková",
+    "rating": 968
+   },
+   {
+    "pdga": 214417,
+    "name": "Fleur Verberk",
+    "rating": 907
+   },
+   {
+    "pdga": 215495,
+    "name": "Kelsey Martin",
+    "rating": 877
+   },
+   {
+    "pdga": 216558,
+    "name": "Iida Lehtomäki",
+    "rating": 959
+   },
+   {
+    "pdga": 223975,
+    "name": "Laura Tatiana Niño Carranza",
+    "rating": 876
+   },
+   {
+    "pdga": 224238,
+    "name": "Julia Fors",
+    "rating": 966
+   },
+   {
+    "pdga": 229526,
+    "name": "Sintija Klezberga",
+    "rating": 958
+   },
+   {
+    "pdga": 231650,
+    "name": "Tailey Rowley",
+    "rating": 913
+   },
+   {
+    "pdga": 232722,
+    "name": "Julia Hauch",
+    "rating": 917
+   },
+   {
+    "pdga": 238187,
+    "name": "Ann Deputy",
+    "rating": 924
+   },
+   {
+    "pdga": 255962,
+    "name": "Samantha Zaborowski",
+    "rating": 901
+   },
+   {
+    "pdga": 256846,
+    "name": "Lea Tomas",
+    "rating": 889
+   },
+   {
+    "pdga": 277832,
+    "name": "Chandler Reigh",
+    "rating": 939
+   },
+   {
+    "pdga": 302765,
+    "name": "Grace Wilson",
+    "rating": 891
+   }
+  ]
+ }
+}

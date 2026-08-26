@@ -67,7 +67,12 @@ def check_event(tid: int, division: str) -> list[str]:
             divs = {d.get("Division") for d in (live_api.fetch_event(tid).get("Divisions") or [])}
         except Exception:  # noqa: BLE001 - a failed fetch is not a data violation
             return out
-        if division in divs and not live_api.registered_roster(tid, division):
+        # Deliberately the two LIVE sources, not registered_roster — that now
+        # falls back to a committed last-known-good roster, which is exactly
+        # what keeps the forecast sane while PDGA is dark and exactly what
+        # must not be allowed to report that PDGA is back.
+        dark = not (live_api._live_roster(tid, division) or live_api.page_registrants(tid))
+        if division in divs and dark:
             out.append(f"{tid} {division} no-field")
             print(f"  invariant: event is live but neither scores nor a registration list are readable ({tid} {division})")
         return out

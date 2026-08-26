@@ -124,3 +124,21 @@ def test_a_division_pdga_does_not_carry_is_not_a_violation(fake_api):
     fake_api.event(1, event_payload("USWDGC", 4, [("FPO", 1)]))
     fake_api.round(1, "FPO", 1, round_payload([row(9001, "A", 950, played=0)]))
     assert invariants.check_event(1, "MPO") == []
+
+
+def test_a_cached_roster_does_not_report_that_pdga_is_back(fake_api, monkeypatch, tmp_path):
+    """The last-known-good roster keeps the forecast sane while PDGA is dark.
+    It must not also silence the alarm saying so — the check reads the two live
+    sources, not the fallback."""
+    path = tmp_path / "known_fields.json"
+    path.write_text('{"1": {"MPO": [{"pdga": 9001, "name": "A", "rating": 1010}]}}',
+                    encoding="utf-8")
+    monkeypatch.setattr(live_api, "KNOWN_FIELDS", path)
+    monkeypatch.setattr(live_api, "_known_memo", None)
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": []}
+
+    assert live_api.registered_roster(1, "MPO")          # fallback is working
+    assert invariants.check_event(1, "MPO") == ["1 MPO no-field"]   # and still says so
