@@ -21,7 +21,7 @@ permissions:
   pages: write
 
 concurrency:
-  group: refresh-forecast   # never race the live loop's own publish
+  group: refresh-forecast-v2   # never race the live loop's own publish
   cancel-in-progress: false
 
 jobs:
