@@ -405,3 +405,31 @@ def test_a_bare_list_of_rows_is_read_as_the_sheet(fake_api):
 
     field = live_api.live_field(1, "MPO")
     assert field is not None and field[1]["cur"] == -4.0
+
+
+def test_an_emptied_roster_falls_back_to_the_event_page(fake_api, fake_pages):
+    """Pro Worlds (2026-08-26): the round-1 sheet carried 208 entrants for a
+    week, then went empty when the TD re-staged the event. Live scoring is not
+    the only list PDGA publishes — the event page has one too, and the
+    playoffs have always read it. Reading "no scores" as "no field" put the
+    whole roster on participation rates on the morning of the event."""
+    entrants = list(range(9001, 9021))
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": []}
+    fake_pages.signups(1, entrants)
+
+    roster = live_api.registered_roster(1, "MPO")
+    assert set(roster) == set(entrants)
+    assert all(r["rating"] is None for r in roster.values())  # page carries none
+
+
+def test_live_scoring_still_wins_over_the_event_page(fake_api, fake_pages):
+    """The fallback is a fallback: a staged roster is the authoritative list
+    and must not be widened by whatever the page happens to show."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, round_payload([row(9001, "A", 1030, played=0)]))
+    fake_pages.signups(1, list(range(9001, 9021)))
+
+    assert set(live_api.registered_roster(1, "MPO")) == {9001}

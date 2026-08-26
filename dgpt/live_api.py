@@ -364,7 +364,35 @@ def doubles_teams(tournament_id: int, division: str) -> dict[int, dict]:
 def registered_roster(tournament_id: int, division: str) -> dict[int, dict]:
     """Name + rating for everyone on an event's registration list (PDGA Live
     preloads rosters well before play). Used to give first-start players a
-    row before their debut event."""
+    row before their debut event.
+
+    Falls back to the public event page when live scoring carries no roster,
+    the same two-source order registration_list already uses for the playoffs.
+    Pro Worlds needed it: the round-1 sheet held 208 MPO / 92 FPO entrants for
+    a week, then went empty when the TD re-staged the event for live scoring
+    (2026-08-26). Reading that as "no field" put the whole roster back on
+    participation rates on the morning of the event — a 114-player smear where
+    nobody was excluded and nobody was certain — and dropped the 71 entrants
+    with no standings row off the site entirely.
+
+    Page entries carry no name or rating, and no division: callers already
+    scope by division (play_probabilities iterates a division roster,
+    _build_roster requires a division rating), so an entrant from the other
+    division simply never matches.
+    """
+    return (_live_roster(tournament_id, division)
+            or {p: {"name": None, "rating": None}
+                for p in page_registrants(tournament_id)})
+
+
+def _live_roster(tournament_id: int, division: str) -> dict[int, dict]:
+    """PDGA Live's own roster: empty until a TD stages the event, and empty
+    again if they re-stage it. Kept separate from registered_roster because
+    registration_list reads THIS one — a page list is explicitly not the final
+    field ("real but still growing"), and letting the fallback reach
+    registration_list would return one as staged=True and close a playoff
+    field the moment its waves opened.
+    """
     try:
         scores = fetch_round(tournament_id, division, 1).get("scores") or []
     except (urllib.error.HTTPError, KeyError):
@@ -446,7 +474,7 @@ def registration_list(tournament_id: int, division: str) -> tuple[dict[int, dict
     None means neither source published a list, which is distinct from an
     empty one: it is the signal to keep the pre-signup assumption entirely.
     """
-    roster = registered_roster(tournament_id, division)
+    roster = _live_roster(tournament_id, division)
     if roster:
         return roster, True
     nums = page_registrants(tournament_id)
