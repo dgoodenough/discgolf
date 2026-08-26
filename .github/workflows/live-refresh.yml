@@ -110,7 +110,13 @@ jobs:
             if out=$(env -u GITHUB_OUTPUT python -m dgpt.livecheck 2>&1); then
               status=$(printf '%s\n' "$out" | tail -n1)
             else
-              printf '%s\n' "$out" | tail -n5
+              # Enough of the traceback to diagnose it from the run log alone.
+              # At 5 lines the Worlds empty-sheet crash (2026-08-26) showed
+              # only the raising line and the exception — no tid, no division,
+              # no round, nothing about which of livecheck's many fetches it
+              # was. A live-scoring crash is exactly when nobody has time to
+              # re-derive that by hand.
+              printf '%s\n' "$out" | tail -n40
               fail_step "livecheck crashed"
               sleep 300; continue
             fi

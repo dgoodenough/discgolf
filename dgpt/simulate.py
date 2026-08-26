@@ -47,7 +47,13 @@ FIELD_SIZE = {"MPO": 32, "FPO": 20}
 
 
 MAX_HIST_RANK = 50   # per-position histogram depth for the app
-LIVE_CAP = 130       # place-histogram depth for a live event's projection
+# Place-histogram depth for a live event's projection. It has to cover the
+# whole field: every place past it collapses into the last bucket, so a player
+# the model has finishing 170th of 200 reads back as 220th-capped — a
+# mean_place pinned to the cap and a mean_pts read off the curve at the wrong
+# depth. At 130 that was already short of Ledgestone's 156 MPO; Pro Worlds
+# runs ~200 across two courses.
+LIVE_CAP = 230
 
 
 @dataclass
@@ -87,7 +93,16 @@ class SimResult:
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
-    """Points indexed by place 1..size (0 index unused)."""
+    """Points indexed by place 1..size (0 index unused).
+
+    Past the published curve's last place the floor keeps being paid, exactly
+    as points.assign_points does when an event banks. Ledgestone 2026 was the
+    first field deep enough to prove that is the official behaviour (156 MPO;
+    StatMando paid 1.33 where the curve table stops at 144) and the banking
+    side was fixed then — but the simulation kept paying zero, so the model
+    predicts one number for a deep finish and the standings then record
+    another. Pro Worlds is the deepest field of the season by some way.
+    """
     vec = np.zeros(size + 2)
     if cls == "jomez":
         for place in range(1, size + 1):
@@ -97,6 +112,9 @@ def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
     for place, val in curve.items():
         if place <= size:
             vec[place] = val
+    deepest = max(curve)
+    if size > deepest:
+        vec[deepest + 1 : size + 1] = curve[deepest]
     return vec
 
 
@@ -707,6 +725,10 @@ class _Playin:
     entrants for 6 spots, 9 of them rostered and none near the Cup, while FPO
     drew 5 for 2 spots — all rostered, no outside field at all, and one of
     them (29th in the standings) at 77% to play their way in.
+
+    Once it has actually been played, `decided` replaces the race with the
+    result (see _playin_result) — the spots are won on the course, and after
+    that a probability is just a wrong answer that looks like a forecast.
     """
     ei: int                       # index of Worlds in `remaining`
     entered: np.ndarray           # (n,) rostered players in the play-in
@@ -714,12 +736,21 @@ class _Playin:
     spots: int
     rpps: float
     hits: np.ndarray              # (n,) sims in which the player advanced
+    decided: np.ndarray | None = None   # (n,) who actually won, once it's played
 
     def advance(self, ratings_arr: np.ndarray, c: int, rng: np.random.Generator) -> np.ndarray:
         """(c, n) mask of rostered entrants who win a Worlds spot."""
         n = ratings_arr.shape[0]
         ix = np.flatnonzero(self.entered)
         out = np.zeros((c, n), dtype=bool)
+        if self.decided is not None:
+            # Played: the result is a fact, not a race. Racing it anyway is
+            # not merely imprecise, it double-counts — the winners are already
+            # in the Worlds roster and drop out of `entered`, so the six spots
+            # get handed out a second time, to the players who just lost them.
+            out[:] = self.decided[None, :]
+            self.hits += self.decided * c
+            return out
         if ix.size == 0 or self.spots <= 0:
             return out
         field_rtg = np.concatenate([ratings_arr[ix], self.other_ratings])
@@ -778,7 +809,48 @@ def _build_playin(remaining: list[dict], roster: _Roster, division: str,
         ei=ei, entered=entered, other_ratings=np.array(others, dtype=float),
         spots=config.WORLDS_PLAYIN_SPOTS[division],
         rpps=RATING_PTS_PER_STROKE[division], hits=np.zeros(roster.n),
+        decided=_playin_result(division, roster, entered),
     )
+
+
+def _playin_result(division: str, roster: _Roster, entered: np.ndarray) -> np.ndarray | None:
+    """Who won a Worlds spot, or None while the play-in is still to be decided.
+
+    The play-in is played the day before Worlds, and nothing else in the
+    pipeline notices when it ends: the entry list it is built from stays
+    published, so the race would be re-run on every refresh for the rest of
+    the week. PDGA then updates the Worlds roster with the qualifiers, which
+    moves them out of `entered` (they read as directly qualified) and leaves
+    the LOSERS racing each other for six spots that no longer exist — the
+    model would put six eliminated players in the Worlds field and bank major
+    points for them.
+
+    Gated on event_complete rather than on the leaderboard, because
+    final_results happily returns a partial order mid-round and freezing the
+    overnight leaders as winners would be its own wrong answer. Anything
+    unconfirmed — no event payload, no rows, a fetch that failed — keeps the
+    race, which is the correct answer right up until the moment it isn't.
+
+    An all-False mask is a real result, not a failure: it means every winner
+    was already in the Worlds roster (or was never on ours), so the play-in
+    has nobody left to promote.
+    """
+    try:
+        if not live_api.event_complete(config.TID_WORLDS_PLAYIN, (division,)):
+            return None
+        results = live_api.final_results(config.TID_WORLDS_PLAYIN, division)
+    except Exception:  # noqa: BLE001 - unconfirmed is "keep racing", never a crash
+        return None
+    if not results:
+        return None
+    spots = config.WORLDS_PLAYIN_SPOTS[division]
+    won = np.zeros(roster.n, dtype=bool)
+    for r in results:
+        if 0 < int(r.get("place") or 0) <= spots:
+            i = roster.idx.get(r["pdga_number"])
+            if i is not None and entered[i]:
+                won[i] = True
+    return won
 
 
 # --------------------------------------------------------- the chunk loop

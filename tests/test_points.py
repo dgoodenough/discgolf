@@ -63,3 +63,25 @@ def test_season_total_per_class_caps():
     expected = sum(100.0 - i for i in range(10)) + 550.0 + 150.0 + 30.0
     assert points.season_total(results, "MPO") == pytest.approx(expected)
     assert config.COUNT_DGPT == 10 and config.COUNT_MAJOR == 2
+
+
+def test_the_curve_floor_is_paid_past_the_published_table():
+    """StatMando keeps paying the curve's last value to every finisher past
+    place 144 (Ledgestone 2026, 156 MPO). assign_points was fixed then; the
+    simulation and the client what-if kept paying zero, so the model would
+    predict one number for a deep Worlds finish and the standings record
+    another. All three now agree."""
+    from dgpt import export, simulate
+
+    banked = points.assign_points([150], "MPO", "major")[0]
+    assert banked > 0
+
+    vec = simulate._curve_vector("MPO", "major", 300)
+    assert vec[150] == pytest.approx(banked)
+    assert vec[300] == pytest.approx(banked)
+    assert vec[301] == 0.0        # past the field: "did not play", not a floor
+
+    exported = export.curve_vector("MPO", "major")
+    assert exported[149] == pytest.approx(banked)   # place 150
+    assert exported[-1] == pytest.approx(banked)
+    assert len(exported) >= 200    # deeper than the Pro Worlds field

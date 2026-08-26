@@ -16,6 +16,32 @@ from . import config, fields, points, schedule, simulate
 
 DOCS_DATA = config.REPO_ROOT / "docs" / "data"
 CUTLINE_SAMPLE = 25_000
+# Places covered by each event's exported points curve. The client what-if
+# reads a drawn place straight off it and scores anything past the end as
+# zero, so this has to outrun the deepest field on the calendar — Pro Worlds
+# runs ~200 — and it carries the curve's floor past place 144 for the same
+# reason simulate._curve_vector does.
+CURVE_DEPTH = 250
+
+
+def curve_vector(division: str, cls: str) -> list[float]:
+    """Points by place, 1..CURVE_DEPTH, for the client-side what-if.
+
+    Doubles is TEAM-place indexed: the sim runs it at team level and exports
+    field_size as the team count, so client draws index it directly like any
+    other event.
+
+    Past the published table's last place the floor keeps being paid, matching
+    points.assign_points and simulate._curve_vector — all three have to agree
+    or a deep finish is worth one number in the forecast and another in the
+    standings.
+    """
+    if cls == "jomez":
+        return [points.jomez_bonus(p) for p in range(1, CURVE_DEPTH + 1)]
+    curve = points.event_curve(division, cls)
+    deepest = max(curve)
+    return [curve.get(p, curve[deepest] if p > deepest else 0.0)
+            for p in range(1, CURVE_DEPTH + 1)]
 
 
 def export(res: simulate.SimResult, seed: int = 7) -> None:
@@ -25,19 +51,8 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
     live_tids = {row["tournament_id"] for row in schedule.live_events(sched)}
     n = len(res.names)
 
-    # per-place points curves for remaining events (trimmed; index 0 = 1st)
-    curves = {}
-    for ev in res.events_meta:
-        cls = ev["cls"]
-        if cls == "jomez":
-            vec = [points.jomez_bonus(p) for p in range(1, 151)]
-        else:
-            # doubles is TEAM-place indexed: the sim runs it at team level and
-            # exports field_size as the team count, so client draws index it
-            # directly like any other event
-            curve = points.event_curve(division, cls)
-            vec = [curve.get(p, 0.0) for p in range(1, 151)]
-        curves[ev["tid"]] = vec
+    # per-place points curves for remaining events (index 0 = 1st)
+    curves = {ev["tid"]: curve_vector(division, ev["cls"]) for ev in res.events_meta}
 
     rng = np.random.default_rng(seed)
     if len(res.cutline) > CUTLINE_SAMPLE:

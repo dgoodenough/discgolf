@@ -27,7 +27,17 @@ import sys
 from . import config, live_api, schedule
 
 MARKER = config.CACHE_DIR / "invariant_violations.txt"
-CUR_MIN, CUR_MAX = -45.0, 80.0  # event to-par outside this = wrong field parsed
+# Event to-par outside this = wrong field parsed. PER ROUND, because the bound
+# has to hold for a 4-round major as well as a 3-round elite stop: a flat
+# window sized for three rounds reads a legitimate fourth round as a
+# violation. Chosen so three rounds reproduces the old flat (-45, +80).
+#
+# The width is also the depth of the field, not just its length. A DGPT stop
+# is ~150 touring pros; Pro Worlds admits qualifiers rated a hundred points
+# below that, and the model's own arithmetic puts a 900-rated player in a
+# 1010-rated field around +15 a round before any bad luck at all — comfortably
+# past a flat +80 over four rounds, for a score that is entirely real.
+CUR_MIN_PER_ROUND, CUR_MAX_PER_ROUND = -15.0, 27.0
 REM_MAX = 6.0    # DGPT events run <= 5 rounds incl. finals; more = bad FinalRound math
 MAX_PAIRS = 5    # ordering violations reported per event/division
 
@@ -39,10 +49,13 @@ def check_event(tid: int, division: str) -> list[str]:
     if not field:
         return out
 
+    event = live_api.fetch_event(tid)
+    n_rounds = len(live_api._real_rounds(event)) or 3
+    cur_min, cur_max = CUR_MIN_PER_ROUND * n_rounds, CUR_MAX_PER_ROUND * n_rounds
     for pdga, rec in field.items():
-        if not (CUR_MIN <= rec["cur"] <= CUR_MAX):
+        if not (cur_min <= rec["cur"] <= cur_max):
             out.append(f"{tid} {division} bounds cur {rec['name'] or pdga}")
-            print(f"  invariant: {rec['name']} cur={rec['cur']:+g} outside [{CUR_MIN}, {CUR_MAX}] ({tid} {division})")
+            print(f"  invariant: {rec['name']} cur={rec['cur']:+g} outside [{cur_min}, {cur_max}] ({tid} {division})")
         if not (0.0 <= rec["rem"] <= REM_MAX):
             out.append(f"{tid} {division} bounds rem {rec['name'] or pdga}")
             print(f"  invariant: {rec['name']} rem={rec['rem']} rounds outside [0, {REM_MAX}] ({tid} {division})")
@@ -50,7 +63,6 @@ def check_event(tid: int, division: str) -> list[str]:
     # Ordering: our reconstructed totals must agree with the latest sheet's
     # own RunningPlace wherever both exist. A strict inversion (worse score,
     # better place) is exactly the Jomez failure signature.
-    event = live_api.fetch_event(tid)
     div = next((d for d in event.get("Divisions", []) if d.get("Division") == division), None)
     latest = div.get("LatestRound") if div else None
     if not latest:
