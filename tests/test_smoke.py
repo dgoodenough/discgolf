@@ -144,7 +144,7 @@ def test_export_bundle_is_well_formed(sim_result, tmp_path):
     # remaining events: live + major + doubles + both playoffs (no Cup)
     assert len(bundle["events"]) == 5
     for ev in bundle["events"]:
-        assert len(ev["curve"]) == 150
+        assert len(ev["curve"]) == export.CURVE_DEPTH
 
     star_row = next(p for p in bundle["players"] if p["pdga"] == world.star)
     assert star_row["p_champ"] == 1.0

@@ -47,7 +47,13 @@ FIELD_SIZE = {"MPO": 32, "FPO": 20}
 
 
 MAX_HIST_RANK = 50   # per-position histogram depth for the app
-LIVE_CAP = 130       # place-histogram depth for a live event's projection
+# Place-histogram depth for a live event's projection. It has to cover the
+# whole field: every place past it collapses into the last bucket, so a player
+# the model has finishing 170th of 200 reads back as 220th-capped — a
+# mean_place pinned to the cap and a mean_pts read off the curve at the wrong
+# depth. At 130 that was already short of Ledgestone's 156 MPO; Pro Worlds
+# runs ~200 across two courses.
+LIVE_CAP = 230
 
 
 @dataclass
@@ -87,7 +93,16 @@ class SimResult:
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
-    """Points indexed by place 1..size (0 index unused)."""
+    """Points indexed by place 1..size (0 index unused).
+
+    Past the published curve's last place the floor keeps being paid, exactly
+    as points.assign_points does when an event banks. Ledgestone 2026 was the
+    first field deep enough to prove that is the official behaviour (156 MPO;
+    StatMando paid 1.33 where the curve table stops at 144) and the banking
+    side was fixed then — but the simulation kept paying zero, so the model
+    predicts one number for a deep finish and the standings then record
+    another. Pro Worlds is the deepest field of the season by some way.
+    """
     vec = np.zeros(size + 2)
     if cls == "jomez":
         for place in range(1, size + 1):
@@ -97,6 +112,9 @@ def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
     for place, val in curve.items():
         if place <= size:
             vec[place] = val
+    deepest = max(curve)
+    if size > deepest:
+        vec[deepest + 1 : size + 1] = curve[deepest]
     return vec
 
 
