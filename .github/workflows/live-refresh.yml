@@ -26,7 +26,17 @@ permissions:
   pages: write
 
 concurrency:
-  group: refresh-forecast   # share with the weekly full refresh; never overlap
+  group: refresh-forecast-v2   # share with the weekly full refresh; never overlap
+  # Renamed from `refresh-forecast` on 2026-08-26. GitHub's Actions
+  # incident that day left a dispatch stuck reporting `queued` but never
+  # actually enqueued — uncancellable (the API refuses with "cannot cancel
+  # a workflow run that has not been queued yet"). With
+  # cancel-in-progress: false a new run has to evict the pending one to
+  # take the slot, so every later dispatch of every workflow in the group
+  # was accepted with a 204 and then silently dropped, and the cron stopped
+  # minting runs at all. Renaming is the only lever left from outside: the
+  # guarantee is unchanged (these three still share one group and never
+  # overlap), the stuck record just keeps the old name to itself.
   cancel-in-progress: false
 
 jobs:
