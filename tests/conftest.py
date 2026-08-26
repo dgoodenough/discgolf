@@ -39,6 +39,10 @@ def _isolate(monkeypatch, tmp_path):
     live_api._page_memo.clear()
     points.refresh_classes()
     monkeypatch.setattr(ratings, "_memo", None)
+    # The last-known-good roster is real committed data; point it at an absent
+    # path so a test only sees one if it writes one (see known_fields).
+    monkeypatch.setattr(live_api, "_known_memo", None)
+    monkeypatch.setattr(live_api, "KNOWN_FIELDS", tmp_path / "_absent" / "known_fields.json")
     # The one fetch that isn't the live API: PDGA's public event page, which
     # is where playoff/play-in signups come from. Default is "no page", so a
     # test only sees signups if it asks for them (see fake_pages).
@@ -54,6 +58,7 @@ def _isolate(monkeypatch, tmp_path):
     yield
     live_api._memo.clear()
     live_api._page_memo.clear()
+    live_api._known_memo = None
     points.refresh_classes()
 
 
