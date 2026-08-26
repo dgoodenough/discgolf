@@ -96,3 +96,31 @@ def test_real_jomez_final_state_is_clean(fake_api):
     for rnd in (1, 2, 3):
         fake_api.round(JOMEZ, "MPO", rnd, load_payload(f"round_{JOMEZ}_MPO_{rnd}"))
     assert invariants.check_event(JOMEZ, "MPO") == []
+
+
+def test_a_live_event_we_can_see_nothing_about_is_flagged(fake_api):
+    """The Worlds blind spot: an event in progress with no scores AND no
+    registration list read as clean, so the field could vanish and the site
+    kept publishing for six hours without a word."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": []}
+    assert invariants.check_event(1, "MPO") == ["1 MPO no-field"]
+
+
+def test_a_live_event_yet_to_tee_off_stays_quiet(fake_api):
+    """The ordinary morning: the UTC date has rolled over, no scores yet, but
+    the roster is readable all along. Firing here would red the run on the
+    first day of every event."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, round_payload(
+        [row(p, f"P{p}", 1000, played=0) for p in range(9001, 9021)]))
+    assert invariants.check_event(1, "MPO") == []
+
+
+def test_a_division_pdga_does_not_carry_is_not_a_violation(fake_api):
+    """USWDGC has no MPO. Absent is not blind."""
+    fake_api.event(1, event_payload("USWDGC", 4, [("FPO", 1)]))
+    fake_api.round(1, "FPO", 1, round_payload([row(9001, "A", 950, played=0)]))
+    assert invariants.check_event(1, "MPO") == []

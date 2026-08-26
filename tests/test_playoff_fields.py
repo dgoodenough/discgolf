@@ -482,3 +482,17 @@ def test_the_last_announced_wave_is_the_cut_the_model_uses():
     explaining a rule it does not simulate."""
     for key in ("gmc", "mvp"):
         assert config.REG_PHASES[key][-1]["top"] == config.PLAYOFF_QUAL[key]["cut"]
+
+
+def test_an_event_page_list_never_closes_a_playoff_field(fake_api, fake_pages):
+    """registered_roster falls back to the event page; registration_list must
+    NOT inherit that. A page list is real but still growing, so returning it
+    as staged would mark the field final the moment its waves opened and lock
+    out everyone a later wave admits — the bubble _waves_all_open protects."""
+    fake_pages.signups(config.TID_GMC, list(range(9001, 9021)))
+
+    entries, staged = live_api.registration_list(config.TID_GMC, "MPO")
+    assert set(entries) == set(range(9001, 9021))
+    assert staged is False
+    # ... while the roster read used for fields/attendance does see it
+    assert set(live_api.registered_roster(config.TID_GMC, "MPO")) == set(range(9001, 9021))

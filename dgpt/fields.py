@@ -19,7 +19,6 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import unicodedata
-import urllib.error
 from collections import defaultdict
 from typing import NamedTuple
 
@@ -118,13 +117,14 @@ def participation_rates(sched: list[dict], player_events: dict[int, set[int]], d
 
 
 def registered_field(tournament_id: int, division: str) -> set[int] | None:
-    """Registered players from PDGA Live if the event is already loaded."""
-    try:
-        scores = live_api.fetch_round(tournament_id, division, 1).get("scores") or []
-    except (urllib.error.HTTPError, KeyError):
-        return None
-    field = {s["PDGANum"] for s in scores if s.get("PDGANum")}
-    return field or None
+    """Who is registered for an event, or None if no list exists yet.
+
+    Delegates to live_api.registered_roster so attendance and the roster rows
+    the app renders read the same list from the same two sources — they used
+    to duplicate the PDGA Live call, and only one of them gained the event-page
+    fallback.
+    """
+    return set(live_api.registered_roster(tournament_id, division)) or None
 
 
 # Which registration-phase schedule governs an event, for _waves_all_open.
