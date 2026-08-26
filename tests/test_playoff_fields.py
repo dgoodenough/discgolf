@@ -392,6 +392,89 @@ def test_bundle_carries_signups_and_play_in_odds(tiny_world, fake_api, fake_page
     assert by_pdga[tiny_world.star]["p_playin"] == 0.0   # qualified directly
 
 
+def _play_in_played(fake_api, entrants, places, *, latest=1):
+    """Stage the play-in as an event that has been contested and finished."""
+    fake_api.event(config.TID_WORLDS_PLAYIN,
+                   event_payload("Worlds Play-In", 1, [("MPO", latest)]))
+    fake_api.round(config.TID_WORLDS_PLAYIN, "MPO", 1, round_payload([
+        row(p, f"P{p}", 1000, round_to_par=-place, played=18, has_score=True,
+            running_place=place, grand_total=54)
+        for p, place in zip(entrants, places)
+    ]))
+
+
+def test_a_played_play_in_promotes_its_actual_winners(tiny_world, fake_api):
+    """Six spots, twelve entrants, and the play-in is over: the six who won it
+    are at Worlds in every sim and the six who lost it are in none. Before
+    this, the entry list was all the model read, so it re-ran the race on
+    every refresh for the rest of the week."""
+    entrants = [p for p, _, _ in tiny_world.players[10:22]]
+    _worlds_world(tiny_world, fake_api,
+                  worlds_field=[p for p, _, _ in tiny_world.players[:10]],
+                  playin_field=entrants)
+    _play_in_played(fake_api, entrants, list(range(1, 13)))
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    worlds_ei = next(i for i, e in enumerate(res.events_meta)
+                     if e["tid"] == config.TID_WORLDS)
+    winners, losers = entrants[:6], entrants[6:]
+    assert len(winners) == config.WORLDS_PLAYIN_SPOTS["MPO"]
+    for pdga in winners:
+        i = res.pdga_numbers.index(pdga)
+        assert res.p_playin[i] == pytest.approx(1.0)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(1.0)
+    for pdga in losers:
+        i = res.pdga_numbers.index(pdga)
+        assert res.p_playin[i] == pytest.approx(0.0)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(0.0)
+
+
+def test_a_play_in_still_being_played_is_still_a_race(tiny_world, fake_api):
+    """Mid-round the sheet already carries a RunningPlace, so reading the
+    leaderboard alone would freeze the overnight leaders as the qualifiers.
+    Only a finished event decides anything."""
+    entrants = [p for p, _, _ in tiny_world.players[10:22]]
+    _worlds_world(tiny_world, fake_api,
+                  worlds_field=[p for p, _, _ in tiny_world.players[:10]],
+                  playin_field=entrants)
+    fake_api.event(config.TID_WORLDS_PLAYIN,
+                   event_payload("Worlds Play-In", 1, [("MPO", 1)]))
+    fake_api.round(config.TID_WORLDS_PLAYIN, "MPO", 1, round_payload([
+        row(p, f"P{p}", 1000, round_to_par=-place, played=9, running_place=place)
+        for place, p in enumerate(entrants, 1)
+    ]))
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    p = np.array([res.p_playin[res.pdga_numbers.index(x)] for x in entrants])
+    assert p.sum() == pytest.approx(config.WORLDS_PLAYIN_SPOTS["MPO"], abs=1e-9)
+    assert np.all(p < 1.0)
+
+
+def test_a_winner_already_in_the_worlds_roster_is_not_promoted_twice(tiny_world, fake_api):
+    """The steady state a day later: PDGA has added the qualifiers to the
+    Worlds field, so they read as directly qualified and the play-in has
+    nobody left to promote. The losers must not inherit the vacated spots."""
+    entrants = [p for p, _, _ in tiny_world.players[10:22]]
+    winners = entrants[:6]
+    _worlds_world(tiny_world, fake_api,
+                  worlds_field=[p for p, _, _ in tiny_world.players[:10]] + winners,
+                  playin_field=entrants)
+    _play_in_played(fake_api, entrants, list(range(1, 13)))
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    worlds_ei = next(i for i, e in enumerate(res.events_meta)
+                     if e["tid"] == config.TID_WORLDS)
+    for pdga in winners:
+        i = res.pdga_numbers.index(pdga)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(1.0)
+    for pdga in entrants:
+        i = res.pdga_numbers.index(pdga)
+        assert res.p_playin[i] == pytest.approx(0.0)
+    for pdga in entrants[6:]:
+        i = res.pdga_numbers.index(pdga)
+        assert res.att_probs[worlds_ei, i] == pytest.approx(0.0)
+
+
 def test_the_last_announced_wave_is_the_cut_the_model_uses():
     """The published phases and the modelled qualification line are the same
     rule stated twice — GMC's wave 2 and the MVP's tier 2 are exactly the
