@@ -2,7 +2,7 @@
 this season actually produced — and stay quiet on clean data."""
 from __future__ import annotations
 
-from dgpt import invariants
+from dgpt import invariants, live_api
 from .conftest import event_payload, load_payload, round_payload, row
 
 JOMEZ = 100195
@@ -50,6 +50,31 @@ def test_absurd_totals_are_flagged(fake_api):
     )
     violations = invariants.check_event(1, "MPO")
     assert any("bounds cur" in v for v in violations)
+
+
+def test_the_to_par_bound_scales_with_the_round_count(fake_api):
+    """A 4-round major has a round more to accumulate to-par in, and Worlds
+    fields it against qualifiers rated far below a DGPT stop. -50 and +95 are
+    real scores there; against a window sized for three rounds they were
+    violations, and a false alarm reds the run every six minutes all weekend."""
+    for rtp in (-50, 95):
+        _serve(
+            fake_api,
+            r1_rows=[row(1, "A", 1030, round_to_par=rtp, played=18, has_score=True)],
+            latest_rows=[row(1, "A", 1030, played=0, running_place=1)],
+            final_round=4,
+        )
+        assert invariants.check_event(1, "MPO") == []
+        live_api._memo.clear()
+
+    # still catches the parse errors it exists for, at four rounds too
+    _serve(
+        fake_api,
+        r1_rows=[row(1, "A", 1030, round_to_par=-62, played=18, has_score=True)],
+        latest_rows=[row(1, "A", 1030, played=0, running_place=1)],
+        final_round=4,
+    )
+    assert any("bounds cur" in v for v in invariants.check_event(1, "MPO"))
 
 
 def test_bogus_final_round_inflates_rem_and_is_flagged(fake_api):
