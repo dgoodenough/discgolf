@@ -102,15 +102,40 @@ def _get(url: str, cache_file: Path | None = None) -> dict:
     return data
 
 
+def _body(envelope: dict) -> dict:
+    """The `data` body of a live-API response, normalized to an object.
+
+    PDGA serializes an EMPTY payload as a JSON list — `"data": []` — because
+    the PHP array behind it has no keys to make it an object. Pro Worlds 2026
+    was staged for live scoring with its round sheets still empty, so the
+    moment its start date opened the live window every caller doing
+    `.get("scores")` died with `'list' object has no attribute 'get'`. That is
+    livecheck, which crashed on all three loop iterations, failed the run, and
+    left the site serving Sunday's numbers a day before round 1 (2026-08-26).
+    Sixth live-API shape variant this season; see HARDENING.md item 1.
+
+    A NON-empty list is read as the rows themselves rather than discarded, so
+    this can never quietly empty a sheet that really does carry scores.
+    """
+    data = envelope.get("data") if isinstance(envelope, dict) else None
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list) and data:
+        if len(data) == 1 and isinstance(data[0], dict) and "scores" in data[0]:
+            return data[0]
+        return {"scores": data}
+    return {}
+
+
 def fetch_event(tournament_id: int, *, cache: bool = False) -> dict:
     cf = LIVE_CACHE / f"event_{tournament_id}.json" if cache else None
-    return _get(f"{BASE}/live_results_fetch_event?TournID={tournament_id}", cf)["data"]
+    return _body(_get(f"{BASE}/live_results_fetch_event?TournID={tournament_id}", cf))
 
 
 def fetch_round(tournament_id: int, division: str, round_num: int, *, cache: bool = False) -> dict:
     cf = LIVE_CACHE / f"round_{tournament_id}_{division}_{round_num}.json" if cache else None
     url = f"{BASE}/live_results_fetch_round?TournID={tournament_id}&Division={division}&Round={round_num}"
-    return _get(url, cf)["data"]
+    return _body(_get(url, cf))
 
 
 def _day_span(event: dict) -> int | None:
@@ -240,11 +265,17 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
     final = rounds[-1] if rounds else None
     if not final:
         return False
-    present = {d["Division"] for d in event["Divisions"]}
+    present = {d["Division"] for d in (event.get("Divisions") or [])}
+    # Skipping a division PDGA doesn't carry is right for USWDGC (no MPO), but
+    # if NONE of them are there we have confirmed nothing at all and the loop
+    # below would fall through to "complete" — banking an event off an empty
+    # payload, which is how the Discmania Challenge banked zero finishers.
+    if not present & set(divisions):
+        return False
     for div in divisions:
         if div not in present:
             continue
-        d = next(x for x in event["Divisions"] if x["Division"] == div)
+        d = next(x for x in (event.get("Divisions") or []) if x["Division"] == div)
         if (d.get("LatestRound") or 0) < final:
             return False  # not on the final round yet
         scores = fetch_round(tournament_id, div, final).get("scores") or []
@@ -438,7 +469,7 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     not-started, and we leave those out.
     """
     event = fetch_event(tournament_id)
-    div = next((d for d in event["Divisions"] if d["Division"] == division), None)
+    div = next((d for d in (event.get("Divisions") or []) if d["Division"] == division), None)
     if div is None:
         return None
     latest = div.get("LatestRound")
@@ -557,7 +588,7 @@ def final_results(tournament_id: int, division: str, *, use_cache: bool = True) 
     end = event.get("EndDate")
     completed = bool(end) and date.fromisoformat(end) < date.today()
 
-    div = next((d for d in event["Divisions"] if d["Division"] == division), None)
+    div = next((d for d in (event.get("Divisions") or []) if d["Division"] == division), None)
     if div is None:
         return []
     # The finishing order lives on the last round the field PLAYED. A

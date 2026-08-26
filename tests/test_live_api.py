@@ -358,3 +358,50 @@ def test_plain_and_major_round_counts_unchanged(fake_api):
     fake_api.event(2, event_payload("USWDGC", 4, [("FPO", 1)]))
     fake_api.round(2, "FPO", 1, _sheet([_row(20, "B", -5, 12, done=0)]))
     assert live_api.live_field(2, "FPO")[20]["rem"] == pytest.approx((72 - 12) / 18)
+
+
+# --------------------------------------- empty payloads arrive as JSON lists
+
+def test_empty_round_sheet_arrives_as_a_list(fake_api):
+    """Pro Worlds 2026 (2026-08-26): the event was staged for live scoring a
+    day before round 1, so PDGA served `"data": []` for the round-1 sheet — an
+    empty PHP array, not the usual object. Every `.get("scores")` raised
+    AttributeError, livecheck crashed on all three loop iterations, the run
+    failed, and the site stopped updating with Worlds about to tee off.
+
+    An empty sheet must read as "no scores yet", which is the answer live_field
+    already has a fallback for (None -> simulate the event from scratch)."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": []}
+
+    assert live_api.fetch_round(1, "MPO", 1) == {}
+    assert live_api.live_field(1, "MPO") is None
+    assert live_api.event_complete(1, ("MPO",)) is False
+    assert live_api.registration_list(1, "MPO") is None
+
+
+def test_empty_event_payload_arrives_as_a_list(fake_api):
+    """Same shape on the event endpoint: no divisions, so nothing is live."""
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_event?TournID=1"
+    ] = {"data": []}
+
+    assert live_api.fetch_event(1) == {}
+    assert live_api.live_field(1, "MPO") is None
+    assert live_api.event_complete(1, ("MPO",)) is False
+    assert live_api.final_results(1, "MPO") == []
+
+
+def test_a_bare_list_of_rows_is_read_as_the_sheet(fake_api):
+    """The defence must not be able to empty a sheet that does carry scores:
+    a payload that drops the {"scores": ...} wrapper keeps its rows."""
+    fake_api.event(1, event_payload("Mini", 3, [("MPO", 1)]))
+    rows = [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True)]
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": rows}
+
+    field = live_api.live_field(1, "MPO")
+    assert field is not None and field[1]["cur"] == -4.0
