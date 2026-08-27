@@ -489,3 +489,66 @@ def test_the_event_page_still_outranks_the_last_known_field(fake_api, fake_pages
     fake_pages.signups(97344, list(range(9100, 9120)))
 
     assert set(live_api.registered_roster(97344, "MPO")) == set(range(9100, 9120))
+
+
+def _pool_body(pool, rows):
+    """One pool's round body — the same object `data` is at a single-pool
+    event, which is exactly how a pooled event returns them."""
+    return {"division": "MPO", "holes": [], "id": 100, "layouts": [],
+            "live_round_id": 1, "pool": pool, "scores": rows,
+            "shotgun_time": "", "tee_times": True}
+
+
+def test_a_pooled_event_returns_one_body_per_pool(fake_api):
+    """Pro Worlds (2026-08-27): ~200 MPO players across two courses, so both
+    round sheets came back as TWO round bodies rather than one. The old
+    normalizer wrapped those bodies as if they were score rows — none carried
+    a PDGANum, so live_field dropped every one and the field read as dark
+    while PDGA was scoring round 2 perfectly normally.
+
+    Pools are a course-assignment device on one shared leaderboard, and PDGA
+    repools on standing once both have played both courses, so nothing
+    downstream should know they existed."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": [
+        _pool_body("A", [row(9001, "A One", 1030, round_to_par=-5, played=18, has_score=True),
+                         row(9002, "A Two", 1020, round_to_par=-2, played=18, has_score=True)]),
+        _pool_body("B", [row(9003, "B One", 1025, round_to_par=-7, played=18, has_score=True)]),
+    ]}
+
+    sheet = live_api.fetch_round(1, "MPO", 1)
+    assert [s["PDGANum"] for s in sheet["scores"]] == [9001, 9002, 9003]
+
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {9001, 9002, 9003}
+    assert field[9003]["cur"] == -7.0          # the other pool's leader
+    assert set(live_api.registered_roster(1, "MPO")) == {9001, 9002, 9003}
+
+
+def test_pooled_rounds_merge_across_courses(fake_api):
+    """Both pools play both courses, and a player's rows arrive under whichever
+    pool they were in that day. Their score has to accumulate across the two."""
+    fake_api.event(1, event_payload("Mini", 3, [("MPO", 2)]))
+    for rnd, (a, b) in ((1, (-4, -1)), (2, (-3, -2))):
+        fake_api.envelopes[
+            f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round={rnd}"
+        ] = {"data": [
+            _pool_body("A" if rnd == 1 else "B",
+                       [row(9001, "P", 1030, round_to_par=a, played=18, has_score=True)]),
+            _pool_body("B" if rnd == 1 else "A",
+                       [row(9002, "Q", 1020, round_to_par=b, played=18, has_score=True)]),
+        ]}
+
+    field = live_api.live_field(1, "MPO")
+    assert field[9001]["cur"] == -7.0 and field[9001]["thru"] == 36
+    assert field[9002]["cur"] == -3.0
+
+
+def test_a_single_pool_event_is_untouched(fake_api):
+    """The shape every 2026 event before Worlds returned."""
+    fake_api.event(1, event_payload("Mini", 3, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, round_payload(
+        [row(9001, "P", 1030, round_to_par=-4, played=18, has_score=True)]))
+    assert live_api.live_field(1, "MPO")[9001]["cur"] == -4.0

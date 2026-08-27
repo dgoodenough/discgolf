@@ -121,8 +121,24 @@ def _body(envelope: dict) -> dict:
     if isinstance(data, dict):
         return data
     if isinstance(data, list) and data:
-        if len(data) == 1 and isinstance(data[0], dict) and "scores" in data[0]:
-            return data[0]
+        # A POOLED event answers with a list of per-pool round bodies, each the
+        # same object `data` is at a single-pool event. Pro Worlds splits its
+        # ~200 MPO players across two courses, so both round sheets came back
+        # as two bodies and the old branch here wrapped them as if the bodies
+        # themselves were score rows — no PDGANum on any of them, so live_field
+        # dropped the lot and the field read as dark for a day and a half.
+        #
+        # Pools are a course-assignment device, not a separate competition:
+        # one leaderboard, and PDGA repools on standing once both pools have
+        # played both courses. Nothing downstream needs to know they existed,
+        # so merge the rows and hand back one sheet. Safe across courses
+        # because live_field sums per-round RoundtoPar, which is layout-local,
+        # rather than ToPar, which is not.
+        sheets = [d for d in data if isinstance(d, dict) and "scores" in d]
+        if sheets:
+            merged = dict(sheets[0])
+            merged["scores"] = [r for sheet in sheets for r in (sheet.get("scores") or [])]
+            return merged
         return {"scores": data}
     return {}
 
@@ -244,6 +260,27 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     if span and len(ids) > span:
         ids = ids[:span]
     return [i for i in ids if i <= latest], len(ids)
+
+
+def event_rounds(tournament_id: int) -> int | None:
+    """How many rounds the field plays, per PDGA, or None if it cannot say.
+
+    The per-class constant in simulate.ROUNDS is an assumption; this is the
+    event's own answer, derived from the same round plan live_field already
+    uses for `rem`. They disagreed at Pro Worlds — RoundsList {1,2,3,4,12}
+    over five days is five rounds (four numbered plus a Finals, the shape
+    Ledgestone established), while ROUNDS["major"] said four — which meant the
+    remaining-holes model and the pre-event projection were measuring the same
+    event against different lengths.
+
+    None for an event PDGA has not staged, which is most of the calendar most
+    of the time; the caller keeps its constant then.
+    """
+    try:
+        n = len(_real_rounds(fetch_event(tournament_id)))
+    except Exception:  # noqa: BLE001 - an unstaged event is not an error
+        return None
+    return n or None
 
 
 def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO")) -> bool:

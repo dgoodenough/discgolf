@@ -505,7 +505,7 @@ class _Drawer:
             tscores = mu_t[None, :] + self.rng.normal(0.0, 1.0, (c, T)) * sd_t[None, :]
             tscores = np.where(t_in[None, :], tscores, np.inf)
         else:
-            n_rounds = ROUNDS.get(row["cls"], 3)
+            n_rounds = self.events_meta[ev_i]["rounds"]
             t_in = np.ones(T, dtype=bool)
             tavg = team_ratings.mean() if T else 1000.0
             mu_t = -(team_ratings - tavg) / self.rpps * n_rounds
@@ -563,7 +563,7 @@ class _Drawer:
             scores = mu + self.rng.normal(0.0, 1.0, (c, n)) * sd[None, :]
             scores = np.where(in_field[None, :], scores, np.inf)
         else:
-            n_rounds = ROUNDS.get(row["cls"], 3)
+            n_rounds = self.events_meta[ev_i]["rounds"]
             fsum = (plays * rtg).sum(axis=1)
             fcnt = plays.sum(axis=1)
             avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
@@ -1071,7 +1071,7 @@ def _live_projections(drawer: _Drawer, roster: _Roster, live: _LiveState,
         # compared against twice as many opponents as there are teams and land
         # at roughly double the place — reading the pre-event expectation off
         # the team curve at the wrong depth.
-        ev_rounds = ROUNDS.get(remaining[ev_i]["cls"], 3)
+        ev_rounds = drawer.events_meta[ev_i]["rounds"]
         unit_rtg, opp_r = rtg, rtg[in_field]
         if ev_i == doubles.ei and doubles.staged:
             t_in = np.array([any(in_field[i] for i in m) for m in doubles.teams], dtype=bool)
@@ -1156,7 +1156,13 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         {
             "tid": row["tournament_id"], "name": row["name"], "cls": row["cls"],
             "start_date": row["start_date"],
-            "rounds": ROUNDS.get(row["cls"], 3),
+            # PDGA's own round count where it has staged the event, the
+            # per-class constant where it has not. These used to be able to
+            # disagree: live_field derives `rem` from the event's real round
+            # plan while everything else assumed the constant, so at Pro Worlds
+            # the remaining-holes model measured a five-round event and the
+            # projection beside it measured a four-round one.
+            "rounds": live_api.event_rounds(row["tournament_id"]) or ROUNDS.get(row["cls"], 3),
             "is_major": row["tournament_id"] in major_tids,
             "field_avg_rating": 0.0, "opp_score_sd": 0.0, "field_size": 0.0,
         }
