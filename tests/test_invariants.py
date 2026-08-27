@@ -170,3 +170,20 @@ def test_the_dark_alert_never_raises(fake_api, capsys):
     invariants._describe_dark(1, "MPO", {})          # nothing to report at all
     invariants._describe_dark(1, "MPO", None)        # not even a dict
     assert "could not describe" in capsys.readouterr().out
+
+
+def test_the_dark_alert_describes_the_rows_it_found(fake_api, capsys):
+    """A handful of rows on a 200-player sheet is not a field. The row keys say
+    what it is instead — a player row carries PDGANum, anything else is a
+    container we are meant to descend into."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.round(1, "MPO", 1, {"scores": [
+        {"Pool": "A", "LayoutID": 1, "Division": "MPO"},
+        {"Pool": "B", "LayoutID": 2, "Division": "MPO"},
+    ]})
+
+    assert invariants.check_event(1, "MPO") == ["1 MPO no-field"]
+    log = capsys.readouterr().out
+    assert "n=2" in log
+    assert "'Pool': 'A'" in log
+    assert "PDGANum" not in log.split("row ident=")[1].split("\n")[0]

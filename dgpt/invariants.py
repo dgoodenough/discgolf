@@ -152,8 +152,22 @@ def _describe_dark(tid: int, division: str, event: dict) -> None:
                 continue
             scores = body.get("scores")
             keys = sorted(body)[:8]
+            n = len(scores) if isinstance(scores, list) else "n/a"
             print(f"  invariant: {tid} {division} round {rnd}: body keys={keys} "
-                  f"scores={type(scores).__name__} n={len(scores) if isinstance(scores, list) else 'n/a'}")
+                  f"scores={type(scores).__name__} n={n}")
+            # What ARE the rows? A handful of rows on a 200-player sheet is not
+            # a field, and the row keys say what it is instead — player rows
+            # carry PDGANum, anything else is a container we are meant to
+            # descend into (Pro Worlds, 2026-08-27: two rows for two courses).
+            for row in (scores or [])[:2] if isinstance(scores, list) else []:
+                if isinstance(row, dict):
+                    ident = {k: row[k] for k in
+                             ("PDGANum", "Name", "Pool", "RoundPool", "Division", "LayoutID")
+                             if k in row}
+                    print(f"  invariant: {tid} {division} round {rnd} row keys={sorted(row)[:14]}")
+                    print(f"  invariant: {tid} {division} round {rnd} row ident={ident}")
+                else:
+                    print(f"  invariant: {tid} {division} round {rnd} row is {type(row).__name__}: {str(row)[:120]}")
     except Exception as e:  # noqa: BLE001 - diagnostics must never fail a check
         print(f"  invariant: could not describe {tid} {division}: {type(e).__name__} {e}")
 
