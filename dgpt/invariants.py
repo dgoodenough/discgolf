@@ -64,7 +64,8 @@ def check_event(tid: int, division: str) -> list[str]:
         # of the pipeline already reads it that way. Only a division PDGA
         # agrees is playing can be one we have gone blind on.
         try:
-            divs = {d.get("Division") for d in (live_api.fetch_event(tid).get("Divisions") or [])}
+            event = live_api.fetch_event(tid)
+            divs = {d.get("Division") for d in (event.get("Divisions") or [])}
         except Exception:  # noqa: BLE001 - a failed fetch is not a data violation
             return out
         # Deliberately the two LIVE sources, not registered_roster — that now
@@ -75,6 +76,7 @@ def check_event(tid: int, division: str) -> list[str]:
         if division in divs and dark:
             out.append(f"{tid} {division} no-field")
             print(f"  invariant: event is live but neither scores nor a registration list are readable ({tid} {division})")
+            _describe_dark(tid, division, event)
         return out
 
     event = live_api.fetch_event(tid)
@@ -119,6 +121,41 @@ def check_event(tid: int, division: str) -> list[str]:
     if reported > MAX_PAIRS:
         print(f"  invariant: ... {reported - MAX_PAIRS} more inversions ({tid} {division})")
     return out
+
+
+def _describe_dark(tid: int, division: str, event: dict) -> None:
+    """Say what we actually saw when an event reads as dark.
+
+    "We cannot see it" and "there is nothing to see" need different fixes, and
+    the alert could not tell them apart — a whole day of Pro Worlds went by
+    with the answer only obtainable by opening PDGA by hand. The four numbers
+    below separate them: no LatestRound means PDGA has not opened scoring, a
+    LatestRound with an empty sheet means it is open and unpopulated, and rows
+    on the sheet with no field built from them means the bug is ours.
+
+    Best-effort and log-only: never raises, and never touches the marker file,
+    whose lines have to stay stable keys for the workflows to de-duplicate on.
+    """
+    try:
+        div = next((d for d in (event.get("Divisions") or [])
+                    if d.get("Division") == division), {})
+        latest = div.get("LatestRound")
+        rounds = sorted(str(k) for k in (event.get("RoundsList") or {}))
+        print(f"  invariant: {tid} {division} LatestRound={latest!r} "
+              f"FinalRound={event.get('FinalRound')!r} Rounds={event.get('Rounds')!r} "
+              f"RoundsList={rounds}")
+        for rnd in dict.fromkeys([1, int(latest)] if latest else [1]):
+            try:
+                body = live_api.fetch_round(tid, division, rnd)
+            except Exception as e:  # noqa: BLE001
+                print(f"  invariant: {tid} {division} round {rnd} fetch failed: {type(e).__name__} {e}")
+                continue
+            scores = body.get("scores")
+            keys = sorted(body)[:8]
+            print(f"  invariant: {tid} {division} round {rnd}: body keys={keys} "
+                  f"scores={type(scores).__name__} n={len(scores) if isinstance(scores, list) else 'n/a'}")
+    except Exception as e:  # noqa: BLE001 - diagnostics must never fail a check
+        print(f"  invariant: could not describe {tid} {division}: {type(e).__name__} {e}")
 
 
 def run_checks(write_marker: bool = True) -> list[str]:
