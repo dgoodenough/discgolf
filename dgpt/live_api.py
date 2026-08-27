@@ -121,8 +121,24 @@ def _body(envelope: dict) -> dict:
     if isinstance(data, dict):
         return data
     if isinstance(data, list) and data:
-        if len(data) == 1 and isinstance(data[0], dict) and "scores" in data[0]:
-            return data[0]
+        # A POOLED event answers with a list of per-pool round bodies, each the
+        # same object `data` is at a single-pool event. Pro Worlds splits its
+        # ~200 MPO players across two courses, so both round sheets came back
+        # as two bodies and the old branch here wrapped them as if the bodies
+        # themselves were score rows — no PDGANum on any of them, so live_field
+        # dropped the lot and the field read as dark for a day and a half.
+        #
+        # Pools are a course-assignment device, not a separate competition:
+        # one leaderboard, and PDGA repools on standing once both pools have
+        # played both courses. Nothing downstream needs to know they existed,
+        # so merge the rows and hand back one sheet. Safe across courses
+        # because live_field sums per-round RoundtoPar, which is layout-local,
+        # rather than ToPar, which is not.
+        sheets = [d for d in data if isinstance(d, dict) and "scores" in d]
+        if sheets:
+            merged = dict(sheets[0])
+            merged["scores"] = [r for sheet in sheets for r in (sheet.get("scores") or [])]
+            return merged
         return {"scores": data}
     return {}
 
