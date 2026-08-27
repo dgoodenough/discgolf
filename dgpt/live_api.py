@@ -246,6 +246,27 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     return [i for i in ids if i <= latest], len(ids)
 
 
+def event_rounds(tournament_id: int) -> int | None:
+    """How many rounds the field plays, per PDGA, or None if it cannot say.
+
+    The per-class constant in simulate.ROUNDS is an assumption; this is the
+    event's own answer, derived from the same round plan live_field already
+    uses for `rem`. They disagreed at Pro Worlds — RoundsList {1,2,3,4,12}
+    over five days is five rounds (four numbered plus a Finals, the shape
+    Ledgestone established), while ROUNDS["major"] said four — which meant the
+    remaining-holes model and the pre-event projection were measuring the same
+    event against different lengths.
+
+    None for an event PDGA has not staged, which is most of the calendar most
+    of the time; the caller keeps its constant then.
+    """
+    try:
+        n = len(_real_rounds(fetch_event(tournament_id)))
+    except Exception:  # noqa: BLE001 - an unstaged event is not an error
+        return None
+    return n or None
+
+
 def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO")) -> bool:
     """True once every (non-withdrawn) player in each relevant division has a
     final-round score — so the event can be banked into the standings the

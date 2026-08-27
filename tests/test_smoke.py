@@ -12,7 +12,7 @@ import json
 import numpy as np
 import pytest
 
-from dgpt import export, invariants, movers, points, schedule, simulate, snapshot, standings
+from dgpt import config, export, invariants, movers, points, schedule, simulate, snapshot, standings
 from tests.conftest import event_payload, round_payload, row
 
 N_SIMS = 400
@@ -211,3 +211,27 @@ def test_live_stats_carry_current_place_and_pre_event_baseline(sim_result):
     assert row["pre_pts"] >= 0
     # tiny world: R1 complete, R2 nine holes in for everyone still playing
     assert {s["thru"] for s in live.values()} == {18, 27}
+
+
+def test_the_round_count_comes_from_the_event_not_the_class(tiny_world, fake_api):
+    """Pro Worlds lists {1, 2, 3, 4, 12} — four numbered rounds plus a Finals,
+    the shape Ledgestone established — over five days, while ROUNDS["major"]
+    says four. live_field already derived `rem` from the event's own round
+    plan, so the constant left the remaining-holes model and the projection
+    beside it measuring the same event against different lengths."""
+    fake_api.event(900004, event_payload(
+        "Test Major", 12, [("MPO", None)],
+        round_ids=[1, 2, 3, 4, 12], round_labels={12: "Finals"}))
+
+    res = simulate.run("MPO", n_sims=200, chunk=100)
+    ev = next(e for e in res.events_meta if e["tid"] == 900004)
+    assert ev["rounds"] == 5
+    assert simulate.ROUNDS["major"] == 4      # the constant is only the fallback now
+
+
+def test_an_unstaged_event_keeps_the_class_constant(tiny_world, fake_api):
+    """Most of the calendar most of the time: PDGA has no payload to ask, so
+    the per-class assumption still stands in."""
+    res = simulate.run("MPO", n_sims=200, chunk=100)
+    gmc = next(e for e in res.events_meta if e["tid"] == config.TID_GMC)
+    assert gmc["rounds"] == simulate.ROUNDS.get("playoff", 3) == 3
