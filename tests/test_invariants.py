@@ -142,3 +142,31 @@ def test_a_cached_roster_does_not_report_that_pdga_is_back(fake_api, monkeypatch
 
     assert live_api.registered_roster(1, "MPO")          # fallback is working
     assert invariants.check_event(1, "MPO") == ["1 MPO no-field"]   # and still says so
+
+
+def test_the_dark_alert_reports_what_it_saw(fake_api, capsys):
+    """"We cannot see it" and "there is nothing to see" need different fixes.
+    The alert has to carry the evidence that separates them."""
+    fake_api.event(1, event_payload("Worlds", 4, [("MPO", 1)]))
+    fake_api.envelopes[
+        f"{live_api.BASE}/live_results_fetch_round?TournID=1&Division=MPO&Round=1"
+    ] = {"data": []}
+
+    assert invariants.check_event(1, "MPO") == ["1 MPO no-field"]
+    log = capsys.readouterr().out
+    assert "LatestRound=1" in log
+    assert "round 1: body keys=[] scores=NoneType" in log
+
+
+def test_the_dark_alert_never_raises(fake_api, capsys):
+    """Diagnostics are best-effort. A sheet that 404s, or an event payload
+    missing the fields being reported, must not turn a flagged violation into
+    a crashed refresh."""
+    invariants._describe_dark(1, "MPO", {
+        "Divisions": [{"Division": "MPO", "LatestRound": 7}], "RoundsList": None,
+    })
+    assert "fetch failed" in capsys.readouterr().out
+
+    invariants._describe_dark(1, "MPO", {})          # nothing to report at all
+    invariants._describe_dark(1, "MPO", None)        # not even a dict
+    assert "could not describe" in capsys.readouterr().out
