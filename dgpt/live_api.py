@@ -666,12 +666,6 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     return out or None
 
 
-def live_state(tournament_id: int, division: str) -> dict[int, tuple[float, float]] | None:
-    """Back-compat: {pdga: (current_to_par, rounds_remaining)}."""
-    field = live_field(tournament_id, division)
-    return {p: (v["cur"], v["rem"]) for p, v in field.items()} if field else None
-
-
 def final_results(tournament_id: int, division: str, *, use_cache: bool = True) -> list[dict]:
     """Finishing order for a completed event.
 

@@ -111,7 +111,7 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
   border: 1px solid var(--grid-strong); white-space: nowrap;
 }
 
-/* expanded detail: two-column breakdown + big histogram */
+/* expanded detail: two-column breakdown (season so far + what-if) */
 .detail-grid { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
 .detail-grid > div { flex: 1; min-width: 300px; max-width: 100%; overflow-x: auto; }
 /* the 7-column what-if table scrolls inside its panel on phones */
@@ -125,9 +125,7 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
 .detail-tbl th { position: static; font-size: var(--fs-caption); }
 .detail-tbl td { font-size: var(--fs-small); }
 tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--ink-3); }
-.drop-tag { color: var(--ink-3); font-size: var(--fs-caption); text-decoration: none; display: inline-block; }
 .drop-hi { color: var(--ink-2); font-weight: 600; }  /* high drop odds: still bold, but muted */
-.keep-tag { color: var(--pos); font-size: var(--fs-caption); }
 .detail-grid .band { font-size: var(--fs-caption); margin-bottom: 2px; }
 /* placement shown after a single event's points — smaller, quieter */
 .place { color: var(--ink-3); font-size: var(--fs-caption); }
@@ -148,15 +146,6 @@ tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decorat
 .wf-swing.pos { color: var(--pos); }
 .wf-swing.neg { color: var(--neg); }
 .wf-scenario .btn { margin-left: auto; }
-
-/* rank histogram (expanded detail) */
-.bighist-wrap { margin-top: 14px; }
-.hist { display: flex; align-items: flex-end; gap: 2px; height: 84px; margin: 4px 0 2px; }
-.hist .col { flex: 1; min-width: 4px; background: var(--grid-strong); }
-.hist .col.in-cut { background: var(--pos); }
-.hist .col.overflow { background: var(--neg); opacity: .7; }
-.hist-labels { display: flex; gap: 2px; font-size: 10px; color: var(--ink-3); }
-.hist-labels span { flex: 1; text-align: center; min-width: 4px; }
 
 /* headline stats */
 .stat { font-size: 1.9rem; }

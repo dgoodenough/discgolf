@@ -114,7 +114,8 @@ published number.
 failure posture in `.github/workflows/live-refresh.yml`. Item 6 shipped
 2026-08 (`.github/publish-site.sh`). Items 7 and 9 are offseason work;
 item 8's first two pieces (a resnapshot command, the invariant gate on
-recording) are in-season safe and still open.*
+recording) are in-season safe and still open. Item 10's audit can be done
+any time; acting on it is offseason.*
 
 ### 1. Commit the regression corpus; make it a test suite *(shipped 2026-07)*
 
@@ -264,3 +265,85 @@ broken.
 - `validate.py`'s HTML parsing is regex over `<tr>`; if item 7 lands,
   a parse failure downgrades from "blind spot" to "lost redundancy,"
   which is the right severity for it.
+
+Left over from the 2026-08 dead-code sweep (`live_api.live_state` and the
+orphaned `.hist` / `.drop-tag` / `.keep-tag` rules went then; these are
+judgement calls, not obviously dead):
+
+- `meta.top_n_finishes` ships in every bundle and the app never reads it —
+  it reads `count_dgpt`, `count_playoff` and `majors_counted` separately.
+  Drop it if nothing outside this repo consumes the bundle.
+- `simulate.write_csv` and `standings.write_csv` run on every refresh and
+  write to gitignored paths (`results/`, `data/standings_*.csv`) that
+  nothing reads back (item 6 established this). They are local-inspection
+  artefacts; either say so in a docstring or gate them behind a flag.
+- `MULTIPLIERS["jomez"] = 0.0` still carries a "scale TBD
+  (reverse-engineer from standings)" comment, but Jomez was solved and pays
+  from flat bands in `points.jomez_bonus`. The `0.0` now survives only as a
+  skip gate that `standings.event_points` has to special-case around with
+  `and row["cls"] != "jomez"`. Untangling it is behaviour-touching, so
+  offseason — but the comment is actively misleading today.
+- `p_first` is simulated, exported and snapshotted but never rendered. That
+  is deliberate (it is in `snapshot._PRED_KEYS` for end-of-season grading),
+  and worth a one-line comment in `export.py` so the next reader doesn't
+  delete it.
+
+### 10. Audit whether the PDGA API carries what we scrape *(audit is in-season safe; switching sources is offseason)*
+
+Three HTML scrapes feed the pipeline. Two of them feed the **model**:
+
+| Scrape | Code | Feeds |
+|---|---|---|
+| `pdga.com/tour/event/{tid}` | `live_api.page_registrants` / `_fetch_page` | Playoff (GMC, MVP) and Worlds play-in signup lists; `registered_roster`'s fallback when PDGA Live is dark |
+| `discgolfscene.com/…/registration` | `live_api.doubles_teams` | Doubles Championship team pairings |
+| `statmando.com/rankings/dgpt` | `validate.py` | **Validation only — keep it.** It never touches a published number, and item 7 already covers reducing reliance on it. Not in scope here. |
+
+The task is to walk the REST API service list
+(pdga.com/dev/api/rest/v1/services) **exhaustively**, not just the three
+services `pdga_api.py` happens to call today (`event`, `players`,
+`player-statistics`), and establish endpoint by endpoint whether either of
+the first two scrapes can be retired. Specifically:
+
+- **Is there an entrant/registration service?** Or an expansion parameter on
+  `event` that returns one? This is the big one — `page_registrants` is the
+  *only* source for a qualification-gated field until a TD stages the event
+  for live scoring.
+- **Does anything expose doubles partners?** A team/partner field on an
+  entrant record would retire the DGS scrape outright.
+- **Does `event` carry registration-wave opening times?** Those are
+  hand-transcribed into `config.REG_PHASES` from the event pages, and
+  `fields._waves_all_open` decides whether a signup list is the field or a
+  floor off them.
+- **Does `players` carry a country?** Out of scope for the scrapes, but the
+  same audit answers it: `data/player_countries.csv` (627 rows) and both
+  `tourcard_2026_*.csv` are hand-curated with no writer anywhere in the repo,
+  and they drive the European cohort prior in `fields.participation_rates`.
+  If `players` carries nationality, that file becomes generated rather than
+  maintained.
+
+**Availability is not the bar — timing is.** The event-page scrape does not
+exist because the data is unavailable; it exists because signups are public
+*months* before PDGA Live knows the event exists, which is the whole reason
+`registration_list` has two tiers and a `staged` flag. An endpoint that only
+populates when the TD stages the event is no better than `_live_roster` and
+replaces nothing. So for every candidate, check *when it starts returning
+rows*, not just whether it does. Same for doubles: PDGA Live's `Teammates`
+already wins once populated, and the DGS scrape covers exactly the window
+before that.
+
+**Why it is worth the hour even if the answer is no.** Both scrapes fail
+*closed and silent*. `page_registrants` returns an empty set on any
+exception, a missing page marker, or a parse under `MIN_PAGE_REGISTRANTS`;
+every caller reads that as "no list published yet" and falls back to the
+pure standings gate. Failing closed is the right direction, but it means a
+markup change silently reverts the playoff fields to the pre-signup model
+with nothing going red. The DGS parse degrades the same way, into solo teams
+with a field-average partner — which is what the contaminated 2026-07-27
+snapshot in item 8 looked like downstream (58 doubles registrations instead
+of 106, every team a solo).
+
+So regardless of what the audit finds, pair it with an item-3 invariant:
+once a signup list has been seen non-empty for an event, a later refresh
+that reads it as empty while the event is still upcoming is a violation, not
+a state. Cheap, additive, and it turns both scrapes from silent-degrade into
+loud-fail.
