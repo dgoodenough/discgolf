@@ -10,20 +10,40 @@ name: Live refresh
 # scores actually moved. It keeps looping until no points event is live or it
 # nears the 6h per-job ceiling, then yields.
 #
-# Continuation across that ceiling needs no PAT: the shared concurrency group
-# keeps exactly one run active and one queued, and the coarse cron reliably
-# leaves a queued successor during any 5.5h window, so it starts the instant
-# the active run yields. Between rounds / overnight the loop idles on the cheap
-# check (no pip, no sim) and, when nothing is live, exits in seconds. Public
-# repo => Actions minutes are free, so holding a runner during an event is fine.
+# Continuation across that ceiling is explicit, and needs no PAT: before it
+# yields, the run dispatches its own successor (.github/dispatch-successor.sh)
+# and confirms a run actually appeared. `workflow_dispatch` is the documented
+# exception to the rule that GITHUB_TOKEN-triggered events create no workflow
+# run, so this costs only the `actions: write` permission below.
+#
+# It used to rely instead on the coarse cron having left a queued successor in
+# the concurrency group during the 5.5h window. On 2026-08-27 none had been:
+# GitHub delivered zero scheduled fires for this workflow between 14:30Z and
+# 23:17Z, so the loop yielded into nothing and the site sat on a stale bundle
+# for 3h16m during round 2 of Worlds (and 5h38m earlier the same day). The cron
+# now only has to START the loop when an event begins; it is no longer what
+# keeps it alive. Between rounds / overnight the loop idles on the cheap check
+# (no pip, no sim) and, when nothing is live, exits in seconds. Public repo =>
+# Actions minutes are free, so holding a runner during an event is fine.
 on:
   schedule:
-    - cron: "*/15 * * * *"   # only needs to (re)start / keep a successor queued
-  workflow_dispatch: {}
+    - cron: "*/15 * * * *"   # only needs to (re)start the loop when one goes live
+  workflow_dispatch:
+    inputs:
+      after_failure:
+        # Deliberately a string, not a boolean: this is dispatched by
+        # `gh workflow run -f after_failure=true`, which sends inputs as
+        # strings, and the loop compares it as one. A boolean-typed input
+        # would put a coercion between the two for no benefit — nothing
+        # reads this except the [ "$AFTER_FAILURE" = "true" ] below.
+        description: "Internal: marks the one automatic retry that follows a failed run, so the chain stops there."
+        type: string
+        default: "false"
 
 permissions:
   contents: write
   pages: write
+  actions: write   # dispatch our own successor; see .github/dispatch-successor.sh
 
 concurrency:
   group: refresh-forecast-v2   # share with the weekly full refresh; never overlap
@@ -75,6 +95,7 @@ jobs:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
           GH_TOKEN: ${{ github.token }}
+          AFTER_FAILURE: ${{ github.event.inputs.after_failure || 'false' }}
         run: |
           set -uo pipefail
           git config user.name "github-actions[bot]"
@@ -91,11 +112,24 @@ jobs:
             python -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)'
           }
 
+          # A crash-out gets ONE automatic retry: this run hands off with
+          # after_failure=true, and a run carrying that flag does not chain
+          # again. So a transient break (a PDGA blip, a bad runner) self-heals
+          # in a minute instead of waiting on a cron fire that may be hours
+          # away, while a persistent one cannot spin runners in a tight loop —
+          # past that single hop the cron is the only restart, which is the
+          # right amount of patience for a break that is not going to fix
+          # itself. The run still goes red either way; the owner is notified.
           fail_step() {
             failures=$((failures + 1))
             echo "::warning::$1 (consecutive failures: $failures)"
             if [ "$failures" -ge 3 ]; then
-              echo "::error::Three consecutive live-refresh failures — failing the run so it gets seen. The cron restarts the loop."
+              echo "::error::Three consecutive live-refresh failures — failing the run so it gets seen."
+              if [ "$AFTER_FAILURE" = "true" ]; then
+                echo "::warning::Already the post-failure retry — not chaining again. The cron restarts the loop."
+              elif ! .github/dispatch-successor.sh after_failure=true; then
+                echo "::warning::Could not hand off after failure; the cron restarts the loop."
+              fi
               exit 1
             fi
           }
@@ -187,7 +221,15 @@ jobs:
             fi
 
             if [ "$(date +%s)" -ge "$BUDGET" ]; then
-              echo "Near job time limit — yielding; the queued successor takes over."
+              # Dispatch BEFORE breaking, so the successor sits in the
+              # concurrency group as the pending run and starts the moment this
+              # one releases the slot. A hand-off that cannot be confirmed is
+              # precisely the 2026-08-27 outage, so it fails the run instead of
+              # exiting quietly with nothing lined up to take over.
+              echo "Near job time limit — handing off to a fresh run."
+              if ! .github/dispatch-successor.sh; then
+                exit 1
+              fi
               exit_reason=yield
               break
             fi
