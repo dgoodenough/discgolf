@@ -47,6 +47,18 @@ def main() -> None:
     if not args.skip_sim:
         movers.write_movers()
 
+    # Bank the playoff/Cup fields while PDGA still publishes them. These are
+    # the only season outcomes that cannot be recomputed after the fact — a
+    # roster goes dark and is gone (see dgpt/actuals.py) — so this runs even
+    # on a --skip-sim pass. Additive and never fatal: it writes one committed
+    # JSON and touches nothing the site reads.
+    try:
+        from . import actuals
+        for note in actuals.capture():
+            print(f"  captured {note}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  field capture skipped ({e})")
+
     # Publish-gate invariants (flag-only): the refresh must still succeed —
     # the workflows read the marker file after committing and turn violations
     # into a red run, so bad-looking data alerts without the site going stale.

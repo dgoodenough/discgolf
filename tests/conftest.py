@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from dgpt import config, export, fields, invariants, live_api, movers, points, ratings, schedule, snapshot
+from dgpt import (actuals, config, export, fields, invariants, live_api, movers, points,
+                  ratings, schedule, snapshot)
 
 PAYLOADS = Path(__file__).parent / "fixtures" / "payloads"
 
@@ -217,6 +218,8 @@ def tiny_world(tmp_path, fake_api, monkeypatch) -> World:
     monkeypatch.setattr(fields, "OVERRIDES_CSV", data_dir / "overrides" / "fields.csv")
     monkeypatch.setattr(export, "DOCS_DATA", docs_data)
     monkeypatch.setattr(snapshot, "SNAP_DIR", tmp_path / "predictions")
+    monkeypatch.setattr(actuals, "ACTUALS_DIR", tmp_path / "predictions")
+    monkeypatch.setattr(actuals, "CAPTURE_FILE", data_dir / "actual_fields.json")
     monkeypatch.setattr(movers, "APP_DATA", docs_data)
     monkeypatch.setattr(movers, "OUT", docs_data / "movers.json")
 

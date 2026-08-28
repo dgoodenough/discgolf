@@ -41,9 +41,10 @@ ROUND_SD = 4.2
 ROUNDS = {"major": 4}         # default 3 regular rounds otherwise
 DEFAULT_SIMS = 10_000
 
-# Powerball Cup qualification (dgpt.com playoff-qualification-update)
-STANDINGS_CUT = {"MPO": 28, "FPO": 18}
-FIELD_SIZE = {"MPO": 32, "FPO": 20}
+# Powerball Cup qualification. Defined in config with the other 2026 rules;
+# re-exported here because this is where the rest of the pipeline reads them.
+STANDINGS_CUT = config.STANDINGS_CUT
+FIELD_SIZE = config.FIELD_SIZE
 
 
 MAX_HIST_RANK = 50   # per-position histogram depth for the app

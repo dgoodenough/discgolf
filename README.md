@@ -37,8 +37,10 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   will attend, and their Cup odds recompute in under 100ms against 25,000
   frozen simulation cutlines.
 - **Its own scorecard.** Every meaningful forecast is snapshotted to
-  [predictions/](predictions/) so the model can be graded (Brier,
-  calibration) at season's end with `python -m dgpt.evaluate`.
+  [predictions/](predictions/), and the outcomes to grade it against are
+  resolved from the same PDGA data rather than assembled by hand
+  (`python -m dgpt.actuals`), so the model can be scored for Brier and
+  calibration with `python -m dgpt.evaluate --division MPO`.
 
 ## Running it
 

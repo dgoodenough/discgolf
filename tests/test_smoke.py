@@ -12,7 +12,7 @@ import json
 import numpy as np
 import pytest
 
-from dgpt import config, export, invariants, movers, points, schedule, simulate, snapshot, standings
+from dgpt import actuals, config, export, invariants, movers, points, schedule, simulate, snapshot, standings
 from tests.conftest import event_payload, round_payload, row
 
 N_SIMS = 400
@@ -194,6 +194,7 @@ def test_full_refresh_sequence(tiny_world):
     export.export(res)
     snapshot.record(res, "MPO")
     movers.write_movers()
+    actuals.capture()
     invariants.run_checks()
 
 

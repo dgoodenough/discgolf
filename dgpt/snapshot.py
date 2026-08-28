@@ -17,15 +17,22 @@ import hashlib
 from . import config, schedule
 
 SNAP_DIR = config.REPO_ROOT / "predictions"
+# `p_gmc` / `p_mvp` are the POINTS-CUT probabilities (simulate's p_gmc), not
+# the field ones the site shows — a distinction that matters at grading time,
+# since the two answer different questions and only one of them was ever
+# recorded. `p_gmc_field` / `p_mvp_field` carry the published series so
+# dgpt.evaluate can score that too; see its OUTCOMES map.
 FIELDS = [
     "snapshot_date", "taken_at", "events_completed", "division",
     "pdga_number", "name", "rating", "cur_rank", "cur_points",
     "p_champ", "p_cut", "p_gmc", "p_mvp", "p_mvp_qual", "p_first",
+    "p_gmc_field", "p_mvp_field",
     "mean_pts", "mean_rank", "registered", "signed",
 ]
 # columns whose change makes a snapshot "new" (exclude timestamps/names)
 _PRED_KEYS = ["pdga_number", "cur_points", "p_champ", "p_cut", "p_gmc",
-              "p_mvp", "p_mvp_qual", "p_first", "mean_pts", "mean_rank"]
+              "p_mvp", "p_mvp_qual", "p_first", "p_gmc_field", "p_mvp_field",
+              "mean_pts", "mean_rank"]
 
 
 def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[dict]:
@@ -66,6 +73,8 @@ def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[d
             "p_mvp": round(float(res.p_mvp[i]), 5),
             "p_mvp_qual": round(float(res.p_mvp_qual[i]), 5),
             "p_first": round(float(res.p_first[i]), 5),
+            "p_gmc_field": round(float(res.p_gmc_field[i]), 5),
+            "p_mvp_field": round(float(res.p_mvp_field[i]), 5),
             "mean_pts": round(float(res.mean_points[i]), 1),
             "mean_rank": round(float(res.mean_rank[i]), 1),
             "registered": registered,

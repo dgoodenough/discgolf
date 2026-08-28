@@ -60,6 +60,13 @@ TID_WORLDS_PLAYIN = 106696
 WORLDS_PLAYIN_SPOTS = {"MPO": 6, "FPO": 2}   # open Worlds spots, per event 97344
 PLAYIN_ROUNDS = 1
 
+# Powerball Cup qualification (dgpt.com/announcements/playoff-qualification-update).
+# STANDINGS_CUT is the automatic-bid line; FIELD_SIZE the whole Cup field, so
+# the difference is the spots the MVP-performance path fills. Re-exported as
+# simulate.STANDINGS_CUT / FIELD_SIZE, which is where the sim reads them.
+STANDINGS_CUT = {"MPO": 28, "FPO": 18}
+FIELD_SIZE = {"MPO": 32, "FPO": 20}
+
 # Playoff qualification (dgpt.com/announcements/playoff-qualification-update).
 # Field is set by World Standings rank *before* each playoff event; "cut" is
 # the points-qualification line, "fill" the number the field expands to if the
