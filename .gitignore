@@ -7,7 +7,7 @@ data/cache/
 # Generated output. Published to the `site` branch by .github/publish-site.sh,
 # never committed to main (HARDENING.md item 6). Cross-run STATE that the
 # pipeline reads back — data/live_signature.txt, data/current_ratings.json,
-# predictions/history_*.csv — stays tracked.
+# data/live_odds.csv, predictions/history_*.csv — stays tracked.
 docs/data/
 results/
 data/standings_*.csv

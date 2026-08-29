@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from dgpt import config, export, fields, invariants, live_api, movers, points, ratings, schedule, snapshot
+from dgpt import (config, export, fields, invariants, live_api, liveodds, movers, points,
+                  ratings, schedule, snapshot)
 
 PAYLOADS = Path(__file__).parent / "fixtures" / "payloads"
 
@@ -219,6 +220,8 @@ def tiny_world(tmp_path, fake_api, monkeypatch) -> World:
     monkeypatch.setattr(snapshot, "SNAP_DIR", tmp_path / "predictions")
     monkeypatch.setattr(movers, "APP_DATA", docs_data)
     monkeypatch.setattr(movers, "OUT", docs_data / "movers.json")
+    monkeypatch.setattr(liveodds, "HISTORY", data_dir / "live_odds.csv")
+    monkeypatch.setattr(liveodds, "OUT", docs_data / "liveodds.json")
 
     # --- players ---
     players = [(5000 + i, f"Player {i:02d}", 1040 - 2 * (i - 1)) for i in range(1, 31)]

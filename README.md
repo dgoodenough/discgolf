@@ -33,6 +33,11 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
 - **Live events, modeled mid-round.** During play, each player's current
   score is locked in and only their remaining holes are simulated, so odds
   track the actual tournament instead of resetting to priors.
+- **The live race, kept as a series.** The simulation answers "who wins this
+  tournament" every time it runs; those answers are now recorded, so the
+  **Event odds** tab draws every contender's win probability through the event
+  on a holes-played axis — including the players who led it and lost it — over
+  a table of everyone still above 0.1%.
 - **A what-if for every player.** Expand any row, toggle which events they
   will attend, and their Cup odds recompute in under 100ms against 25,000
   frozen simulation cutlines.

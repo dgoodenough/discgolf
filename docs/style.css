@@ -108,7 +108,9 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
   position: fixed; z-index: 50; pointer-events: none;
   background: var(--band); color: var(--band-ink); font-variant-numeric: tabular-nums;
   font-size: var(--fs-caption); padding: 2px 7px; border-radius: var(--radius);
-  border: 1px solid var(--grid-strong); white-space: nowrap;
+  /* `pre`, not `nowrap`: same no-wrapping behaviour, and the event-odds
+     chart's tooltip is a multi-line standings board rather than one label */
+  border: 1px solid var(--grid-strong); white-space: pre;
 }
 
 /* expanded detail: two-column breakdown + big histogram */
@@ -275,6 +277,59 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .lev-opt { position: relative; color: var(--ink-3); font-size: var(--fs-caption); cursor: help; }
 .lev-tbl td.lev { cursor: crosshair; }
 .lev-status { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   EVENT ODDS — live win-probability race
+   ========================================================================== */
+
+/* Scrolls inside its panel below this width rather than scaling down with it:
+   a dozen labelled lines squeezed into a phone's 400px is a 5px font. Same
+   trade the movers table makes. */
+.rc-svg { cursor: crosshair; min-width: 620px; }
+.rc-line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round;
+           stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rc-dot { fill: currentColor; stroke: none; }
+.rc-end { fill: currentColor; font-size: 10.5px; font-weight: 600; }
+/* connector to the label gutter: dotted and faint, so it cannot be mistaken
+   for the series continuing across the holes nobody has played yet */
+.rc-lead { fill: none; stroke: currentColor; stroke-width: 1; opacity: .3;
+           stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; }
+.rc-future { fill: var(--ink); opacity: .05; }
+.rc-flabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .4px; }
+.rc-endnum { fill: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* round boundaries: structure, so greyscale — the colour here is all data */
+.rc-round { stroke: var(--grid); stroke-width: 1; stroke-dasharray: 3 3; }
+.rc-rlabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .5px; }
+.rc-guide { stroke: var(--ink-2); stroke-width: 1; opacity: .55; }
+
+/* The one place this app spends colour on identity rather than meaning: a
+   dozen lines have to be told apart, and green-good/red-bad cannot do that.
+   Chosen for separation at 2px on --paper, with a darker set for newsprint
+   and print, where the light end of this ramp would vanish. */
+.rc-c0  { color: #4fd688; }
+.rc-c1  { color: #6cb6ff; }
+.rc-c2  { color: #e0b73a; }
+.rc-c3  { color: #ef6f64; }
+.rc-c4  { color: #b58cff; }
+.rc-c5  { color: #3fd1c5; }
+.rc-c6  { color: #ff9d4d; }
+.rc-c7  { color: #f78fd0; }
+.rc-c8  { color: #a8cc4f; }
+.rc-c9  { color: #8aa0ff; }
+.rc-c10 { color: #c9cdd4; }
+.rc-c11 { color: #cf9463; }
+.ledger-light .rc-c0  { color: #0f7040; }
+.ledger-light .rc-c1  { color: #1f5fa8; }
+.ledger-light .rc-c2  { color: #8a6d00; }
+.ledger-light .rc-c3  { color: #b3362c; }
+.ledger-light .rc-c4  { color: #6a3fb0; }
+.ledger-light .rc-c5  { color: #0d6f68; }
+.ledger-light .rc-c6  { color: #a35a10; }
+.ledger-light .rc-c7  { color: #a53c7c; }
+.ledger-light .rc-c8  { color: #4d6b12; }
+.ledger-light .rc-c9  { color: #3b4fa0; }
+.ledger-light .rc-c10 { color: #4a4d52; }
+.ledger-light .rc-c11 { color: #7a4a20; }
 
 /* explainer / static pages */
 .page { max-width: 780px; margin: 0 auto; padding: 0 16px 40px; }
