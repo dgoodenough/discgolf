@@ -21,7 +21,7 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from . import config, schedule, simulate
+from . import config, live_api, schedule, simulate
 
 LIVE_CACHE = config.CACHE_DIR / "live"
 
@@ -46,7 +46,7 @@ def collect_rounds() -> list[dict]:
             (float(s["Rating"]), float(s["RoundScore"]))
             for s in scores
             if s.get("HasRoundScore") and s.get("Rating") and s.get("RoundScore")
-            and str(s.get("GrandTotal")) != "999"
+            and not live_api._wd_total(s.get("GrandTotal"))
         ]
         if len(pairs) >= 20:
             out.append({"tid": tid, "div": div, "round": rnum, "cls": row["cls"], "pairs": pairs})
