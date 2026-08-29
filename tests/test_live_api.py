@@ -160,6 +160,83 @@ def test_withdrawal_and_dns_leave_the_field(fake_api):
     assert set(field) == {1}   # B withdrew; C is a mid-event DNS
 
 
+def test_withdrawal_marked_only_in_the_round_score(fake_api):
+    """PDGA's 999 withdrawal marker is not confined to GrandTotal.
+
+    Reproduces Sander Bahnerth at Pro Worlds (97344 MPO, 2026-08-29): three
+    real rounds at -18, then 999 in the round he left, and the model published
+    him at +981 — a certain last place that dragged every other projection
+    with it. It reached the publish-gate bounds check, which is the only
+    reason anyone saw it.
+    """
+    _mini_event(fake_api, 4, {
+        1: [row(1, "A", 1030, round_to_par=-6, played=18, has_score=True),
+            row(2, "B", 1020, round_to_par=-6, played=18, has_score=True)],
+        2: [row(1, "A", 1030, round_to_par=-6, played=18, has_score=True),
+            row(2, "B", 1020, round_to_par=-6, played=18, has_score=True)],
+        3: [row(1, "A", 1030, round_to_par=-6, played=18, has_score=True),
+            row(2, "B", 1020, round_to_par=-6, played=18, has_score=True)],
+        4: [row(1, "A", 1030, round_to_par=-2, played=9),
+            row(2, "B", 1020, round_to_par=999, played=18, has_score=True)],
+    }, final_round=4)
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {1}, "the sentinel round score is a withdrawal, not a score"
+
+
+def test_a_round_score_too_large_to_be_golf_is_not_a_score(fake_api):
+    """Insurance against the next sentinel, which will not be 999 either.
+
+    Set well clear of the worst real round: a no-show scores +72 (par+4 on
+    every missed hole), so the bound cannot sit anywhere near three figures.
+    """
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True),
+            row(2, "B", 1020, round_to_par=-2, played=18, has_score=True)],
+        2: [row(1, "A", 1030, round_to_par=-1, played=9),
+            row(2, "B", 1020, round_to_par=500, played=18, has_score=True)],
+    })
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {1}
+
+
+def test_a_no_show_round_is_a_score_not_a_withdrawal(fake_api):
+    """Missed holes score par+4 each, and the player is still in the event.
+
+    A full round missed is +72 — which is what Nick Robertson was carrying at
+    Pro Worlds (97344 MPO, +92 through 71 holes: +72 of penalty and +6.8 a
+    round of ordinary golf, the best rate of anyone at the bottom of that
+    leaderboard). The Hokum precedent is the whole reason this matters: the
+    penalties are the score, the player plays on, and they can decide the
+    title. Anything that treats this as a withdrawal is deleting the result.
+    """
+    _mini_event(fake_api, 3, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True),
+            row(2, "B", 1010, round_to_par=-2, played=18, has_score=True)],
+        2: [row(1, "A", 1030, round_to_par=-3, played=18, has_score=True),
+            row(2, "B", 1010, round_to_par=72, played=18, has_score=True)],  # no-show
+        3: [row(1, "A", 1030, round_to_par=-1, played=9),
+            row(2, "B", 1010, round_to_par=4, played=9)],                    # back out there
+    })
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {1, 2}
+    assert field[2]["cur"] == 74.0   # -2 + 72 + 4, penalties and all
+    assert field[2]["thru"] == 45
+
+
+def test_a_bad_round_is_still_a_round(fake_api):
+    """The guard must not eat real golf: Worlds admits qualifiers a hundred
+    rating points below the field, and +30 for a round is entirely real."""
+    _mini_event(fake_api, 2, {
+        1: [row(1, "A", 1030, round_to_par=-4, played=18, has_score=True),
+            row(2, "B", 900, round_to_par=30, played=18, has_score=True)],
+        2: [row(1, "A", 1030, round_to_par=-1, played=9),
+            row(2, "B", 900, round_to_par=28, played=18, has_score=True)],
+    })
+    field = live_api.live_field(1, "MPO")
+    assert set(field) == {1, 2}
+    assert field[2]["cur"] == 58.0
+
+
 def test_topar_fallback_when_roundtopar_missing(fake_api):
     """A sheet publishing no per-round score at all falls back to the sheet's
     running ToPar for the current round only."""

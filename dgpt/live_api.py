@@ -62,6 +62,58 @@ def _record_flight(url: str, data: dict) -> None:
     except OSError:
         pass
 
+# PDGA marks a withdrawal with the sentinel 999. It is documented by
+# observation in GrandTotal — but it also lands in the per-round score fields,
+# and nothing here was reading it there. That is how Sander Bahnerth reached
+# the model at +981 through Pro Worlds R4 (999 for the round he left, on top
+# of -18 of real golf) on 2026-08-29: a certain last place, dragging every
+# other projection at the event with it, caught only because it tripped the
+# publish-gate bounds check. Read the marker wherever it appears.
+WD_SENTINEL = 999.0
+# And, because the next sentinel PDGA invents will not be 999 either, a to-par
+# too large to be golf is read the same way.
+#
+# The bound has to clear the worst REAL round there is, and that is much worse
+# than it sounds: a player who does not appear takes par+4 on every hole they
+# miss, so a no-show round scores exactly +72 and a player who starts, blows up
+# and leaves can pass it. Those are not withdrawals — the penalties are the
+# score, and the player often comes back. Sarah Hokum led the world
+# championship into a car accident on the way to a round, missed the opening
+# holes, played on, and lost the title to Paige Pierce by the penalty strokes.
+# Dropping her would have erased the single most consequential thing at that
+# tournament, so this sits at nearly three times a no-show round: its only job
+# is catching sentinels, and being generous costs nothing (999 is caught
+# exactly, above, whatever this is set to).
+MAX_TO_PAR_PER_ROUND = 200.0
+
+
+def _num(v) -> float | None:
+    """A payload number in whatever shape PDGA sent it: int, float, or str."""
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _wd_total(grand_total) -> bool:
+    """GrandTotal is a STROKE total, so only the exact sentinel means withdrawn.
+
+    Compared numerically, not as a string: 999, "999" and 999.0 are the same
+    withdrawal, and `str(x) == "999"` only ever matched the first two.
+    """
+    return _num(grand_total) == WD_SENTINEL
+
+
+def _wd_to_par(value, rounds: int = 1) -> bool:
+    """True when a to-par field carries a marker rather than a score."""
+    n = _num(value)
+    if n is None:
+        return False
+    return abs(n) == WD_SENTINEL or abs(n) >= MAX_TO_PAR_PER_ROUND * max(rounds, 1)
+
+
 _MIN_INTERVAL = 0.5  # be polite: max ~2 req/s
 _last_request = 0.0
 # per-process memo: registration/live lookups hit the same round-1 URLs from
@@ -319,7 +371,7 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
         if not scores:
             return False
         for s in scores:
-            if s.get("HasRoundScore") or str(s.get("GrandTotal")) == "999":
+            if s.get("HasRoundScore") or _wd_total(s.get("GrandTotal")):
                 continue  # finished, or withdrawn
             if (s.get("Played") or 0) > 0:
                 return False  # mid-round — still on the course
@@ -604,7 +656,7 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     # RoundtoPar at all, and only for the current round, where it is the
     # running total on the sheet being played.
     state: dict[int, dict] = {}
-    for rnd in sheet_ids:
+    for played_rounds, rnd in enumerate(sheet_ids, 1):
         try:
             scores = fetch_round(tournament_id, division, rnd).get("scores") or []
         except urllib.error.HTTPError:
@@ -619,8 +671,15 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
                                           "holes": 0, "wd": False, "place": None})
             rec["name"] = s.get("Name") or rec["name"]
             rec["rating"] = s.get("Rating") or rec["rating"]
-            if str(s.get("GrandTotal")) == "999":
+            # Withdrawal, from any of the three fields that can carry it.
+            # `continue` so the marker never reaches the place or the score:
+            # a withdrawn player's row on the sheet they left describes a
+            # withdrawal, not a standing.
+            if (_wd_total(s.get("GrandTotal"))
+                    or _wd_to_par(s.get("RoundtoPar"))
+                    or _wd_to_par(s.get("ToPar"), played_rounds)):
                 rec["wd"] = True
+                continue
             # the latest sheet carrying a RunningPlace is the current standing.
             # It is the sheet's own authoritative ordering (the same field the
             # invariants check against), so it beats re-deriving a place by
@@ -737,7 +796,7 @@ def final_results(tournament_id: int, division: str, *, use_cache: bool = True) 
             continue
         # 999 = withdrew after qualifying for the finals (still "placed" in
         # live data, but a DNF officially)
-        if str(s.get("GrandTotal")) == "999":
+        if _wd_total(s.get("GrandTotal")):
             continue
         out.append(
             {
