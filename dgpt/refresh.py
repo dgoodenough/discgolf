@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 
-from . import export, movers, schedule, simulate, snapshot, standings
+from . import export, liveodds, movers, schedule, simulate, snapshot, standings
 
 
 def main() -> None:
@@ -43,9 +43,11 @@ def main() -> None:
             simulate.write_csv(res)
             export.export(res)
             print("  " + snapshot.record(res, division))
+            print("  " + liveodds.record(res, division))
 
     if not args.skip_sim:
         movers.write_movers()
+        print("  " + liveodds.write_json())
 
     # Publish-gate invariants (flag-only): the refresh must still succeed —
     # the workflows read the marker file after committing and turn violations

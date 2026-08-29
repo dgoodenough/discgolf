@@ -12,7 +12,8 @@ import json
 import numpy as np
 import pytest
 
-from dgpt import config, export, invariants, movers, points, schedule, simulate, snapshot, standings
+from dgpt import (config, export, invariants, liveodds, movers, points, schedule, simulate,
+                  snapshot, standings)
 from tests.conftest import event_payload, round_payload, row
 
 N_SIMS = 400
@@ -175,6 +176,22 @@ def test_snapshot_and_movers_run_clean(sim_result):
         assert season is None or season["metric"] == "rank"
 
 
+def test_live_odds_recorded_and_exported(sim_result):
+    """The live event's win probabilities become a series the app can draw."""
+    world, _, res = sim_result
+    assert "recorded live odds" in liveodds.record(res, "MPO")
+    assert "unchanged" in liveodds.record(res, "MPO")   # deterministic sim, one observation
+
+    liveodds.write_json()
+    out = json.loads(liveodds.OUT.read_text(encoding="utf-8"))
+    assert out["mpo"]["tid"] == world.live_tid
+    assert out["mpo"]["live"] is True
+    assert out["mpo"]["series"], "the live event has contenders"
+    assert all(len(s["y"]) == len(out["mpo"]["x"]) for s in out["mpo"]["series"])
+    # FPO has no live field in this world, so it has nothing to draw
+    assert out["fpo"] is None
+
+
 def test_invariants_clean_on_tiny_world(sim_result):
     world, _, res = sim_result
     assert invariants.run_checks() == []
@@ -193,7 +210,9 @@ def test_full_refresh_sequence(tiny_world):
     simulate.write_csv(res)
     export.export(res)
     snapshot.record(res, "MPO")
+    liveodds.record(res, "MPO")
     movers.write_movers()
+    liveodds.write_json()
     invariants.run_checks()
 
 

@@ -47,6 +47,12 @@ async function loadDiv(div) {
     try { state.movers = await (await fetch(bust("data/movers.json"))).json(); }
     catch { state.movers = null; }
   }
+  if (state.race === undefined) {
+    // absent until the pipeline has recorded a live event; the tab has its own
+    // empty state rather than the page failing to render without it
+    try { state.race = await (await fetch(bust("data/liveodds.json"))).json(); }
+    catch { state.race = null; }
+  }
   return state.data[div];
 }
 
@@ -1458,6 +1464,290 @@ function wireLevTips(root, d) {
   });
 }
 
+/* ==========================================================================
+   EVENT ODDS — the win-probability race at the tournament in progress
+   ==========================================================================
+   The forecast tab answers a season-long question; this one answers the
+   question the season is being decided by right now. Two panels over the same
+   live projection: the race as a time series (from data/liveodds.json, which
+   the pipeline accumulates one block per scoring change) and the contenders as
+   a table (straight off this bundle, so it is right even before any history
+   has been recorded). */
+
+const RC = { W: 900, H: 360, L: 42, R: 142, T: 14, B: 34 };
+const RC_LINES = 12;   // palette size in style.css (.rc-c0 … .rc-c11)
+
+/* Surname is enough to label a line until two contenders share one, which at
+   a 200-player major is a coin flip (Schultz/Schultz, the Andersons) — and a
+   chart that labels two lines identically is worse than one with long labels. */
+function raceLabels(series) {
+  const surname = (n) => n.split(/\s+/).pop();
+  const seen = new Map();
+  series.forEach((s) => seen.set(surname(s.name), (seen.get(surname(s.name)) || 0) + 1));
+  return series.map((s) => {
+    const parts = s.name.split(/\s+/);
+    const label = seen.get(surname(s.name)) > 1 && parts.length > 1
+      ? `${parts[0][0]}. ${surname(s.name)}` : surname(s.name);
+    return label.length > 13 ? label.slice(0, 12) + "\u2026" : label;
+  });
+}
+
+/* Vertical label placement: lines converge at the right edge (that is what the
+   end of a tournament looks like), so the ends have to be pushed apart or the
+   leaders' labels stack on top of each other. Forward pass opens the gaps,
+   backward pass pulls the overflow back inside the plot. */
+function raceStack(ys, gap, lo, hi) {
+  const ix = ys.map((y, i) => i).sort((a, b) => ys[a] - ys[b]);
+  const out = ys.slice();
+  ix.forEach((i, k) => {
+    if (k && out[i] - out[ix[k - 1]] < gap) out[i] = out[ix[k - 1]] + gap;
+  });
+  for (let k = ix.length - 1; k >= 0; k--) {
+    const i = ix[k];
+    if (out[i] > hi) out[i] = hi - (ix.length - 1 - k) * gap;
+    if (k && out[i] - out[ix[k - 1]] < gap) out[ix[k - 1]] = out[i] - gap;
+  }
+  ix.forEach((i) => { out[i] = Math.max(lo, out[i]); });
+  return out;
+}
+
+/* Y is auto-scaled, unlike the row sparklines' pinned 0-100%. Those are read
+   as a column and have to be mutually comparable; this is one chart, and for
+   most of a tournament every line lives under 30% — pinning it would spend
+   three quarters of the plot on empty space and flatten the race into a hairline.
+   The ceiling is the smallest gridline multiple that clears the peak. */
+function raceScale(r) {
+  const peak = Math.max(...r.series.map((s) => Math.max(...s.y)), 0.01);
+  const step = [0.02, 0.05, 0.1, 0.2, 0.25, 0.5].find((v) => peak <= v * 5) || 0.25;
+  return { step, ymax: Math.min(1, Math.max(step, Math.ceil((peak * 1.05) / step) * step)) };
+}
+
+function raceGeom(r) {
+  const { W, H, L, R, T, B } = RC;
+  const x0 = r.x[0], x1 = Math.max(r.holes, r.x[r.x.length - 1], x0 + 18);
+  const { ymax } = raceScale(r);
+  return {
+    x0, x1, ymax, pw: W - L - R, ph: H - T - B,
+    X: (h) => L + ((h - x0) / (x1 - x0)) * (W - L - R),
+    Y: (p) => T + (1 - Math.min(1, p / ymax)) * (H - T - B),
+  };
+}
+
+function raceChartHtml(r) {
+  const { W, H, L, R, T, B } = RC;
+  const g = raceGeom(r), n = r.x.length;
+  const labels = raceLabels(r.series);
+
+  let grid = "";
+  const { step } = raceScale(r);
+  for (let p = 0; p <= g.ymax + 1e-9; p += step) {
+    const y = g.Y(p);
+    grid += `<line class="pv-grid" x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}"/>
+      <text class="pc-tick" x="${L - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${
+        +(p * 100).toFixed(1)}%</text>`;
+  }
+  // Round boundaries are the chart's real x-axis: a golf tournament moves in
+  // rounds, and holes-played puts the overnight gaps at zero width.
+  let rounds = "";
+  for (let h = 18; h <= g.x1; h += 18) {
+    if (h > g.x0) {
+      rounds += `<line class="rc-round" x1="${g.X(h).toFixed(1)}" y1="${T}" x2="${g.X(h).toFixed(1)}" y2="${T + g.ph}"/>`;
+    }
+    const mid = (Math.max(h - 18, g.x0) + Math.min(h, g.x1)) / 2;
+    if (Math.min(h, g.x1) - Math.max(h - 18, g.x0) > 6) {
+      rounds += `<text class="rc-rlabel" x="${g.X(mid).toFixed(1)}" y="${T + g.ph + 16}"
+        text-anchor="middle">R${h / 18}</text>`;
+    }
+  }
+
+  // The holes not yet played, shaded: without it the leader lines running out
+  // to the label gutter read as the odds continuing flat to the finish.
+  const lastX = g.X(r.x[n - 1]), fw = W - R - lastX;
+  const future = fw > 3
+    ? `<rect class="rc-future" x="${lastX.toFixed(1)}" y="${T}" width="${fw.toFixed(1)}" height="${g.ph}"/>${
+        fw > 90 ? `<text class="rc-flabel" x="${(lastX + fw / 2).toFixed(1)}" y="${T + 12}"
+          text-anchor="middle">${g.x1 - r.x[n - 1]} holes still to play</text>` : ""}`
+    : "";
+
+  let lines = "", ends = "";
+  const endY = raceStack(r.series.map((s) => g.Y(s.y[n - 1])), 12.5, T + 4, T + g.ph - 2);
+  r.series.forEach((s, si) => {
+    const c = `rc-c${si % RC_LINES}`;
+    let dAttr = "";
+    for (let i = 0; i < n; i++) dAttr += `${i ? "L" : "M"}${g.X(r.x[i]).toFixed(1)} ${g.Y(s.y[i]).toFixed(1)}`;
+    lines += n > 1
+      ? `<path class="rc-line ${c}" d="${dAttr}"/>`
+      : `<circle class="rc-dot ${c}" cx="${g.X(r.x[0]).toFixed(1)}" cy="${g.Y(s.y[0]).toFixed(1)}" r="3"/>`;
+    // Labels sit in a column in the right margin, not beside the last point:
+    // mid-event that point is nowhere near the right edge, and free-floating
+    // labels over the runway read as data. A leader line keeps the link.
+    const px = g.X(r.x[n - 1]), py = g.Y(s.y[n - 1]), lx = W - R + 8;
+    ends += `<path class="rc-lead ${c}" d="M${px.toFixed(1)} ${py.toFixed(1)}H${
+        (lx - 26).toFixed(1)}L${(lx - 4).toFixed(1)} ${endY[si].toFixed(1)}"/>
+      <circle class="rc-dot ${c}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6"/>
+      <text class="rc-end ${c}" x="${lx}" y="${(endY[si] + 3.5).toFixed(1)}">${
+        labels[si]} <tspan class="rc-endnum">${fmtPct(s.win)}</tspan></text>`;
+  });
+
+  return `<div class="pv-scroll"><svg class="pv-svg rc-svg" id="race-chart" width="${W}" height="${H}"
+    viewBox="0 0 ${W} ${H}" role="img"
+    aria-label="Probability of winning the event, per contender, over the holes played">
+    ${grid}${future}${rounds}
+    <line class="rc-guide" id="race-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
+    <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
+    ${lines}${ends}</svg></div>`;
+}
+
+/* The >0.1% list, read off this bundle rather than the history — the table has
+   to be right on the very first refresh of an event, before any series exists. */
+function raceRows(d, tid) {
+  const key = String(tid);
+  return d.players
+    .filter((p) => p.live && p.live[key] && p.live[key].win > 0.001)
+    .map((p) => ({ p, l: p.live[key] }))
+    .sort((a, b) => b.l.win - a.l.win || (a.l.place || 999) - (b.l.place || 999));
+}
+
+function raceTableHtml(d, tid, prev, onNow) {
+  const rows = raceRows(d, tid);
+  const ev = (d.events || []).find((e) => e.tid === tid) || { rounds: 0 };
+  // A banked event drops out of the live projection entirely, so there is no
+  // live row to list once it is over — the chart above is the record of it.
+  if (!rows.length) {
+    return `<p class="hint">${onNow
+      ? "Nobody is above 0.1% any more — the winner is decided."
+      : "This event has finished and banked; the chart above is how the race played out."}</p>`;
+  }
+  const body = rows.map(({ p, l }) => {
+    const was = prev ? prev[p.pdga] : null;
+    const dl = was == null ? null : l.win - was;
+    return `<tr><td class="num dim">${l.place ? ordinal(l.place) : "—"}</td>
+      <td>${nameCell(p)}</td>
+      <td class="num">${l.cur > 0 ? "+" : ""}${l.cur === 0 ? "E" : l.cur}</td>
+      <td class="num dim t2">${liveThru(ev, l)}</td>
+      <td class="num"><b class="${probClass(l.win)}">${fmtPct(l.win)}</b></td>
+      <td class="num ${dl == null ? "dim" : dl > 0 ? "movers-up" : "movers-down"}">${
+        dl == null ? "" : (dl > 0 ? "+" : "−") + (Math.abs(dl) * 100).toFixed(1)}</td>
+      <td class="num dim t2">${l.mean_place}</td>
+      <td class="num dim t3">${fmtPts(l.mean_pts)}</td>
+      <td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td></tr>`;
+  }).join("");
+  return `<div class="pv-scroll pv-tall"><table class="table-ledger detail-tbl pv-tbl"><thead><tr>
+    <th class="num">Pos</th><th>Player</th><th class="num">Score</th>
+    <th class="num t2">Thru</th><th class="num">Win</th>
+    <th class="num" title="Change since the previous recorded update">Δ</th>
+    <th class="num t2" title="Mean simulated finishing position">Proj</th>
+    <th class="num t3" title="Mean DGPT points from this event">Pts</th>
+    <th class="num" title="Powerball Cup odds">Cup</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function renderRace(d) {
+  const el = $("#view-race");
+  const r = state.race && state.race[state.div];
+  const live = liveEvents(d);
+  const panel = (title, form, lede, chart, note) =>
+    `<section class="pv-panel"><div class="pv-head"><h2>${title}</h2><span class="pv-form">${form}</span></div>
+      <div class="pv-body"><p class="pv-lede">${lede}</p>${chart}
+      ${note ? `<p class="pv-note">${note}</p>` : ""}</div></section>`;
+
+  // Nothing live and nothing recorded: say so rather than showing an empty axis.
+  if (!r && !live.length) {
+    el.innerHTML = `<p class="pv-intro"><b>No event in progress.</b> This tab tracks the
+      race to win the tournament that is on — every contender's odds, updated within
+      minutes of a scoring change and kept as a series, so you can see who was ever in it
+      and where it turned. It fills in as the next event plays.</p>`;
+    return;
+  }
+  // An event that is live now always wins over a finished one still in the
+  // history: for the first refresh of a new tournament those differ, and the
+  // tab must not show last week's race under this week's live banner.
+  const liveTid = live.length ? live[0].tid : null;
+  const series = r && (liveTid == null || r.tid === liveTid) ? r : null;
+  const tid = series ? series.tid : liveTid;
+  const ev = (d.schedule || []).find((s) => s.tid === tid);
+  const name = ev ? shortName(ev.name) : `event ${tid}`;
+  const onNow = tid === liveTid;
+  const rows = raceRows(d, tid);
+  const lead = rows[0];
+
+  // deltas for the table come from the previous recorded observation, which the
+  // bundle carries for every recorded player rather than only the charted ones
+  const prev = series && Object.keys(series.prev || {}).length ? series.prev : null;
+
+  const chart = !series ? `<p class="hint">No updates recorded yet — the chart starts with the
+      next scoring change.</p>`
+    : series.x.length < 2 ? `${raceChartHtml(series)}<p class="hint">Tracking started at hole
+      ${series.tracked_from} of ${series.holes}; the lines fill in from here as play continues.</p>`
+    : raceChartHtml(series);
+
+  el.innerHTML = `
+    <p class="pv-intro"><b>${name}${onNow ? " is on now" : " — final"}.</b>
+      ${rows.length ? `<b>${rows.length}</b> player${rows.length === 1 ? "" : "s"} still have
+        better than a 0.1% chance to win it${
+        lead ? `, led by <b>${lead.p.name}</b> at ${fmtPct(lead.l.win)}` : ""}. ` : ""}
+      ${onNow
+        ? `Every simulated season starts from this tournament's real, in-progress scores, so
+           these are the same numbers driving the Cup odds on the other two tabs.`
+        : `These are the odds as the tournament actually played out, recorded as it went.`}</p>
+
+    ${panel(`Who wins ${name}?`,
+      series ? `${series.x.length} update${series.x.length === 1 ? "" : "s"} recorded` : "no history yet",
+      `Win probability through the event, one line per contender. Holes played on the
+       x-axis rather than clock time, so the overnight gaps close up and each round is
+       an equal slice.`,
+      chart,
+      series ? `Lines are drawn for the ${series.series.length} biggest contender${
+       series.series.length === 1 ? "" : "s"} — anyone above ${fmtPct(series.chart_min || 0.001)} now,
+       plus up to three who once held ${fmtPct(series.peak_min || 0.15)} and have since fallen off it${
+       series.others ? `; ${series.others} more sit above ${fmtPct(series.chart_min || 0.001)}
+       but below the chart's cap` : ""}.
+       Hover the chart for the standings at any point in the event.` : "")}
+
+    ${panel(onNow ? "Everyone still alive" : "The final list", "&gt;0.1% to win",
+      `The full list, in the app's own terms: where they stand, what the model gives them,
+       and what winning here would do for their Powerball Cup odds.`,
+      raceTableHtml(d, tid, prev, onNow),
+      `Score is to par; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
+       points this event pays them. <b>Δ</b> is the move since the previous recorded update.`)}`;
+
+  wireRaceTips(el, series);
+}
+
+/* One SVG, up to a dozen lines: hover resolves the nearest recorded update from
+   the pointer's x and reports the whole board there, which is the question a
+   win-probability chart actually gets asked ("who was ahead at the turn?"). */
+function wireRaceTips(root, r) {
+  const svg = root.querySelector("#race-chart");
+  if (!svg || !r) return;
+  const g = raceGeom(r), guide = root.querySelector("#race-guide");
+  const tip = $("#spark-tip");
+  svg.addEventListener("mousemove", (e) => {
+    const rect = svg.getBoundingClientRect(), sc = svg.viewBox.baseVal.width / rect.width;
+    const x = (e.clientX - rect.left) * sc;
+    let best = 0;
+    r.x.forEach((h, i) => { if (Math.abs(g.X(h) - x) < Math.abs(g.X(r.x[best]) - x)) best = i; });
+    const gx = g.X(r.x[best]);
+    guide.setAttribute("x1", gx.toFixed(1));
+    guide.setAttribute("x2", gx.toFixed(1));
+    guide.setAttribute("visibility", "visible");
+    const board = r.series
+      .map((s) => ({ name: s.name, v: s.y[best] }))
+      .sort((a, b) => b.v - a.v)
+      .filter((s) => s.v > 0.001)
+      .slice(0, 8)
+      .map((s) => `${s.name} ${fmtPct(s.v)}`);
+    tip.textContent = `Hole ${r.x[best]} of ${r.holes}\n${
+      board.length ? board.join("\n") : "nobody above 0.1%"}`;
+    tip.hidden = false;
+    tip.style.left = e.clientX + 12 + "px";
+    tip.style.top = e.clientY - 8 + "px";
+  });
+  svg.addEventListener("mouseleave", () => {
+    $("#spark-tip").hidden = true;
+    guide.setAttribute("visibility", "hidden");
+  });
+}
+
 /* ---------- shell ---------- */
 
 /* Last successful standings update. meta.generated is written only after a
@@ -1533,12 +1823,14 @@ async function render() {
   } else {
     note.hidden = true;
   }
-  // both views read the same bundle; only the visible one is built, and a
-  // deep link always lands on the table it points into
-  const showPossible = state.view === "possible" && !state.permalink;
-  $("#view-forecast").hidden = showPossible;
-  $("#view-possible").hidden = !showPossible;
-  if (showPossible) { renderPossible(d); return; }
+  // all three views read the same bundle; only the visible one is built, and
+  // a deep link always lands on the table it points into
+  const view = state.permalink ? "forecast" : state.view;
+  $("#view-forecast").hidden = view !== "forecast";
+  $("#view-possible").hidden = view !== "possible";
+  $("#view-race").hidden = view !== "race";
+  if (view === "possible") { renderPossible(d); return; }
+  if (view === "race") { renderRace(d); return; }
 
   renderForecast(d);
   if (state.permalink) {  // deep link: expand + scroll to the player once
