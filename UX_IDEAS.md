@@ -11,6 +11,10 @@ site, the repo, and the published MPO bundle. Numbers quoted below are
 measured against `origin/site` as of 2026-09-04 19:57Z, three events left
 in the season.
 
+**Status.** Recommendation 1, the two unanimous cheap items, and the two
+answered open questions are implemented — see [The short list](#the-short-list)
+for what shipped and what is still open. Recommendations 2–10 are held.
+
 **The room**
 
 - **Reese** — touring MPO pro, third season, rated ~1012, currently living on
@@ -325,18 +329,18 @@ Kept deliberately unfiltered.
 Ten recommendations. Ordered by (value ÷ effort) as the room saw it, with
 the surface each one affects.
 
-| # | Recommendation | Surface | Why it's high on the list |
-|---|---|---|---|
-| 1 | **Make every tooltip touch-accessible.** Tap-to-reveal on sparklines, charts, and column headers; convert `title=` header copy into a tappable glossary sheet. | mobile | The site's documentation is currently invisible to every phone reader. Nothing else on this list changes as many readers' experience. |
-| 2 | **Add a search / jump-to-player box, and default the table to contenders** with "show all" beneath it. | both | 560 rendered rows for a 45-player race; the pro's primary use case is "find my row." |
-| 3 | **Stop deleting the sparklines on phones.** Replace tier-hiding with a sticky `Player` column and horizontally scrollable data columns. | mobile | The signature visual is absent at exactly the width most people read at. |
-| 4 | **Split the bundle.** Light table payload for first paint; cutline array (150 KB) and per-player distributions (169 KB) fetched on demand. | both | 1.07 MB → under ~200 KB for first paint, on tour-site connections. |
-| 5 | **Service-worker cache with stale-while-revalidate**, and a visible "showing 08:41, reconnecting" state. | mobile | Keeps both properties: no edge-stale data, and a site that works in a parking lot. |
-| 6 | **Put the whole app state in the URL** — view, division, sort — and generate a per-player social card at build time. | web | Makes the app shareable and quotable; the permalink already proves the pattern works. |
-| 7 | **Ship the scorecard.** A public calibration page: reliability curve, running Brier vs. a naive baseline, "when we said 40%." | web | The strongest trust asset in the repo is currently a local command. |
-| 8 | **Surface leverage in the player row** — "Idlewild is worth ±19 pts of auto-bid odds to you" — instead of only in a hover-only grid on tab two. | both | Turns a forecast into a decision, which is what the pro actually needs. |
-| 9 | **Default to the live tab during play**, and add biggest-hole win-probability swings (per event, and a season leaderboard). | both | Free from a series already stored; the most postable statistic on the site. |
-| 10 | **Light mode.** Honor `prefers-color-scheme`, add a toggle, persist it. | both | `.ledger-light` is already written and styled in `tokens.css` and never applied. |
+| # | Recommendation | Surface | Status | Why it's high on the list |
+|---|---|---|---|---|
+| 1 | **Make every tooltip touch-accessible.** Tap-to-reveal on sparklines, charts, and column headers; convert `title=` header copy into a tappable glossary sheet. | mobile | **shipped** | The site's documentation is currently invisible to every phone reader. Nothing else on this list changes as many readers' experience. |
+| 2 | **Add a search / jump-to-player box, and default the table to contenders** with "show all" beneath it. | both | held | 560 rendered rows for a 45-player race; the pro's primary use case is "find my row." |
+| 3 | **Stop deleting the sparklines on phones.** Replace tier-hiding with a sticky `Player` column and horizontally scrollable data columns. | mobile | held | The signature visual is absent at exactly the width most people read at. |
+| 4 | **Split the bundle.** Light table payload for first paint; cutline array (150 KB) and per-player distributions (169 KB) fetched on demand. | both | held | 1.07 MB → under ~200 KB for first paint, on tour-site connections. |
+| 5 | **Service-worker cache with stale-while-revalidate**, and a visible "showing 08:41, reconnecting" state. | mobile | held | Keeps both properties: no edge-stale data, and a site that works in a parking lot. |
+| 6 | **Put the whole app state in the URL** — view, division, sort — and generate a per-player social card at build time. | web | held | Makes the app shareable and quotable; the permalink already proves the pattern works. |
+| 7 | **Ship the scorecard.** A public calibration page: reliability curve, running Brier vs. a naive baseline, "when we said 40%." | web | held | The strongest trust asset in the repo is currently a local command. |
+| 8 | **Surface leverage in the player row** — "Idlewild is worth ±19 pts of auto-bid odds to you" — instead of only in a hover-only grid on tab two. | both | held | Turns a forecast into a decision, which is what the pro actually needs. |
+| 9 | **Default to the live tab during play**, and add biggest-hole win-probability swings (per event, and a season leaderboard). | both | held | Free from a series already stored; the most postable statistic on the site. |
+| 10 | **Light mode.** Honor `prefers-color-scheme`, add a toggle, persist it. | both | held | `.ledger-light` is already written and styled in `tokens.css` and never applied. |
 
 Plus two that are cheap and were unanimous: **make row expansion keyboard
 accessible** (`tabindex`, `role="button"`, `aria-expanded` — the SVGs already
@@ -344,23 +348,115 @@ carry `role="img"` and good `aria-label`s, so the table is the gap), and
 **publish a movers JSON/RSS feed** so notifications can be built by anyone
 who wants them.
 
-## The open questions
+## The open questions — answered
 
-1. **How wrong is the frozen cutline?** The what-if replay holds 25,000
-   cutlines fixed while one player's results change, but a player who wins
-   takes points from the field that defines the cutline. Measure the what-if
-   against a full re-sim for a few players at different standings positions
-   and footnote the answer.
-2. **Should mid-range probabilities be quoted to a tenth of a percent?** The
-   `>99.9%` / `<0.1%` handling is exemplary. 41.3% implies a precision the
-   variance assumption does not support. Round the display, keep the exact
-   value on tap?
-3. **Is FPO a first-class division or a toggle?** Every headline currently
-   reads from whichever division is loaded, and MPO is the default. Should
-   the default follow the live event instead?
-4. **Who is the site for on a phone — the fan or the pro?** They want
-   opposite things (narrative vs. decision). Two entry points, or one
-   compromise? The room did not agree.
-5. **Would a jargon glossary or inline first-use expansion serve newcomers
-   better?** Two of four readers could not decode MPO, FPO, GMC, or MVP.
-   "How it works" explains the points system well but assumes the acronyms.
+Answered by the author on 2026-09-04. Q1 and Q2 are implemented; Q5 is on the
+to-do below; Q3 and Q4 stay open.
+
+**Q1. How wrong is the frozen cutline?** — *"I intended the what-if to be as
+lightweight as possible. If it doesn't add render time, I want it to be more
+correct; if it adds render time, I'm OK fudging the numbers."*
+
+Measured, then implemented, because it turned out to be free. Three findings:
+
+1. The **self-exclusion** half of the question was already handled: the bundle
+   ships two cutline arrays (the cut-th and (cut+1)-th season totals) and the
+   replay weights them by `p_cut`. That weight is also correct as-is — it is
+   the probability the player held a top-`cut` place in the *base* simulation,
+   which the what-if toggles do not change.
+2. The weighting was applied in the wrong place. It blended the two thresholds
+   and tested the total against the blend; an indicator is not linear, so a
+   season total landing between the two cutlines counted as a certain miss
+   rather than a partial one — and that band is where bubble players live. It
+   now counts against each cutline and weights the two counts, which is the
+   expectation the blend was reaching for. **Cost: none** — 50.6ms against the
+   old 52.0ms over 25,000 sims, since it trades a multiply-add for a compare.
+   Measured over 18 bubble players, 7 runs each: mean difference **+0.07pp**
+   against a **0.51pp** run-to-run noise floor, i.e. invisible today, because a
+   player's remaining-season spread is hundreds of points wide while the two
+   cutlines differ by ~18 (mean; median 12.8, p90 40.0). It stops being
+   invisible in a one-event-left finish, and it cost nothing to be right in
+   advance.
+3. Stratified resampling was tried as a free variance reduction and
+   **rejected**: run-to-run sd 0.60pp stratified against 0.62pp random, i.e. no
+   improvement, so the added complexity buys nothing. The noise is not coming
+   from the resampling.
+
+What remains genuinely approximate, and is now stated in the code and the
+changelog: the **zero-sum** term. A player who wins takes points that would
+have gone to the players the cutline is made of. Correcting that needs a
+re-simulation of the field, which a row expander cannot do in 100ms.
+
+**Q2. Should mid-range probabilities be quoted to a tenth of a percent?** —
+*agreed with the mathematician wholeheartedly.* Implemented. Above 10% the
+display is a whole percent; below 10% a tenth stays, because there 2.1% vs
+2.9% is a 40% relative difference rather than a rounding artifact. The
+`>99.9%` / `<0.1%` / exact-`100%` handling is untouched. The unrounded figures
+did not go away — they are the first line of any expanded row, to two
+decimals. The what-if swing readout moved to whole percents too and now
+reports "no move" below 1pp, since it carries ~0.5pp of noise.
+
+**Q3. Is FPO a first-class division or a toggle?** — **open.** No answer yet.
+
+**Q4. On a phone, is this for the fan or the pro?** — **open.** No answer yet.
+Worth noting the two hold up rec 2 and rec 8 between them.
+
+**Q5. Glossary, or inline first-use expansion?** — on the to-do. The column
+guide shipped with rec 1 spells out MPO/FPO/DGPT/GMC/MVP Open/PDGA, because
+the header copy it surfaces leans on all six. The broader treatment — inline
+first-use expansion across the site and "how it works" — is still to do.
+
+---
+
+## What shipped, 2026-09-04
+
+**Recommendation 1 — every readout works without a mouse.**
+
+- One `probe()` helper replaces five ad-hoc `mousemove` blocks (row
+  sparklines, possibility cloud, cutline, leverage grid, race chart). A mouse
+  hovers as before; a finger presses and drags. `touch-action: pan-y` on the
+  probe surfaces is what makes both possible — the browser keeps vertical page
+  scrolling and hands over the horizontal drags, which is the axis every chart
+  here reads along.
+- `tipAttrs()` gives 38 inline `title` sites a `data-tip` alongside, so every
+  explanation is tappable. The `title` stays for hover and assistive tech.
+- A **column guide** (`<details>`, so it is keyboard- and screen-reader-
+  operable with no script) renders every column definition from
+  `forecastCols` itself, plus a names block. No second copy of the copy.
+- The floating tip is now viewport-clamped (it used to run off the right edge)
+  and wraps (`pre-line`), since it now carries full sentences.
+- Panels that said "hover any cell" now say "tap or hover".
+
+Two bugs found only by driving a real touch browser, both of which would have
+made the feature look broken on a phone while passing any static review:
+
+- **Chromium follows every touch tap with compatibility mouse events, ending
+  in `mouseleave`.** Taken at face value that dismissed the readout the tap had
+  just produced, so no chart could be read on a phone even with the pointer
+  handlers in place. `probe` now ignores `mouseleave` when the readout came
+  from touch.
+- **A tap on an explanation mark also toggled its row.** The delegated
+  handler's `stopPropagation` runs on `document`, far too late — the row's own
+  listener has already seen the event. The row listener now ignores clicks that
+  originate on a link or a `[data-tip]` mark, and `probe` stops clicks on chart
+  surfaces.
+
+**The two unanimous cheap items.**
+
+- **Keyboard row expansion.** `tabindex="0"` plus `aria-expanded` on the row —
+  which is valid ARIA on `role="row"`, so the table keeps its structure rather
+  than being relabelled a button — with Enter/Space handling and a focus ring.
+- **Movers feed.** `dgpt/feed.py` writes `docs/data/movers.xml` (RSS 2.0) from
+  the movers JSON the app already reads, linked from the site footer. Guids are
+  `{div}-{pdga}-{window}-{date}`, so a player's daily item *updates* through a
+  tournament instead of notifying every five minutes. 19 tests cover guid
+  stability, XML escaping, ordering, and that a missing or corrupt input can
+  never fail a publish.
+
+Verified in a real touch browser (Playwright, 390×844 with `hasTouch`), 28
+checks: every probe surface reads out on tap, marks toggle, the tip stays in
+the viewport, row expansion works from the keyboard and reports its state, the
+rounding rule holds in both bands, and desktop hover is unchanged.
+
+**Still to do from this round:** recommendations 2–10, Q3, Q4, and the broader
+acronym treatment from Q5.
