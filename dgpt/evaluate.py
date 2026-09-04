@@ -23,6 +23,7 @@ OUTCOMES = {
     "p_cut": "auto_bid",
     "p_gmc": "made_gmc",
     "p_mvp": "made_mvp",
+    "p_cup_win": "won_cup",
 }
 
 

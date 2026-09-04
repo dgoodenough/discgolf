@@ -88,6 +88,7 @@ class SimResult:
     # and stroke_values labels the rest (best first).
     strokes_hist: np.ndarray
     stroke_values: tuple[int, ...]
+    p_cup_win: np.ndarray    # P(wins the Powerball Cup itself)
     cutline: np.ndarray      # per sim: points of the last direct-qualification spot
     cutline2: np.ndarray     # per sim: points of the first spot outside the cut
     att_probs: np.ndarray    # (n_events, n_players) realized P(plays) incl. playoff gating
@@ -887,6 +888,7 @@ class _Totals:
     total_rank: np.ndarray
     rank_hist: np.ndarray
     strokes_hist: np.ndarray
+    cup_win_hits: np.ndarray
     cutline: np.ndarray
     cutline2: np.ndarray
     p_gmc_hits: np.ndarray        # rank before GMC within its points cut
@@ -938,11 +940,13 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
               playin: _Playin | None = None) -> _Totals:
     """Draw every remaining event, apply the counting caps, rank the season."""
     n = roster.n
+    rtg = roster.player_ratings
     t = _Totals(
         total_pts=np.zeros((n_sims, n)),
         total_rank=np.zeros((n_sims, n), dtype=np.int32),
         rank_hist=np.zeros((n, MAX_HIST_RANK), dtype=np.int64),
         strokes_hist=np.zeros((n, len(qual.stroke_values) + 1), dtype=np.int64),
+        cup_win_hits=np.zeros(n, dtype=np.int64),
         cutline=np.zeros(n_sims),
         cutline2=np.zeros(n_sims),
         p_gmc_hits=np.zeros(n),
@@ -955,6 +959,13 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         drop_major_hits=np.zeros((n, banked.majors.shape[1])),
     )
     n_sim_majors = sum(1 for i in qual.pre_eis if drawer.remaining[i]["cls"] == "major")
+    # The Cup is drawn from its own stream. Taking it off `rng` would shift
+    # every later event draw in the chunk and move every published number in
+    # the bundle by MC noise; spawning leaves the parent sequence untouched,
+    # so adding this column changes nothing that was already on the site.
+    cup_rng = rng.spawn(1)[0]
+    stroke_vals = np.array(qual.stroke_values, dtype=float)
+    cup_sd = ROUND_SD * np.sqrt(config.CUP_ROUNDS)
 
     done = 0
     while done < n_sims:
@@ -1060,10 +1071,27 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         # n_sims and the app can draw missing the Cup next to starting in it.
         nb = len(qual.stroke_values) + 1
         depth = qual.stroke_bucket.shape[0]
-        bucket = qual.stroke_bucket[np.minimum(ranks, depth) - 1]
-        bucket = np.where(champ_field, bucket, nb - 1)
+        seed_bucket = qual.stroke_bucket[np.minimum(ranks, depth) - 1]
+        bucket = np.where(champ_field, seed_bucket, nb - 1)
         flat_s = bucket + (np.arange(n) * nb)[None, :]
         t.strokes_hist += np.bincount(flat_s.ravel(), minlength=n * nb).reshape(n, nb)
+
+        # -- and the Cup itself: four rounds, started on those strokes --
+        # The only event the model plays out purely to see who wins it, since
+        # it awards no points. Same score model as every other event (ratings
+        # against the field average, event-level noise over four rounds), with
+        # the seed advantage added to the total: a stroke of head start is
+        # exactly a stroke, which is what makes the ladder worth simulating
+        # rather than assuming the best player wins.
+        fcnt = champ_field.sum(axis=1)
+        favg = np.where(fcnt > 0, (champ_field * rtg[None, :]).sum(axis=1) / np.maximum(fcnt, 1), 1000.0)
+        cup_mu = -(rtg[None, :] - favg[:, None]) / drawer.rpps * config.CUP_ROUNDS
+        cup_total = cup_mu + cup_rng.normal(0.0, cup_sd, (c, n)) + stroke_vals[seed_bucket]
+        cup_total = np.where(champ_field, cup_total, np.inf)
+        # A sim with nobody in the field has no winner to credit; argmin would
+        # hand it to row 0 on an all-inf row.
+        played = fcnt > 0
+        t.cup_win_hits += np.bincount(cup_total.argmin(axis=1)[played], minlength=n)
 
         sorted_totals = -np.sort(-totals, axis=1)
         # A division can hold fewer players than there are qualifying spots
@@ -1251,6 +1279,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         rank_hist=t.rank_hist,
         strokes_hist=t.strokes_hist,
         stroke_values=qual.stroke_values,
+        p_cup_win=t.cup_win_hits / n_sims,
         cutline=t.cutline,
         cutline2=t.cutline2,
         att_probs=drawer.att_count / n_sims,

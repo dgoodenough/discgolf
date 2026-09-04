@@ -445,6 +445,9 @@ function forecastCols(meta, adv = false) {
     cell: (p) => strokesCell(p, meta) };
   const distCols = !(meta.start_strokes && meta.start_strokes.values)
     ? [finishCol] : adv ? [strokesCol, finishCol] : [strokesCol];
+  // Bundles published before the Cup was simulated carry no p_cup_win; the
+  // column is dropped rather than shown as a table of zeroes.
+  const hasCupWin = meta.cup_rounds > 0;
   const flagCol = { key: "country", label: "Nat.", num: false, get: (p) => p.country || "zz",
     cell: (p) => p.country ? `<span class="flag" title="${p.country}">${flagEmoji(p.country)}</span>` : "", dir0: "asc" };
   return [
@@ -453,6 +456,7 @@ function forecastCols(meta, adv = false) {
     { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: nameCell, dir0: "asc" },
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
     { key: "p_champ", label: "Cup", title: "P(in the Powerball Cup field): automatic bid, MVP-performance qualifier, or a DGPT/Major event win (special invite — 100% if already won)", num: true, get: (p) => p.p_champ, cell: (p) => `<b class="${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</b>`, dir0: "desc" },
+    ...(hasCupWin ? [{ key: "p_cup_win", label: "Win Cup", title: `P(wins the Powerball Cup): the four-round championship played out from each seed's starting strokes, over every season where they reach it. Unlike Cup, this one is a race — the whole field's odds add to 100%`, num: true, get: (p) => p.p_cup_win ?? 0, cell: (p) => `<b class="${probClass(p.p_cup_win ?? 0)}">${fmtPct(p.p_cup_win ?? 0)}</b>`, dir0: "desc" }] : []),
     { key: "mean_pts", label: "Proj. pts", hide: "t1", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
     ...distCols,
     { key: "p_cut", label: "Auto Bid", hide: "t2", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
