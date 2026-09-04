@@ -101,18 +101,41 @@
 
   <div class="band">4 · What a seed is worth</div>
   <p>The standings don't only decide who plays the Cup — they decide what
-  score each qualifier starts on. The Powerball Cup (Oct 15–18, Lynchburg,
-  Virginia) awards a <b>starting-stroke advantage by World Standings
-  position</b>, so a season spent climbing the table is carried onto the first
-  tee. For 2026 that spread is one stroke tighter than last year: the top MPO
-  seed begins at <b>−7</b>, the top FPO seed at <b>−6</b>. It is the only
-  change to the Championship format this season; the tour's wider format
-  review is due to be announced later this year, for 2027.</p>
-  <p>That is why a seeding battle between two players who are already locked
-  in is still a battle, and why <b>Biggest Movers</b> tracks projected final
-  seed next to Cup odds: once qualification odds hit 100%, position is the
-  only thing left to win. And it is worth the most of any week on tour — a
-  record <a href="https://www.dgpt.com/announcements/2026-powerball-cup-purse/">$350,000
+  score each qualifier starts on. The Powerball Cup is four rounds of stroke
+  play at <b>Ivy Hill</b>, Lynchburg, Virginia, Oct 15–18, and every player
+  tees off on a <b>starting score set by their World Standings position</b>.
+  A season spent climbing the table is carried onto the first tee:</p>
+  <table class="table-ledger">
+    <thead><tr><th>Starts at</th><th>MPO standings rank</th><th>FPO standings rank</th></tr></thead>
+    <tbody>
+      <tr><td><b>−7</b></td><td>1st</td><td class="dim">—</td></tr>
+      <tr><td><b>−6</b></td><td>2nd</td><td>1st</td></tr>
+      <tr><td><b>−5</b></td><td>3rd–4th</td><td>2nd</td></tr>
+      <tr><td><b>−4</b></td><td>5th–8th</td><td>3rd–4th</td></tr>
+      <tr><td><b>−3</b></td><td>9th–12th</td><td>5th–8th</td></tr>
+      <tr><td><b>−2</b></td><td>13th–16th</td><td>9th–12th</td></tr>
+      <tr><td><b>−1</b></td><td>17th–24th</td><td>13th–16th</td></tr>
+      <tr><td><b>even</b></td><td>25th–28th, plus wildcards</td><td>17th–18th, plus wildcards</td></tr>
+    </tbody>
+  </table>
+  <p>The two ladders are the same ladder, FPO's one stroke lower throughout —
+  which is 2026's single change to the format: both top seeds gave up a stroke
+  from 2025's −8 and −7. Everyone who arrives from outside the standings cut
+  is a <b>bottom seed at even</b>: the four MPO / two FPO wildcards out of the
+  MVP Open, and any event winner playing on the special invite. The tour's
+  wider format review is due to be announced later this year, for 2027.</p>
+  <p>So the forecast publishes the ladder as its own column. <b>Starting
+  strokes</b> runs each simulated season's finishing position through the table
+  above and shows the distribution of the score that player would tee off on,
+  with a last bar for the seasons they never make the field at all — a
+  qualification picture and a seeding picture in one. The finish-distribution
+  sparkline it replaces is still there under <b>Advanced</b>, alongside it.</p>
+  <p>This is also why a seeding battle between two players who are already
+  locked in is still a battle, and why <b>Biggest Movers</b> tracks projected
+  final seed next to Cup odds: once qualification odds hit 100%, position is
+  the only thing left to win. And the week is worth more than any other on
+  tour — a record
+  <a href="https://www.dgpt.com/announcements/2026-powerball-cup-purse/">$350,000
   purse</a>, $50,000 of it to each of the MPO and FPO winners.</p>
 
   <div class="band">5 · The Worlds play-in</div>
@@ -143,7 +166,7 @@
   <div class="band">Changelog</div>
   <table class="table-ledger">
     <tbody>
-      <tr><td class="changelog-date">Sep 4</td><td>The DGPT published its 2026 Powerball Cup details: every qualification rule the model runs on is unchanged, and the three players currently holding a winner's invite are exactly the three the forecast flags. New on this page: <b>what a seed is actually worth</b> — the Cup starts the top MPO seed at &minus;7 and the top FPO seed at &minus;6, one stroke tighter than 2025. Corrected here too: the MVP Open's points cut is read after Worlds, not after GMC.</td></tr>
+      <tr><td class="changelog-date">Sep 4</td><td><b>New column: Starting strokes.</b> The DGPT published the Powerball Cup seed table, so the forecast can now show not just whether a player reaches the Cup but what score they would start it on — every simulated finish run through the ladder, with a last bar for the seasons they miss the field. It takes over from the finish-distribution sparkline, which moves to <b>Advanced</b> and is shown next to it there. Everything the announcement said about qualifying was already in the model, down to the three players holding a winner's invite. Corrected on this page: the MVP Open's points cut is read after Worlds, not after GMC.</td></tr>
       <tr><td class="changelog-date">Aug 29</td><td><b>New "Event odds" tab: the race to win the tournament that's on.</b> The model has always projected a live event's winner — that number drives the Cup odds — but only ever published it as a snapshot. It is now kept as a series, so every contender's win probability is drawn through the event, hole by hole, and you can see who was ever in it and where it turned. Below the chart, everyone still above 0.1%, with what a win there would do for their Cup odds.</td></tr>
       <tr><td class="changelog-date">Aug 19</td><td><b>Playoff signups are now taken literally.</b> GMC and MVP Open registration opened in August, so anyone already entered is in that field in every simulation regardless of the standings — and only players the later waves haven't reached are still modelled on points. The <b>Worlds play-in</b> is modelled too: 6 MPO / 2 FPO spots, decided over one round, which is the only way into Worlds for entrants who missed direct qualification.</td></tr>
       <tr><td class="changelog-date">Aug 12</td><td>Behind the scenes: the simulation was reorganized without changing a single projected number (every output checked identical, run for run), the published data moved off the project's main branch, and two latent crash paths were closed. Nothing you see should have changed.</td></tr>

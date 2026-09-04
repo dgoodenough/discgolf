@@ -80,6 +80,38 @@ PLAYOFF_QUAL = {
     "mvp": {"cut": {"MPO": 72, "FPO": 36}, "perf": {"MPO": 8, "FPO": 4}},
 }
 
+# Powerball Cup starting strokes, from the DGPT's published seed table.
+# The Cup is stroke play over four rounds at Ivy Hill (Oct 15-18), and every
+# qualifier tees off on a score set by their World Standings position after the
+# last points event — the season's table, carried onto the first tee.
+#
+# Bands are (last rank in the band, starting score). Both divisions run the
+# same shape and the same boundaries through rank 16; FPO simply starts one
+# band lower, which is 2026's change — the top seed gives up a stroke from
+# 2025's -8 MPO / -7 FPO.
+#
+# Ranks past the last band start at even. That is where the four MPO / two FPO
+# wildcards land, and where an event winner's special invite lands when they
+# miss the standings cut: both are bottom seeds. The last band pays even
+# anyway, so callers can clamp rank to the length of the ladder.
+CUP_START_STROKES = {
+    "MPO": [(1, -7), (2, -6), (4, -5), (8, -4), (12, -3), (16, -2), (24, -1), (28, 0)],
+    "FPO": [(1, -6), (2, -5), (4, -4), (8, -3), (12, -2), (16, -1), (18, 0)],
+}
+
+
+def cup_start_strokes(division: str) -> list[int]:
+    """Starting score by final World Standings rank, indexed by rank - 1.
+
+    Length is the standings cut (28 MPO / 18 FPO); deeper ranks are bottom
+    seeds and start at even, which is what the last band already pays.
+    """
+    out: list[int] = []
+    for last_rank, strokes in CUP_START_STROKES[division]:
+        out += [strokes] * (last_rank - len(out))
+    return out
+
+
 # When each playoff registration window OPENS (the PDGA event pages, converted
 # from EDT). Windows are cumulative: once one opens it stays open, so today's
 # signup list is everyone eligible under every phase that has already passed.

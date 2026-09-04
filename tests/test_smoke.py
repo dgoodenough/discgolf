@@ -134,6 +134,12 @@ def test_export_bundle_is_well_formed(sim_result, tmp_path):
             assert 0.0 <= p[key] <= 1.0, f"{p['name']} {key}={p[key]}"
         assert len(p["hist"]) == simulate.MAX_HIST_RANK
         assert len(p["att"]) == len(bundle["events"])
+        # one bucket per starting score, plus the trailing "missed the field"
+        assert len(p["strokes"]) == len(bundle["meta"]["start_strokes"]["values"]) + 1
+        assert sum(p["strokes"]) == pytest.approx(1.0, abs=5e-4)  # 4dp rounding
+
+    # buckets are the distinct scores on the ladder, best first
+    assert bundle["meta"]["start_strokes"]["values"] == sorted(set(config.cup_start_strokes("MPO")))
 
     # every schedule row carries the backend's own "in progress" answer, so the
     # page never re-derives that window from a UTC date (which has no grace day

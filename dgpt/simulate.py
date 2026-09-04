@@ -83,6 +83,11 @@ class SimResult:
     mvp_final: bool
     # extras for the web app / what-if replay
     rank_hist: np.ndarray    # (n_players, MAX_HIST_RANK) counts of final rank
+    # (n_players, len(stroke_values) + 1) counts of the Cup starting score a
+    # player tees off on; the last bucket is the seasons they miss the field,
+    # and stroke_values labels the rest (best first).
+    strokes_hist: np.ndarray
+    stroke_values: tuple[int, ...]
     cutline: np.ndarray      # per sim: points of the last direct-qualification spot
     cutline2: np.ndarray     # per sim: points of the first spot outside the cut
     att_probs: np.ndarray    # (n_events, n_players) realized P(plays) incl. playoff gating
@@ -635,6 +640,12 @@ class _Qual:
     mvp_perf: int
     perf_champ: int        # championship spots earned on MVP performance
     standings_cut: int
+    # Cup starting strokes, as bucket indices: stroke_bucket[rank - 1] is the
+    # bucket a player finishing at that rank tees off in. Ranks past the end
+    # are bottom seeds (even), which the ladder's last entry already is, so
+    # the caller clamps rather than branching.
+    stroke_values: tuple[int, ...]
+    stroke_bucket: np.ndarray
     # Published signup lists, as (n,) masks — None until a list exists. A
     # player on one is in that field in every sim regardless of the standings;
     # a player off one still qualifies through the gate, because the later
@@ -679,6 +690,17 @@ def _playoff_field(reg: np.ndarray | None, final: bool, gate: np.ndarray) -> np.
     return gate | reg[None, :]
 
 
+def _stroke_ladder(division: str) -> tuple[tuple[int, ...], np.ndarray]:
+    """Cup starting scores as (bucket labels, bucket index by rank - 1).
+
+    Labels run best-first (-7 .. even), so bucket 0 is the No. 1 seed's score
+    and the app can draw the buckets left to right as an advantage scale.
+    """
+    ladder = config.cup_start_strokes(division)
+    values = tuple(sorted(set(ladder)))
+    return values, np.array([values.index(v) for v in ladder], dtype=np.int64)
+
+
 def _build_qual(remaining: list[dict], division: str, roster: _Roster) -> _Qual:
     gmc_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_GMC), None)
     mvp_ei = next((i for i, r in enumerate(remaining) if r["tournament_id"] == config.TID_MVP), None)
@@ -687,6 +709,7 @@ def _build_qual(remaining: list[dict], division: str, roster: _Roster) -> _Qual:
                           if gmc_ei is not None else (None, False))
     mvp_reg, mvp_final = (_signup_mask(config.TID_MVP, division, roster)
                           if mvp_ei is not None else (None, False))
+    stroke_values, stroke_bucket = _stroke_ladder(division)
     return _Qual(
         gmc_ei=gmc_ei,
         mvp_ei=mvp_ei,
@@ -697,6 +720,8 @@ def _build_qual(remaining: list[dict], division: str, roster: _Roster) -> _Qual:
         mvp_perf=config.PLAYOFF_QUAL["mvp"]["perf"][division],
         perf_champ=FIELD_SIZE[division] - STANDINGS_CUT[division],
         standings_cut=STANDINGS_CUT[division],
+        stroke_values=stroke_values,
+        stroke_bucket=stroke_bucket,
         gmc_reg=gmc_reg, gmc_final=gmc_final,
         mvp_reg=mvp_reg, mvp_final=mvp_final,
     )
@@ -861,6 +886,7 @@ class _Totals:
     total_pts: np.ndarray
     total_rank: np.ndarray
     rank_hist: np.ndarray
+    strokes_hist: np.ndarray
     cutline: np.ndarray
     cutline2: np.ndarray
     p_gmc_hits: np.ndarray        # rank before GMC within its points cut
@@ -916,6 +942,7 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         total_pts=np.zeros((n_sims, n)),
         total_rank=np.zeros((n_sims, n), dtype=np.int32),
         rank_hist=np.zeros((n, MAX_HIST_RANK), dtype=np.int64),
+        strokes_hist=np.zeros((n, len(qual.stroke_values) + 1), dtype=np.int64),
         cutline=np.zeros(n_sims),
         cutline2=np.zeros(n_sims),
         p_gmc_hits=np.zeros(n),
@@ -1024,6 +1051,19 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
         # DGPT/Major winners get a special invite (bottom seed) if not already in
         champ_field |= banked.has_win[None, :] | sim_win
         t.p_champ_hits += champ_field.sum(axis=0)
+
+        # -- Cup starting strokes: the seed ladder applied to the final table --
+        # Everyone in the field tees off on a score set by their World
+        # Standings position; past the ladder they are a bottom seed at even,
+        # which is where the wildcards and the winner's invites sit. The last
+        # bucket is "not in the field at all", so each player's row sums to
+        # n_sims and the app can draw missing the Cup next to starting in it.
+        nb = len(qual.stroke_values) + 1
+        depth = qual.stroke_bucket.shape[0]
+        bucket = qual.stroke_bucket[np.minimum(ranks, depth) - 1]
+        bucket = np.where(champ_field, bucket, nb - 1)
+        flat_s = bucket + (np.arange(n) * nb)[None, :]
+        t.strokes_hist += np.bincount(flat_s.ravel(), minlength=n * nb).reshape(n, nb)
 
         sorted_totals = -np.sort(-totals, axis=1)
         # A division can hold fewer players than there are qualifying spots
@@ -1209,6 +1249,8 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         gmc_final=qual.gmc_final,
         mvp_final=qual.mvp_final,
         rank_hist=t.rank_hist,
+        strokes_hist=t.strokes_hist,
+        stroke_values=qual.stroke_values,
         cutline=t.cutline,
         cutline2=t.cutline2,
         att_probs=drawer.att_count / n_sims,

@@ -62,6 +62,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
         cutline, cutline2 = res.cutline, res.cutline2
 
     hist_frac = res.rank_hist / res.n_sims
+    strokes_frac = res.strokes_hist / res.n_sims
     countries = fields.load_countries()  # pdga -> ISO-3166 alpha-2 (blank if unknown)
 
     players = []
@@ -110,6 +111,9 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 "exp_starts": round(float(res.att_probs[:, i].sum()), 1),
                 "proj_dropped": round(sum(pts * pd for _, pts, _, _, pd in res.banked[i]), 1),
                 "hist": [round(float(x), 4) for x in hist_frac[i]],
+                # P(they start the Cup on each score in meta.start_strokes),
+                # last bucket = P(they aren't in the field at all)
+                "strokes": [round(float(x), 4) for x in strokes_frac[i]],
                 # realized attendance per remaining event (playoffs reflect gating)
                 "att": [round(float(res.att_probs[e, i]), 3) for e in range(len(res.events_meta))],
                 # live-event projections (current position + projected finish), if any
@@ -176,6 +180,14 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             "playin_tid": config.TID_WORLDS_PLAYIN,
             "playin_spots": config.WORLDS_PLAYIN_SPOTS[division],
             "playin_entrants": int((res.p_playin > 0).sum()),
+            # Cup starting strokes: the scores each `strokes` bucket means
+            # (best first, one bucket per score, plus a trailing "missed the
+            # field" bucket the app labels itself), and the seed bands they
+            # come from, as [last rank in band, score].
+            "start_strokes": {
+                "values": list(res.stroke_values),
+                "bands": [[rank, adv] for rank, adv in config.CUP_START_STROKES[division]],
+            },
         },
         # `live` is schedule.live_events()' answer, shipped rather than
         # re-derived. It is the single definition of "in progress" for the

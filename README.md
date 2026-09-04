@@ -38,6 +38,11 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   **Event odds** tab draws every contender's win probability through the event
   on a holes-played axis — including the players who led it and lost it — over
   a table of everyone still above 0.1%.
+- **The seed, not just the spot.** The Cup starts every qualifier on a score
+  set by their World Standings position — -7 for the MPO No. 1, -6 for FPO,
+  down to even for the bottom seeds. The **Starting strokes** column runs every
+  simulated season through that ladder, so one row carries both the score a
+  player would tee off on and how often they get no tee time at all.
 - **A what-if for every player.** Expand any row, toggle which events they
   will attend, and their Cup odds recompute in under 100ms against 25,000
   frozen simulation cutlines.
