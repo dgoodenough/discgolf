@@ -270,7 +270,11 @@ function pendingWaves(m, keys) {
   for (const [key, label] of [["gmc", "GMC"], ["mvp", "MVP"]]) {
     if (!keys.includes(key)) continue;
     for (const ph of ((m.reg_phases || {})[key] || [])) {
-      if (ph.top && Date.parse(ph.opens) > now) out.push(`${label} top ${ph.top} on ${monthDay(ph.opens)}`);
+      if (Date.parse(ph.opens) <= now) continue;
+      // A `perf` wave is won, not invited: the top finishers at the previous
+      // playoff event take the last spots, so it reads as a result, not a rank.
+      if (ph.perf) out.push(`${label}'s GMC-performance wave (${ph.perf} spots)`);
+      else if (ph.top) out.push(`${label} top ${ph.top} on ${monthDay(ph.opens)}`);
     }
   }
   return out;

@@ -70,11 +70,17 @@ PLAYIN_ROUNDS = 1
 # the standings immediately before each event — GMC's window closed before
 # Idlewild was played, and MVP's before GMC was, which is why both invite
 # waves could open on Sep 1. simulate._simulate ranks before each playoff
-# event instead, which is a later snapshot; it is inert for 2026 (both signup
-# lists went final on Sep 1, so fields.signed_up replaces the gate rather than
-# unioning with it) and shows only in the p_gmc_cut / p_mvp_cut advanced
-# columns. Fix the snapshot before reusing this for a season where the gate is
-# still live.
+# event instead, which is a later snapshot, and the two differ in one
+# direction: the gate can admit a player who climbs into it on simulated
+# Idlewild or GMC points, though the real invite closed on Sep 1.
+#
+# For GMC that is inert — its roster is final, so fields.signed_up replaces
+# the gate rather than unioning with it. For the MVP Open the gate is live
+# (its roster cannot be final until GMC is played, see REG_PHASES), so the
+# over-admission is real, and it is the same trade _playoff_field already
+# takes deliberately: admitting a few extra bubble players beats zeroing out
+# everyone the published list has not reached yet. Fix the snapshot before
+# that trade stops being the lesser evil.
 PLAYOFF_QUAL = {
     "gmc": {"cut": {"MPO": 100, "FPO": 50}, "fill": {"MPO": 120, "FPO": 60}},
     "mvp": {"cut": {"MPO": 72, "FPO": 36}, "perf": {"MPO": 8, "FPO": 4}},
@@ -137,6 +143,16 @@ REG_PHASES = {
          "top": {"MPO": 50, "FPO": 25}},
         {"opens": "2026-09-01T16:00:00Z", "label": "Tier 2 invites (post-Worlds)",
          "top": {"MPO": 72, "FPO": 36}},
+        # The MVP Open's last route in is a RESULT, not an invite list: the top
+        # 8 MPO / 4 FPO at GMC who did not already qualify on points earn a
+        # spot. Nobody can know who they are until GMC has been played, so the
+        # MVP roster cannot be final before then however authoritative PDGA
+        # Live looks — which is exactly what this phase exists to say. Dated
+        # the day after GMC ends (schedule_2026.csv: Sep 17-20); the count is
+        # PLAYOFF_QUAL's, referenced rather than repeated so the two cannot
+        # drift apart.
+        {"opens": "2026-09-21T00:00:00Z", "label": "GMC performance qualifiers",
+         "perf": PLAYOFF_QUAL["mvp"]["perf"]},
     ],
 }
 

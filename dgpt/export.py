@@ -168,6 +168,7 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 key: [
                     {"opens": ph["opens"], "label": ph["label"],
                      **({"top": ph["top"][division]} if "top" in ph else {}),
+                     **({"perf": ph["perf"][division]} if "perf" in ph else {}),
                      **({"min_rating": ph["min_rating"][division]} if "min_rating" in ph else {})}
                     for ph in phases
                 ]
