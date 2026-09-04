@@ -61,14 +61,62 @@ WORLDS_PLAYIN_SPOTS = {"MPO": 6, "FPO": 2}   # open Worlds spots, per event 9734
 PLAYIN_ROUNDS = 1
 
 # Playoff qualification (dgpt.com/announcements/playoff-qualification-update).
-# Field is set by World Standings rank *before* each playoff event; "cut" is
-# the points-qualification line, "fill" the number the field expands to if the
-# primary window doesn't fill. MVP also admits the top GMC finishers who miss
-# the points cut ("perf").
+# "cut" is the points-qualification line, "fill" the number the field expands
+# to if the primary window doesn't fill. MVP also admits the top GMC finishers
+# who miss the points cut ("perf").
+#
+# Both cuts read the SAME standings snapshot: the table as it stood after Pro
+# Worlds, the last major of the season (2026 Powerball Cup announcement). Not
+# the standings immediately before each event — GMC's window closed before
+# Idlewild was played, and MVP's before GMC was, which is why both invite
+# waves could open on Sep 1. simulate._simulate ranks before each playoff
+# event instead, which is a later snapshot, and the two differ in one
+# direction: the gate can admit a player who climbs into it on simulated
+# Idlewild or GMC points, though the real invite closed on Sep 1.
+#
+# For GMC that is inert — its roster is final, so fields.signed_up replaces
+# the gate rather than unioning with it. For the MVP Open the gate is live
+# (its roster cannot be final until GMC is played, see REG_PHASES), so the
+# over-admission is real, and it is the same trade _playoff_field already
+# takes deliberately: admitting a few extra bubble players beats zeroing out
+# everyone the published list has not reached yet. Fix the snapshot before
+# that trade stops being the lesser evil.
 PLAYOFF_QUAL = {
     "gmc": {"cut": {"MPO": 100, "FPO": 50}, "fill": {"MPO": 120, "FPO": 60}},
     "mvp": {"cut": {"MPO": 72, "FPO": 36}, "perf": {"MPO": 8, "FPO": 4}},
 }
+
+# Powerball Cup starting strokes, from the DGPT's published seed table.
+# The Cup is stroke play over four rounds at Ivy Hill (Oct 15-18), and every
+# qualifier tees off on a score set by their World Standings position after the
+# last points event — the season's table, carried onto the first tee.
+#
+# Bands are (last rank in the band, starting score). Both divisions run the
+# same shape and the same boundaries through rank 16; FPO simply starts one
+# band lower, which is 2026's change — the top seed gives up a stroke from
+# 2025's -8 MPO / -7 FPO.
+#
+# Ranks past the last band start at even. That is where the four MPO / two FPO
+# wildcards land, and where an event winner's special invite lands when they
+# miss the standings cut: both are bottom seeds. The last band pays even
+# anyway, so callers can clamp rank to the length of the ladder.
+CUP_START_STROKES = {
+    "MPO": [(1, -7), (2, -6), (4, -5), (8, -4), (12, -3), (16, -2), (24, -1), (28, 0)],
+    "FPO": [(1, -6), (2, -5), (4, -4), (8, -3), (12, -2), (16, -1), (18, 0)],
+}
+
+
+def cup_start_strokes(division: str) -> list[int]:
+    """Starting score by final World Standings rank, indexed by rank - 1.
+
+    Length is the standings cut (28 MPO / 18 FPO); deeper ranks are bottom
+    seeds and start at even, which is what the last band already pays.
+    """
+    out: list[int] = []
+    for last_rank, strokes in CUP_START_STROKES[division]:
+        out += [strokes] * (last_rank - len(out))
+    return out
+
 
 # When each playoff registration window OPENS (the PDGA event pages, converted
 # from EDT). Windows are cumulative: once one opens it stays open, so today's
@@ -95,6 +143,16 @@ REG_PHASES = {
          "top": {"MPO": 50, "FPO": 25}},
         {"opens": "2026-09-01T16:00:00Z", "label": "Tier 2 invites (post-Worlds)",
          "top": {"MPO": 72, "FPO": 36}},
+        # The MVP Open's last route in is a RESULT, not an invite list: the top
+        # 8 MPO / 4 FPO at GMC who did not already qualify on points earn a
+        # spot. Nobody can know who they are until GMC has been played, so the
+        # MVP roster cannot be final before then however authoritative PDGA
+        # Live looks — which is exactly what this phase exists to say. Dated
+        # the day after GMC ends (schedule_2026.csv: Sep 17-20); the count is
+        # PLAYOFF_QUAL's, referenced rather than repeated so the two cannot
+        # drift apart.
+        {"opens": "2026-09-21T00:00:00Z", "label": "GMC performance qualifiers",
+         "perf": PLAYOFF_QUAL["mvp"]["perf"]},
     ],
 }
 

@@ -208,6 +208,24 @@ def test_the_same_roster_is_final_once_every_wave_has_opened(fake_api, monkeypat
     assert fields.signed_up(config.TID_GMC, "MPO", list(range(7001, 7021))).final is True
 
 
+def test_gmc_closes_while_the_mvp_open_stays_open():
+    """The asymmetry between the two playoff rosters is a decision, not a gap.
+
+    GMC's last wave opens Sep 1 and nothing decides its field afterwards, so it
+    closes: entries stop, and drops come off a waitlist already standing by,
+    which changes who plays but not how many. The MVP Open cannot close on the
+    same date, because the spots GMC awards it are not knowable until GMC has
+    been played — so it stays open, and only then closes too.
+    """
+    after_last_invite_wave = dt.datetime(2026, 9, 4, tzinfo=dt.timezone.utc)
+    assert fields._waves_all_open(config.TID_GMC, after_last_invite_wave)
+    assert not fields._waves_all_open(config.TID_MVP, after_last_invite_wave)
+
+    once_gmc_is_played = dt.datetime(2026, 9, 22, tzinfo=dt.timezone.utc)
+    assert fields._waves_all_open(config.TID_GMC, once_gmc_is_played)
+    assert fields._waves_all_open(config.TID_MVP, once_gmc_is_played)
+
+
 def test_the_play_in_has_no_waves_to_wait_for(fake_api):
     """Nothing gates entry to the play-in, so a staged roster is the field."""
     fake_api.round(config.TID_WORLDS_PLAYIN, "MPO", 1, round_payload(
@@ -244,6 +262,38 @@ def test_a_final_mvp_field_needs_no_performance_spots(tiny_world, fake_api, tigh
 
     res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
     assert res.p_mvp_field.sum() == pytest.approx(len(field))
+
+
+def test_a_staged_mvp_roster_still_admits_gmc_performers(tiny_world, fake_api, tight_qual):
+    """Production's exact situation, and the bug it hid for three weeks.
+
+    PDGA Live stages the MVP Open well before it is played, and by Sep 1 both
+    invite waves had opened — so the roster read as final. _playoff_field then
+    replaces the gate with the list, and the `not mvp_final` guard switches the
+    GMC-performance path off with it: every player whose only road to the Cup
+    ran through a big GMC went to exactly 0.000, points leaders included,
+    because they simply had not filed their entry yet.
+
+    The performance phase keeps the roster open until GMC has actually been
+    played, so the field is the list PLUS the points gate PLUS the spots GMC
+    decides. Compare against the same roster held final, which is the
+    behaviour that was wrong here and stays right after the event.
+    """
+    standings.write_csv("MPO", standings.compute("MPO"))
+    listed = [p for p, _, _ in tiny_world.players[15:22]]
+    fake_api.round(config.TID_MVP, "MPO", 1, round_payload(
+        [row(p, f"P{p}", 1000, played=0) for p in listed]))
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    assert not res.mvp_final, "GMC has not been played, so the field is not set"
+
+    is_listed = np.array([p in set(listed) for p in res.pdga_numbers])
+    assert np.all(res.p_mvp_field[is_listed] == pytest.approx(1.0))
+    # the whole point: players off the list are not written off
+    assert res.p_mvp_field[~is_listed].sum() > 0.0
+    perf = config.PLAYOFF_QUAL["mvp"]["perf"]["MPO"]
+    expected = is_listed.sum() + res.p_mvp[~is_listed].sum() + perf
+    assert res.p_mvp_field.sum() == pytest.approx(expected, abs=1e-9)
 
 
 # ------------------------------------------------------------- the play-in
@@ -481,7 +531,24 @@ def test_the_last_announced_wave_is_the_cut_the_model_uses():
     points cuts, so a drift between them would silently mean the site is
     explaining a rule it does not simulate."""
     for key in ("gmc", "mvp"):
-        assert config.REG_PHASES[key][-1]["top"] == config.PLAYOFF_QUAL[key]["cut"]
+        invited = [ph for ph in config.REG_PHASES[key] if "top" in ph]
+        assert invited[-1]["top"] == config.PLAYOFF_QUAL[key]["cut"]
+
+
+def test_the_mvp_field_is_not_settled_until_gmc_has_been_played():
+    """The MVP Open's last route in is won at GMC, not invited off a list.
+
+    It has to be the final phase, and carry PLAYOFF_QUAL's own count, or
+    _waves_all_open would call the roster final while the 8 MPO / 4 FPO spots
+    that GMC decides are still outstanding — which switches off the
+    GMC-performance path in simulate._simulate and zeroes out every player
+    whose only road to the Cup runs through it.
+    """
+    phases = config.REG_PHASES["mvp"]
+    perf = [ph for ph in phases if "perf" in ph]
+    assert len(perf) == 1, "exactly one performance route into the MVP Open"
+    assert perf[0]["perf"] == config.PLAYOFF_QUAL["mvp"]["perf"]
+    assert phases[-1] is perf[0], "nothing can settle the field after it"
 
 
 def test_an_event_page_list_never_closes_a_playoff_field(fake_api, fake_pages):

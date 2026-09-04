@@ -235,7 +235,7 @@ function moversHtml(d, div) {
         showLive
           ? `<th title="Current standing and score at ${shortName((d.schedule.find((s) => s.tid === liveTid) || {}).name || "the live event")}">Now</th><th class="num" title="Projected event points, against what the model expected from this player pre-event">Proj. pts</th>`
           : `<th>Last event</th><th>Registration changes</th>`
-      }${isRank ? "" : `<th class="num" title="Projected final standings seed — where the model expects them to end the season. Moves here tell the seeding battles the Cup odds can't (a No. 2 vs No. 3 race between two locks)">Proj. seed</th>`}<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
+      }${isRank ? "" : `<th class="num" title="Projected final standings seed — where the model expects them to end the season, and so the starting strokes they carry into the Cup (top seed −7 MPO / −6 FPO). Moves here tell the seeding battles the Cup odds can't (a No. 2 vs No. 3 race between two locks)">Proj. seed</th>`}<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
     </tr></thead><tbody>${body}</tbody></table></details>`;
 }
 
@@ -270,7 +270,11 @@ function pendingWaves(m, keys) {
   for (const [key, label] of [["gmc", "GMC"], ["mvp", "MVP"]]) {
     if (!keys.includes(key)) continue;
     for (const ph of ((m.reg_phases || {})[key] || [])) {
-      if (ph.top && Date.parse(ph.opens) > now) out.push(`${label} top ${ph.top} on ${monthDay(ph.opens)}`);
+      if (Date.parse(ph.opens) <= now) continue;
+      // A `perf` wave is won, not invited: the top finishers at the previous
+      // playoff event take the last spots, so it reads as a result, not a rank.
+      if (ph.perf) out.push(`${label}'s GMC-performance wave (${ph.perf} spots)`);
+      else if (ph.top) out.push(`${label} top ${ph.top} on ${monthDay(ph.opens)}`);
     }
   }
   return out;
@@ -366,6 +370,32 @@ function sparkCell(p, meta) {
     <path class="sp-in" d="${d.in}"/><path class="sp-out" d="${d.out}"/><path class="sp-over" d="${d.over}"/></svg></div>`;
 }
 
+/* How a Cup starting score reads: negatives as strokes under, 0 as even. */
+function fmtStroke(v) { return v < 0 ? `\u2212${-v}` : "E"; }
+
+/* Companion to sparkCell: the score a player would tee off the Cup on, which
+   is their finishing position run through the seed ladder. Same 3-path build,
+   but the buckets are scores rather than places, and the last one is the
+   seasons they never reach the field — drawn in the miss colour so a bubble
+   player's row reads as "how good a start, and how often no start at all". */
+const strokesStore = new Map(); // pdga -> {values, hist}
+function strokesCell(p, meta) {
+  const values = meta.start_strokes.values, hist = p.strokes || [];
+  if (!hist.length) return "";
+  strokesStore.set(p.pdga, { values, hist });
+  const H = 22, W = 120, n = hist.length;
+  const max = Math.max(...hist, 1e-9);
+  const bw = W / n, gap = bw * 0.15;
+  const d = { in: "", out: "", over: "" };
+  for (let k = 0; k < n; k++) {
+    const h = Math.max(1, (hist[k] / max) * H);
+    const key = k === n - 1 ? "over" : values[k] < 0 ? "in" : "out";
+    d[key] += `M${(k * bw).toFixed(1)} ${H}h${(bw - gap).toFixed(1)}v-${h.toFixed(1)}h-${(bw - gap).toFixed(1)}z`;
+  }
+  return `<div class="sspark" data-pdga="${p.pdga}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path class="sp-in" d="${d.in}"/><path class="sp-out" d="${d.out}"/><path class="sp-over" d="${d.over}"/></svg></div>`;
+}
+
 /* ---------- forecast view (standings + projections, sortable) ---------- */
 
 // events in progress today (client-side date, so it's current between refreshes)
@@ -405,6 +435,16 @@ function forecastCols(meta, adv = false) {
     { key: "exp_starts", label: "Proj. starts", title: "Projected remaining events played (sum of attendance odds, playoff gating included)", num: true, get: (p) => p.exp_starts ?? 0, cell: (p) => `<span class="dim">${(p.exp_starts ?? 0).toFixed(1)}</span>`, dir0: "desc" },
     { key: "proj_dropped", label: "Proj. dropped", title: "Expected points from already-banked finishes that end up not counting under the per-class caps", num: true, get: (p) => p.proj_dropped ?? 0, cell: (p) => `<span class="dim">${fmtPts(p.proj_dropped ?? 0)}</span>`, dir0: "desc" },
   ];
+  // The starting-strokes distribution answers the question the finish
+  // distribution only implies — where you actually tee off — so it takes the
+  // slot outright, and Advanced keeps both. Bundles published before the seed
+  // ladder existed have no `strokes`, and fall back to the old column alone.
+  const finishCol = { key: "spark", label: "Finish distribution", hide: "t1", num: false, sortable: false, cell: (p) => sparkCell(p, meta) };
+  const strokesCol = { key: "strokes", label: "Starting strokes", hide: "t1", num: false, sortable: false,
+    title: `Distribution of the score they'd start the Cup on: their projected finishing position run through the seed ladder (${fmtStroke((meta.start_strokes || { values: [0] }).values[0])} for the No. 1 seed, E for the bottom seeds), with a final bar for the seasons they miss the field`,
+    cell: (p) => strokesCell(p, meta) };
+  const distCols = !(meta.start_strokes && meta.start_strokes.values)
+    ? [finishCol] : adv ? [strokesCol, finishCol] : [strokesCol];
   const flagCol = { key: "country", label: "Nat.", num: false, get: (p) => p.country || "zz",
     cell: (p) => p.country ? `<span class="flag" title="${p.country}">${flagEmoji(p.country)}</span>` : "", dir0: "asc" };
   return [
@@ -414,7 +454,7 @@ function forecastCols(meta, adv = false) {
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
     { key: "p_champ", label: "Cup", title: "P(in the Powerball Cup field): automatic bid, MVP-performance qualifier, or a DGPT/Major event win (special invite — 100% if already won)", num: true, get: (p) => p.p_champ, cell: (p) => `<b class="${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</b>`, dir0: "desc" },
     { key: "mean_pts", label: "Proj. pts", hide: "t1", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
-    { key: "spark", label: "Finish distribution", hide: "t1", num: false, sortable: false, cell: (p) => sparkCell(p, meta) },
+    ...distCols,
     { key: "p_cut", label: "Auto Bid", hide: "t2", title: `P(finish top ${meta.cut} in World Standings — automatic Powerball Cup berth)`, num: true, get: (p) => p.p_cut, cell: (p) => `<span class="${probClass(p.p_cut)}">${fmtPct(p.p_cut)}</span>`, dir0: "desc" },
     { key: "p_mvp_qual", label: "MVP Bid", hide: "t2", title: `P(earns a Cup spot via a top-${perf} MVP Open finish, outside the standings cut)`, num: true, get: (p) => p.p_mvp_qual, cell: (p) => `<span class="${probClass(p.p_mvp_qual)}">${fmtPct(p.p_mvp_qual)}</span>`, dir0: "desc" },
     { key: "p_gmc", label: "GMC", hide: "t3", title: `P(makes the Green Mountain Championship field — signed up already, or reached by a later registration wave: top ${meta.gmc_cut} on points, expanding to ${meta.gmc_fill || 120} if it doesn't fill)`, num: true, get: (p) => p.p_gmc, cell: (p) => fieldCell(p.p_gmc, p.reg_gmc, "Green Mountain Championship"), dir0: "desc" },
@@ -451,7 +491,7 @@ function renderForecast(d) {
 
   const body = rows.map((p) =>
     `<tr class="expandable" data-pdga="${p.pdga}">` +
-    cols.map((c) => `<td class="${[c.num ? "num" : "", c.key === "spark" ? "sparkcell" : "", c.key === "country" ? "flagcell" : "", c.hide || ""].join(" ").trim()}">${c.cell(p)}</td>`).join("") +
+    cols.map((c) => `<td class="${[c.num ? "num" : "", c.key === "spark" || c.key === "strokes" ? "sparkcell" : "", c.key === "country" ? "flagcell" : "", c.hide || ""].join(" ").trim()}">${c.cell(p)}</td>`).join("") +
     "</tr>"
   ).join("");
 
@@ -498,20 +538,33 @@ function renderForecast(d) {
   wireSparkTips(el, meta);
 }
 
+/* Both row sparklines hover the same way — bucket under the pointer, label it,
+   float the shared tooltip — and differ only in what a bucket means, so the
+   readout is the one thing each caller supplies. */
 function wireSparkTips(el, meta) {
   const tip = $("#spark-tip");
-  el.querySelectorAll(".spark").forEach((sp) => {
-    const hist = sparkStore.get(+sp.dataset.pdga);
+  const wire = (sel, read) => el.querySelectorAll(sel).forEach((sp) => {
+    const src = read(+sp.dataset.pdga);
+    if (!src) return;
     sp.addEventListener("mousemove", (e) => {
       const r = sp.getBoundingClientRect();
-      const k = Math.min(hist.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * hist.length)));
-      const place = k + 1 === hist.length ? `${hist.length}th+` : ordinal(k + 1);
-      tip.textContent = `${place}: ${(hist[k] * 100).toFixed(1)}%`;
+      const k = Math.min(src.n - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * src.n)));
+      tip.textContent = src.label(k);
       tip.hidden = false;
       tip.style.left = e.clientX + 12 + "px";
       tip.style.top = e.clientY - 8 + "px";
     });
     sp.addEventListener("mouseleave", () => { tip.hidden = true; });
+  });
+  wire(".spark", (pdga) => {
+    const hist = sparkStore.get(pdga);
+    return hist && { n: hist.length, label: (k) =>
+      `${k + 1 === hist.length ? `${hist.length}th+` : ordinal(k + 1)}: ${(hist[k] * 100).toFixed(1)}%` };
+  });
+  wire(".sspark", (pdga) => {
+    const st = strokesStore.get(pdga);
+    return st && { n: st.hist.length, label: (k) =>
+      `${k === st.hist.length - 1 ? "misses the Cup" : `starts at ${fmtStroke(st.values[k])}`}: ${(st.hist[k] * 100).toFixed(1)}%` };
   });
 }
 

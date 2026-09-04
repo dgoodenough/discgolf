@@ -144,6 +144,18 @@ def _waves_all_open(tid: int, now: dt.datetime | None = None) -> bool:
 
     So a roster only becomes final once nobody else can still enter. Events
     with no wave schedule (the Worlds play-in) have nothing to wait for.
+
+    The two playoffs come out differently, and deliberately. GMC's last wave
+    opens Sep 1 and nothing decides its field afterwards, so once that wave is
+    open the list is the field: entries close, and drops are backfilled off a
+    waitlist that is already standing by, which changes who plays but not how
+    many. Players inside the fill line who never entered stay out, and that is
+    the right answer rather than a gap to patch.
+
+    The MVP Open cannot close the same way, because its last spots are won at
+    GMC rather than invited (config.REG_PHASES carries that as a phase of its
+    own). Holding it open is not the general case leaking back in — it is the
+    one event whose field genuinely is not knowable yet.
     """
     key = PHASE_KEY_BY_TID.get(tid)
     if key is None:
