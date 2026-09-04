@@ -208,6 +208,24 @@ def test_the_same_roster_is_final_once_every_wave_has_opened(fake_api, monkeypat
     assert fields.signed_up(config.TID_GMC, "MPO", list(range(7001, 7021))).final is True
 
 
+def test_gmc_closes_while_the_mvp_open_stays_open():
+    """The asymmetry between the two playoff rosters is a decision, not a gap.
+
+    GMC's last wave opens Sep 1 and nothing decides its field afterwards, so it
+    closes: entries stop, and drops come off a waitlist already standing by,
+    which changes who plays but not how many. The MVP Open cannot close on the
+    same date, because the spots GMC awards it are not knowable until GMC has
+    been played — so it stays open, and only then closes too.
+    """
+    after_last_invite_wave = dt.datetime(2026, 9, 4, tzinfo=dt.timezone.utc)
+    assert fields._waves_all_open(config.TID_GMC, after_last_invite_wave)
+    assert not fields._waves_all_open(config.TID_MVP, after_last_invite_wave)
+
+    once_gmc_is_played = dt.datetime(2026, 9, 22, tzinfo=dt.timezone.utc)
+    assert fields._waves_all_open(config.TID_GMC, once_gmc_is_played)
+    assert fields._waves_all_open(config.TID_MVP, once_gmc_is_played)
+
+
 def test_the_play_in_has_no_waves_to_wait_for(fake_api):
     """Nothing gates entry to the play-in, so a staged roster is the field."""
     fake_api.round(config.TID_WORLDS_PLAYIN, "MPO", 1, round_payload(
