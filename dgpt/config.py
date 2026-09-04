@@ -61,10 +61,20 @@ WORLDS_PLAYIN_SPOTS = {"MPO": 6, "FPO": 2}   # open Worlds spots, per event 9734
 PLAYIN_ROUNDS = 1
 
 # Playoff qualification (dgpt.com/announcements/playoff-qualification-update).
-# Field is set by World Standings rank *before* each playoff event; "cut" is
-# the points-qualification line, "fill" the number the field expands to if the
-# primary window doesn't fill. MVP also admits the top GMC finishers who miss
-# the points cut ("perf").
+# "cut" is the points-qualification line, "fill" the number the field expands
+# to if the primary window doesn't fill. MVP also admits the top GMC finishers
+# who miss the points cut ("perf").
+#
+# Both cuts read the SAME standings snapshot: the table as it stood after Pro
+# Worlds, the last major of the season (2026 Powerball Cup announcement). Not
+# the standings immediately before each event — GMC's window closed before
+# Idlewild was played, and MVP's before GMC was, which is why both invite
+# waves could open on Sep 1. simulate._simulate ranks before each playoff
+# event instead, which is a later snapshot; it is inert for 2026 (both signup
+# lists went final on Sep 1, so fields.signed_up replaces the gate rather than
+# unioning with it) and shows only in the p_gmc_cut / p_mvp_cut advanced
+# columns. Fix the snapshot before reusing this for a season where the gate is
+# still live.
 PLAYOFF_QUAL = {
     "gmc": {"cut": {"MPO": 100, "FPO": 50}, "fill": {"MPO": 120, "FPO": 60}},
     "mvp": {"cut": {"MPO": 72, "FPO": 36}, "perf": {"MPO": 8, "FPO": 4}},

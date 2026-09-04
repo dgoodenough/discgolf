@@ -235,7 +235,7 @@ function moversHtml(d, div) {
         showLive
           ? `<th title="Current standing and score at ${shortName((d.schedule.find((s) => s.tid === liveTid) || {}).name || "the live event")}">Now</th><th class="num" title="Projected event points, against what the model expected from this player pre-event">Proj. pts</th>`
           : `<th>Last event</th><th>Registration changes</th>`
-      }${isRank ? "" : `<th class="num" title="Projected final standings seed — where the model expects them to end the season. Moves here tell the seeding battles the Cup odds can't (a No. 2 vs No. 3 race between two locks)">Proj. seed</th>`}<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
+      }${isRank ? "" : `<th class="num" title="Projected final standings seed — where the model expects them to end the season, and so the starting strokes they carry into the Cup (top seed −7 MPO / −6 FPO). Moves here tell the seeding battles the Cup odds can't (a No. 2 vs No. 3 race between two locks)">Proj. seed</th>`}<th class="num">${isRank ? "Cup odds" : "Rank"}</th>
     </tr></thead><tbody>${body}</tbody></table></details>`;
 }
 

@@ -72,12 +72,13 @@
     <li><b>Playoff run</b> — the top <b>4</b> MPO / <b>2</b> FPO finishers at the MVP Open who missed the standings cut take the last spots.</li>
     <li><b>Winner's invite</b> — win any DGPT Elite or Major singles event and you're in regardless, added as a bottom seed without bumping anyone (doubles and Jomez wins don't qualify).</li>
   </ul>
-  <p>The playoffs themselves are gated by the standings: the <b>Green
-  Mountain Championship</b> field is the top 100 MPO / 50 FPO after Worlds
-  (expanding to 120/60 if it doesn't fill), and the <b>MVP Open</b> field is
-  the top 72/36 after GMC plus the top 8/4 GMC finishers from outside that
-  line. So a hot September can carry a player from 90th place all the way
-  into the Cup.</p>
+  <p>The playoffs themselves are gated by the standings, both read at the
+  same moment — where the table stood <b>after Pro Worlds</b>, the last major
+  of the season. The <b>Green Mountain Championship</b> field is the top 100
+  MPO / 50 FPO (expanding to 120/60 if it doesn't fill), and the <b>MVP
+  Open</b> field is the top 72/36, plus the top 8/4 GMC finishers from
+  outside that line. So a hot September can carry a player from 90th place
+  all the way into the Cup.</p>
 
   <p>Neither field opens all at once — each is invited in waves, and every
   wave that opens stays open:</p>
@@ -98,7 +99,23 @@
   <em>not</em> entered still gets in on points, because the waves that would
   reach them haven't opened yet. That uncertainty shrinks with every wave.</p>
 
-  <div class="band">4 · The Worlds play-in</div>
+  <div class="band">4 · What a seed is worth</div>
+  <p>The standings don't only decide who plays the Cup — they decide what
+  score each qualifier starts on. The Powerball Cup (Oct 15–18, Lynchburg,
+  Virginia) awards a <b>starting-stroke advantage by World Standings
+  position</b>, so a season spent climbing the table is carried onto the first
+  tee. For 2026 that spread is one stroke tighter than last year: the top MPO
+  seed begins at <b>−7</b>, the top FPO seed at <b>−6</b>. It is the only
+  change to the Championship format this season; the tour's wider format
+  review is due to be announced later this year, for 2027.</p>
+  <p>That is why a seeding battle between two players who are already locked
+  in is still a battle, and why <b>Biggest Movers</b> tracks projected final
+  seed next to Cup odds: once qualification odds hit 100%, position is the
+  only thing left to win. And it is worth the most of any week on tour — a
+  record <a href="https://www.dgpt.com/announcements/2026-powerball-cup-purse/">$350,000
+  purse</a>, $50,000 of it to each of the MPO and FPO winners.</p>
+
+  <div class="band">5 · The Worlds play-in</div>
   <p>Pro Worlds fills most of its field on tour and PDGA criteria and leaves a
   few spots open. Those are decided at a <b>one-round play-in</b> the week of
   the event: the top <b>6 MPO</b> and <b>2 FPO</b> advance into the Worlds
@@ -113,7 +130,7 @@
   them with a standings row and none of them near the Cup; the FPO play-in
   drew five, all five ranked, competing for two spots.</p>
 
-  <div class="band">5 · What the forecast does with all this</div>
+  <div class="band">6 · What the forecast does with all this</div>
   <p>The forecast simulates the rest of the season 100,000 times: each
   player's scores are drawn from their PDGA rating, fields come from real
   registration lists (or participation patterns where registration isn't
@@ -126,6 +143,7 @@
   <div class="band">Changelog</div>
   <table class="table-ledger">
     <tbody>
+      <tr><td class="changelog-date">Sep 4</td><td>The DGPT published its 2026 Powerball Cup details: every qualification rule the model runs on is unchanged, and the three players currently holding a winner's invite are exactly the three the forecast flags. New on this page: <b>what a seed is actually worth</b> — the Cup starts the top MPO seed at &minus;7 and the top FPO seed at &minus;6, one stroke tighter than 2025. Corrected here too: the MVP Open's points cut is read after Worlds, not after GMC.</td></tr>
       <tr><td class="changelog-date">Aug 29</td><td><b>New "Event odds" tab: the race to win the tournament that's on.</b> The model has always projected a live event's winner — that number drives the Cup odds — but only ever published it as a snapshot. It is now kept as a series, so every contender's win probability is drawn through the event, hole by hole, and you can see who was ever in it and where it turned. Below the chart, everyone still above 0.1%, with what a win there would do for their Cup odds.</td></tr>
       <tr><td class="changelog-date">Aug 19</td><td><b>Playoff signups are now taken literally.</b> GMC and MVP Open registration opened in August, so anyone already entered is in that field in every simulation regardless of the standings — and only players the later waves haven't reached are still modelled on points. The <b>Worlds play-in</b> is modelled too: 6 MPO / 2 FPO spots, decided over one round, which is the only way into Worlds for entrants who missed direct qualification.</td></tr>
       <tr><td class="changelog-date">Aug 12</td><td>Behind the scenes: the simulation was reorganized without changing a single projected number (every output checked identical, run for run), the published data moved off the project's main branch, and two latent crash paths were closed. Nothing you see should have changed.</td></tr>
