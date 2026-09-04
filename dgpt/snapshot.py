@@ -20,7 +20,7 @@ SNAP_DIR = config.REPO_ROOT / "predictions"
 FIELDS = [
     "snapshot_date", "taken_at", "events_completed", "division",
     "pdga_number", "name", "rating", "cur_rank", "cur_points",
-    "p_champ", "p_cut", "p_gmc", "p_mvp", "p_mvp_qual", "p_first",
+    "p_champ", "p_cut", "p_gmc", "p_mvp", "p_mvp_qual", "p_first", "p_cup_win",
     "mean_pts", "mean_rank", "registered", "signed",
 ]
 # columns whose change makes a snapshot "new" (exclude timestamps/names)
@@ -66,6 +66,7 @@ def _rows(res, division: str, n_completed: int, date: str, taken: str) -> list[d
             "p_mvp": round(float(res.p_mvp[i]), 5),
             "p_mvp_qual": round(float(res.p_mvp_qual[i]), 5),
             "p_first": round(float(res.p_first[i]), 5),
+            "p_cup_win": round(float(res.p_cup_win[i]), 5),
             "mean_pts": round(float(res.mean_points[i]), 1),
             "mean_rank": round(float(res.mean_rank[i]), 1),
             "registered": registered,

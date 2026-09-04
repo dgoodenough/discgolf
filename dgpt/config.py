@@ -100,6 +100,11 @@ PLAYOFF_QUAL = {
 # wildcards land, and where an event winner's special invite lands when they
 # miss the standings cut: both are bottom seeds. The last band pays even
 # anyway, so callers can clamp rank to the length of the ladder.
+# The Cup itself: stroke play over four rounds (the DGPT's published format
+# graphic). Unlike every other event on the calendar it awards no World
+# Standings points, so it is simulated only to answer who wins it.
+CUP_ROUNDS = 4
+
 CUP_START_STROKES = {
     "MPO": [(1, -7), (2, -6), (4, -5), (8, -4), (12, -3), (16, -2), (24, -1), (28, 0)],
     "FPO": [(1, -6), (2, -5), (4, -4), (8, -3), (12, -2), (16, -1), (18, 0)],

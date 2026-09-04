@@ -43,6 +43,11 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   down to even for the bottom seeds. The **Starting strokes** column runs every
   simulated season through that ladder, so one row carries both the score a
   player would tee off on and how often they get no tee time at all.
+- **The championship, played out.** Once the seed is known the Cup is a
+  four-round tournament like any other, so the model runs it: scores from
+  ratings, the seed's head start added to the total, low score wins. The
+  **Win Cup** column is the result, and unlike qualification odds it is a race
+  — the field's numbers add to 100%.
 - **A what-if for every player.** Expand any row, toggle which events they
   will attend, and their Cup odds recompute in under 100ms against 25,000
   frozen simulation cutlines.

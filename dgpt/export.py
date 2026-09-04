@@ -105,6 +105,9 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 # only for entrants — everyone else is a flat 0.
                 "p_playin": round(float(res.p_playin[i]), 5),
                 "p_first": round(float(res.p_first[i]), 5),
+                # P(wins the Cup itself): the four-round championship played
+                # out from the seed ladder, not a share of p_champ
+                "p_cup_win": round(float(res.p_cup_win[i]), 5),
                 "mean_pts": round(float(res.mean_points[i]), 1),
                 "mean_rank": round(float(res.mean_rank[i]), 1),
                 # projected remaining starts + expected banked points that get dropped
@@ -185,6 +188,9 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             # (best first, one bucket per score, plus a trailing "missed the
             # field" bucket the app labels itself), and the seed bands they
             # come from, as [last rank in band, score].
+            # 0 in a bundle published before the Cup was simulated, which is
+            # how the app knows not to draw a Win Cup column of zeroes.
+            "cup_rounds": config.CUP_ROUNDS,
             "start_strokes": {
                 "values": list(res.stroke_values),
                 "bands": [[rank, adv] for rank, adv in config.CUP_START_STROKES[division]],

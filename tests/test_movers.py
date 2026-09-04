@@ -17,7 +17,7 @@ from dgpt import config, movers, snapshot
 FIELDS = [
     "snapshot_date", "taken_at", "events_completed", "division", "pdga_number",
     "name", "rating", "cur_rank", "cur_points", "p_champ", "p_cut", "p_gmc",
-    "p_mvp", "p_mvp_qual", "p_first", "mean_pts", "mean_rank", "registered",
+    "p_mvp", "p_mvp_qual", "p_first", "p_cup_win", "mean_pts", "mean_rank", "registered",
     "signed",
 ]
 # The snapshot schema is this module's input contract, and the two silently
