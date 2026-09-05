@@ -1,0 +1,427 @@
+/* App layer on top of the vendored Ledger tokens (tokens.css, pinned from
+   github.com/dgoodenough/style). Layout + app-specific components only —
+   colors and type come from the tokens. */
+
+html, body { margin: 0; }
+#app { max-width: 1080px; margin: 0 auto; padding: 0 16px 32px; }
+
+/* header */
+#top { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; justify-content: space-between; padding: 16px 0 10px; }
+#top .kicker { margin: 0 0 2px; color: var(--ink-3); font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; }
+#top h1 { margin: 0; font-size: 1.75rem; line-height: 1.1; letter-spacing: -.3px; }
+#top .stakes { margin: 6px 0 0; font-size: var(--fs-body); color: var(--ink); font-variant-numeric: tabular-nums; }
+#top .stakes b { font-weight: 700; }
+#top .stakes .lk { color: var(--pos); }   /* locked in = have (green) */
+#top .stakes .al { color: var(--pend); }  /* still contested = pending (yellow) */
+#top .sub { margin: 5px 0 0; color: var(--ink-2); font-size: var(--fs-small); }
+#live-note { margin: 5px 0 0; font-size: var(--fs-small); font-weight: 600; color: var(--neg); }
+/* last-update age: dotted underline marks it as hoverable for the exact time,
+   and it turns warning-coloured when the publish is later than the pipeline's
+   own cadence should allow */
+#updated-at { border-bottom: 1px dotted var(--ink-3); cursor: help; font-variant-numeric: tabular-nums; }
+#updated-at.stale, .stale-flag { color: var(--neg); font-weight: 600; }
+.stale-flag { cursor: help; }
+
+/* pulsing "live" dot + badge */
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--neg); vertical-align: middle; margin-right: 5px; animation: live-pulse 1.4s ease-in-out infinite; }
+.live-badge { display: inline-block; font-size: var(--fs-caption); color: var(--neg); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.live-badge .live-dot { width: 6px; height: 6px; margin-right: 3px; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.controls { display: flex; gap: 8px; }
+
+/* segmented control (band = active, per Ledger greyscale-structure rule) */
+.seg { display: flex; border: 1px solid var(--grid-strong); border-radius: var(--radius); overflow: hidden; background: var(--paper); }
+.seg button { font: inherit; padding: 6px 13px; background: none; border: none; color: var(--ink-2); cursor: pointer; }
+.seg button.active { background: var(--band); color: var(--band-ink); font-weight: 700; }
+
+/* tables */
+/* guide on the left, column-mode control on the right; they stack rather than
+   crush each other once the guide's summary no longer fits beside the seg */
+.table-tools {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 8px; flex-wrap: wrap; margin: 2px 0 6px;
+}
+.table-tools > .colguide { flex: 1 1 auto; }
+.table-tools > .seg { flex: 0 0 auto; }
+/* open, the guide takes the full row so its definitions get the whole width */
+.table-tools > .colguide[open] { flex-basis: 100%; order: 1; }
+.table-tools .btn { font-size: var(--fs-small); padding: 4px 10px; }
+/* overflow-x:visible in the default view keeps the page as the scroll context
+   so the header can stick; only the "all columns" view scrolls horizontally */
+.table-wrap { overflow-x: visible; }
+.table-ledger { width: 100%; }
+.table-ledger th { position: sticky; top: 0; z-index: 2; }
+
+/* Responsive columns: hide low-priority tiers as the window narrows.
+   Order of importance is #, Player, Points, Cup (core, never hidden) →
+   Proj.pts + sparkline (t1) → Auto Bid + MVP Bid (t2) → GMC + MVP (t3) →
+   Rating + Starts + Proj.rank (t4). "All columns" overrides every hide.
+   Viewport (not container) queries so no scroll-container ancestor breaks
+   the sticky header. */
+@media (max-width: 940px) { .t4 { display: none; } }
+@media (max-width: 790px) { .t3 { display: none; } }
+@media (max-width: 690px) { .t2 { display: none; } }
+@media (max-width: 560px) { .t1 { display: none; } }
+/* All/Advanced: break out of the content column to the full viewport so the
+   wide table uses the whole screen before it needs to scroll (the movers box
+   and header stay at content width) */
+.table-wrap.cols-all {
+  overflow-x: auto;
+  width: calc(100vw - 32px);
+  margin-left: calc(50% - 50vw + 16px);
+}
+.table-wrap.cols-all .t1, .table-wrap.cols-all .t2,
+.table-wrap.cols-all .t3, .table-wrap.cols-all .t4 { display: table-cell; }
+/* let the table exceed the wrap so it scrolls (don't cram) */
+.table-wrap.cols-all .table-ledger { width: auto; min-width: 100%; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--pend-on-band, #ffd21e); }
+th.sorted { color: var(--pos-on-band, #7ee2a8); }
+tbody tr.expandable { cursor: pointer; }
+/* the row is the site's primary control; it is now keyboard-operable, so it
+   needs a focus ring. Inset, because an outline drawn outside a table row is
+   clipped by the neighbouring cells in several browsers. */
+tbody tr.expandable:focus-visible { outline: 2px solid var(--pos); outline-offset: -2px; }
+tbody tr.expandable:hover td { background: var(--pos-fill); }
+tbody tr.detail > td { background: var(--chrome-2, var(--paper-2)) !important; padding: var(--pad-2) 14px 14px; }
+.dim { color: var(--ink-3); }
+
+/* Ledger conditional formatting for the probability columns.
+   tokens.css defines .pos/.pend only as td *fills*, and probClass puts the
+   class on the number rather than the cell — so until this rule the green and
+   yellow the function promises never rendered anywhere, and the columns read
+   as flat ink with only the long shots dimmed.
+
+   Colouring the number rather than filling the cell is deliberate: five
+   adjacent filled columns is a wall of green, and a filled cell also swallows
+   the row-hover fill (tr.expandable:hover), which is the table's main
+   affordance for "click me". Both hues clear 5.7:1 against the paper and the
+   hover fill alike, in dark, newsprint, and print. */
+.table-ledger td .pos { color: var(--pos); }
+.table-ledger td .pend { color: var(--pend); }
+
+/* PDGA-required player/event links: quiet in the tables, obvious on hover */
+a.plink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-3); }
+a.plink:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* in-row sparkline of the finishing-position distribution (3 SVG paths) */
+/* nationality flag column (advanced view): narrow, centered */
+th[data-key="country"], td.flagcell { width: 34px; text-align: center; }
+.flag { font-size: 1.05rem; line-height: 1; }
+
+td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
+.spark, .sspark { height: 22px; width: 120px; cursor: crosshair; }
+.spark svg, .sspark svg { width: 100%; height: 100%; display: block; }
+/* .spark: in the cut / beyond it / that place or worse.
+   .sspark: starts under par / starts at even / misses the Cup. */
+.sp-in { fill: var(--pos); }
+.sp-out { fill: var(--grid-strong); }
+.sp-over { fill: var(--neg); opacity: .7; }
+
+/* floating tooltip (immediate, no native-title delay) */
+#spark-tip {
+  position: fixed; z-index: 50; pointer-events: none;
+  background: var(--band); color: var(--band-ink); font-variant-numeric: tabular-nums;
+  font-size: var(--fs-caption); padding: 3px 8px; border-radius: var(--radius);
+  border: 1px solid var(--grid-strong);
+  /* `pre-line`, not `pre`: the event-odds board is a multi-line standings list
+     and keeps its newlines, but this element now also carries the column
+     definitions that used to sit in `title` attributes — full sentences, which
+     with `pre` ran off the side of a phone instead of wrapping. */
+  white-space: pre-line;
+  max-width: min(340px, calc(100vw - 24px));
+  line-height: 1.4;
+}
+
+/* ---- tap-to-reveal (see app.js, "readouts that work without a mouse") ----
+   `touch-action: pan-y` is what lets a finger scrub a chart at all: the
+   browser keeps vertical page scrolling and hands us the horizontal drags,
+   which is the axis every chart here reads along. Without it the page just
+   scrolls and no readout is ever reachable on a phone. */
+.probe { touch-action: pan-y; }
+
+/* One affordance for everything carrying an explanation, so the pattern is
+   learned once. Table *cells* opt out — underlining a whole cell reads as an
+   error rather than an invitation — as does the doors bar, which is a drawing. */
+[data-tip] { cursor: help; }
+/* text marks take the dotted rule; the emoji ones do not — an underline under
+   a medal glyph reads as a rendering fault, not an invitation */
+th[data-tip], .note-flag, .side-door, .chip[data-tip],
+.stale-flag, .exact-odds [data-tip] {
+  text-decoration: underline dotted currentColor;
+  text-underline-offset: 3px;
+}
+.medal, .win-medal { text-decoration: none; }
+td[data-tip], .doorbar[data-tip] { text-decoration: none; }
+
+/* unrounded odds, at the head of an expanded row */
+.exact-odds {
+  margin: 0 0 10px; font-size: var(--fs-small); color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.exact-odds b { color: var(--ink); font-weight: 700; }
+.exact-odds .dim { margin-left: 6px; }
+
+/* ---- column guide -------------------------------------------------------
+   The definitions live in each column's `title`; this is the same copy in a
+   form a phone can reach. `<details>` so it is keyboard- and screen-reader-
+   operable without a line of script. */
+.colguide { font-size: var(--fs-small); }
+.colguide > summary {
+  cursor: pointer; color: var(--ink-2); padding: 4px 10px;
+  border: 1px solid var(--grid-strong); border-radius: var(--radius);
+  background: var(--paper); display: inline-block; list-style: none;
+}
+.colguide > summary::-webkit-details-marker { display: none; }
+.colguide > summary::before { content: "? "; color: var(--pos); font-weight: 700; }
+.colguide > summary:hover { border-color: var(--ink-2); color: var(--ink); }
+.colguide[open] > summary { color: var(--ink); border-color: var(--ink-2); }
+.cg-body {
+  margin-top: 8px; padding: 12px 14px; background: var(--chrome-2);
+  border: 1px solid var(--grid); border-radius: var(--radius);
+}
+.cg-lede { margin: 0 0 10px; color: var(--ink-2); max-width: 70ch; }
+.cg-dl { margin: 0; display: grid; gap: 7px 0; }
+.cg-dl > div { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 0 14px; }
+.cg-dl dt { font-weight: 700; color: var(--ink); }
+.cg-dl dd { margin: 0; color: var(--ink-2); }
+.cg-band {
+  margin: 14px 0 8px; font-size: var(--fs-caption); text-transform: uppercase;
+  letter-spacing: 1px; color: var(--ink-3); font-weight: 700;
+  border-top: 1px solid var(--grid); padding-top: 10px;
+}
+.cg-note { margin: 12px 0 0; color: var(--ink-3); }
+@media (max-width: 620px) {
+  .cg-dl > div { grid-template-columns: 1fr; gap: 1px 0; }
+  .cg-body { padding: 10px 11px; }
+}
+
+/* expanded detail: two-column breakdown + big histogram */
+.detail-grid { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.detail-grid > div { flex: 1; min-width: 300px; max-width: 100%; overflow-x: auto; }
+/* the 7-column what-if table scrolls inside its panel on phones */
+.detail-grid > div:nth-child(2) .detail-tbl { min-width: 520px; }
+@media (max-width: 700px) {
+  /* cap the panels to the screen so their tables scroll internally instead
+     of stretching the whole forecast table */
+  .detail-grid > div { max-width: calc(100vw - 56px); }
+}
+.detail-tbl { margin-top: 4px; }
+.detail-tbl th { position: static; font-size: var(--fs-caption); }
+.detail-tbl td { font-size: var(--fs-small); }
+tr.dropped td { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--ink-3); }
+.drop-tag { color: var(--ink-3); font-size: var(--fs-caption); text-decoration: none; display: inline-block; }
+.drop-hi { color: var(--ink-2); font-weight: 600; }  /* high drop odds: still bold, but muted */
+.keep-tag { color: var(--pos); font-size: var(--fs-caption); }
+.detail-grid .band { font-size: var(--fs-caption); margin-bottom: 2px; }
+/* placement shown after a single event's points — smaller, quieter */
+.place { color: var(--ink-3); font-size: var(--fs-caption); }
+.ev-date { color: var(--ink-3); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; }
+.note-flag { color: var(--pend); font-size: var(--fs-caption); cursor: help; }
+.medal { cursor: help; }
+.detail-tbl input[type="checkbox"] { width: 14px; height: 14px; vertical-align: middle; }
+/* events the player isn't projected to attend: greyed until checked */
+.detail-tbl tr.not-att td:not(:first-child) { color: var(--ink-3); }
+
+/* inline what-if scenario readout */
+.wf-scenario { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.wf-scenario .stat { font-size: 1.5rem; }
+.wf-scenario .stat.pos { color: var(--pos); }
+.wf-scenario .stat.pend { color: var(--pend); }
+.wf-scenario .stat.dim { color: var(--ink-3); }
+.wf-swing { font-variant-numeric: tabular-nums; font-weight: 600; }
+.wf-swing.pos { color: var(--pos); }
+.wf-swing.neg { color: var(--neg); }
+.wf-scenario .btn { margin-left: auto; }
+
+/* rank histogram (expanded detail) */
+.bighist-wrap { margin-top: 14px; }
+.hist { display: flex; align-items: flex-end; gap: 2px; height: 84px; margin: 4px 0 2px; }
+.hist .col { flex: 1; min-width: 4px; background: var(--grid-strong); }
+.hist .col.in-cut { background: var(--pos); }
+.hist .col.overflow { background: var(--neg); opacity: .7; }
+.hist-labels { display: flex; gap: 2px; font-size: 10px; color: var(--ink-3); }
+.hist-labels span { flex: 1; text-align: center; min-width: 4px; }
+
+/* headline stats */
+.stat { font-size: 1.9rem; }
+.stat-label { font-size: var(--fs-caption); color: var(--ink-2); text-transform: uppercase; letter-spacing: .6px; }
+.hint { color: var(--ink-2); font-size: var(--fs-small); }
+
+/* week-over-week movers panel */
+.movers { margin: 0 0 10px; border: 1px solid var(--grid); background: var(--paper); overflow-x: auto; }
+.movers .table-ledger { min-width: 560px; }  /* scroll inside the panel on phones, don't cram */
+.movers summary { cursor: pointer; padding: 7px 10px; font-weight: 700; font-size: var(--fs-small); background: var(--band); color: var(--band-ink); }
+.movers .table-ledger { margin: 0; }
+.movers-up { color: var(--pos); font-weight: 600; }
+.movers-down { color: var(--neg); font-weight: 600; }
+td.nowrap { white-space: nowrap; }
+/* window tabs: same segmented control as the column switcher, scaled down */
+.movers-seg { margin: 8px 10px 0; width: max-content; }
+.movers-seg button { padding: 3px 11px; font-size: var(--fs-small); }
+/* odds trend sparkline (time series; sparkCell is the distribution one) */
+td.msparkcell { width: 84px; padding-top: 3px; padding-bottom: 3px; }
+.mspark { width: 76px; height: 20px; }
+.mspark svg { width: 100%; height: 100%; overflow: visible; }
+.msp-line { fill: none; stroke: currentColor; stroke-width: 1.4; vector-effect: non-scaling-stroke;
+            stroke-linejoin: round; stroke-linecap: round; }
+.msp-base { fill: none; stroke: var(--grid-strong); stroke-width: 1; stroke-dasharray: 2 2;
+            vector-effect: non-scaling-stroke; }
+.msp-dot { fill: currentColor; stroke: none; }
+.reg-chip { display: inline-block; font-size: var(--fs-caption); padding: 0 5px; border-radius: var(--radius); border: 1px solid var(--grid); white-space: nowrap; }
+.reg-chip.reg-in { color: var(--pos); background: var(--pos-fill); }
+.reg-chip.reg-out { color: var(--neg); background: var(--neg-fill); }
+
+/* ==========================================================================
+   "What's left" view. Colour keeps its Ledger meaning throughout: green =
+   in / have, yellow = pending / still contested, red = out, and greyscale
+   carries structure. Nothing here defines a hue of its own.
+   ========================================================================== */
+.pv-intro { font-size: var(--fs-body); color: var(--ink-2); margin: 2px 0 16px; max-width: 78ch; }
+.pv-intro b { color: var(--ink); }
+.pv-panel { border: 1px solid var(--grid); background: var(--paper); margin: 0 0 14px; }
+.pv-head { background: var(--band); color: var(--band-ink); padding: 6px 10px;
+           display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pv-head h2 { margin: 0; font-size: var(--fs-small); font-weight: 700; letter-spacing: .2px; }
+.pv-form { font-size: var(--fs-caption); color: var(--ink-2); text-transform: uppercase; letter-spacing: .5px; }
+.pv-body { padding: 10px 10px 12px; }
+.pv-lede { margin: 0 0 8px; font-size: var(--fs-small); color: var(--ink); max-width: 88ch; }
+.pv-note { margin: 8px 0 0; font-size: var(--fs-caption); color: var(--ink-2); max-width: 88ch; }
+.pv-note b { color: var(--ink); }
+/* every chart scrolls inside its own panel rather than stretching the page */
+.pv-scroll { overflow-x: auto; }
+.pv-tall { max-height: 460px; overflow-y: auto; }
+.pv-tall .table-ledger th { position: sticky; top: 0; z-index: 2; }
+.pv-tbl { margin: 0; }
+.pv-svg { display: block; width: 100%; height: auto; }
+.pv-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.pv-seg { width: max-content; }
+.pv-seg button { padding: 3px 11px; font-size: var(--fs-small); }
+.pv-legend { font-size: var(--fs-caption); color: var(--ink-2); }
+/* legend swatches carry the cloud's fills as backgrounds — the .pc-* rules
+   below are SVG `fill`, which does nothing on an HTML element */
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
+      margin: 0 4px 0 8px; vertical-align: -1px; }
+.pv-legend .sw:first-child { margin-left: 0; }
+.sw.pc-in { background: var(--pos); }
+.sw.pc-out { background: var(--ink-3); }
+.sw.pc-over { background: var(--neg); }
+
+/* possibility cloud — the row sparkline's palette, one row per player */
+.pcloud { display: block; }
+.pcloud .pc-in { fill: var(--pos); }
+/* mid-grey, not the sparkline's --grid-strong: these cells are drawn at a
+   range of opacities and the darker token disappears against --paper */
+.pcloud .pc-out { fill: var(--ink-3); }
+.pcloud .pc-over { fill: var(--neg); }
+.pcloud { cursor: crosshair; }
+.pc-name { fill: var(--ink-2); font-size: 9.5px; }
+.pc-rank { fill: var(--ink-3); font-size: 9px; font-variant-numeric: tabular-nums; }
+.pc-tick { fill: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
+.pc-cut { stroke: var(--ink); stroke-width: 1.5; }
+.pc-cutlabel { fill: var(--ink); font-size: 10px; font-weight: 700; }
+
+/* contested-positions area + cutline histogram */
+.pv-grid { stroke: var(--grid); stroke-width: 1; }
+.pv-axis { stroke: var(--grid-strong); stroke-width: 1; }
+.pv-area { fill: var(--pend); opacity: .18; }
+.pv-line { fill: none; stroke: var(--pend); stroke-width: 2; stroke-linejoin: round; }
+.pv-dot { fill: var(--pend); stroke: var(--paper); stroke-width: 2; }
+.pv-mark { fill: var(--ink); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#pcutline { cursor: crosshair; }
+.pv-bar { fill: var(--ink-3); opacity: .5; }
+.pv-tick { stroke-width: 2.5; }
+.pv-tick.pos { stroke: var(--pos); }
+.pv-tick.pend { stroke: var(--pend); }
+.pv-tick.dim { stroke: var(--neg); }
+.pv-gap { stroke: var(--pend); stroke-width: 1.5; opacity: .85; }
+.pv-gapdot { fill: var(--pend); }
+.pv-gaplabel { fill: var(--ink-2); font-size: 10.5px; }
+.pv-gapnum { fill: var(--ink); font-weight: 700; }
+
+/* ways in — two semantic hues plus a structural grey for the invite, which is
+   an entitlement rather than a competitive route */
+.doorbar { display: flex; height: 11px; gap: 2px; min-width: 120px; }
+.doorbar i { display: block; border-radius: 2px; }
+.doorbar i.dr-auto { background: var(--pos); }
+.doorbar i.dr-mvp { background: var(--pend); }
+.doorbar i.dr-inv { background: var(--grid-strong); }
+.side-door { font-size: var(--fs-caption); color: var(--pend); cursor: help; white-space: nowrap; }
+
+/* leverage grid: fixed-width value columns so it reads as a grid rather than
+   as four wide event columns with a number pinned to the right of each */
+.lev-tbl td.lev, .lev-tbl td.lev-na, .lev-tbl td.lev-wait { width: 96px; }
+.lev-tbl th { font-size: var(--fs-caption); }
+td.lev { position: relative; text-align: right; font-variant-numeric: tabular-nums; }
+.lev-fill { position: absolute; inset: 1px; background: var(--pend); border-radius: 2px; }
+.lev-t { position: relative; }
+.lev-t.on { color: var(--band); font-weight: 700; }
+td.lev-na, td.lev-wait { color: var(--ink-3); }
+.lev-opt { position: relative; color: var(--ink-3); font-size: var(--fs-caption); cursor: help; }
+.lev-tbl td.lev { cursor: crosshair; }
+.lev-status { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   EVENT ODDS — live win-probability race
+   ========================================================================== */
+
+/* Scrolls inside its panel below this width rather than scaling down with it:
+   a dozen labelled lines squeezed into a phone's 400px is a 5px font. Same
+   trade the movers table makes. */
+.rc-svg { cursor: crosshair; min-width: 620px; }
+.rc-line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round;
+           stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.rc-dot { fill: currentColor; stroke: none; }
+.rc-end { fill: currentColor; font-size: 10.5px; font-weight: 600; }
+/* connector to the label gutter: dotted and faint, so it cannot be mistaken
+   for the series continuing across the holes nobody has played yet */
+.rc-lead { fill: none; stroke: currentColor; stroke-width: 1; opacity: .3;
+           stroke-dasharray: 1 3; vector-effect: non-scaling-stroke; }
+.rc-future { fill: var(--ink); opacity: .05; }
+.rc-flabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .4px; }
+.rc-endnum { fill: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* round boundaries: structure, so greyscale — the colour here is all data */
+.rc-round { stroke: var(--grid); stroke-width: 1; stroke-dasharray: 3 3; }
+.rc-rlabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .5px; }
+.rc-guide { stroke: var(--ink-2); stroke-width: 1; opacity: .55; }
+
+/* The one place this app spends colour on identity rather than meaning: a
+   dozen lines have to be told apart, and green-good/red-bad cannot do that.
+   Chosen for separation at 2px on --paper, with a darker set for newsprint
+   and print, where the light end of this ramp would vanish. */
+.rc-c0  { color: #4fd688; }
+.rc-c1  { color: #6cb6ff; }
+.rc-c2  { color: #e0b73a; }
+.rc-c3  { color: #ef6f64; }
+.rc-c4  { color: #b58cff; }
+.rc-c5  { color: #3fd1c5; }
+.rc-c6  { color: #ff9d4d; }
+.rc-c7  { color: #f78fd0; }
+.rc-c8  { color: #a8cc4f; }
+.rc-c9  { color: #8aa0ff; }
+.rc-c10 { color: #c9cdd4; }
+.rc-c11 { color: #cf9463; }
+.ledger-light .rc-c0  { color: #0f7040; }
+.ledger-light .rc-c1  { color: #1f5fa8; }
+.ledger-light .rc-c2  { color: #8a6d00; }
+.ledger-light .rc-c3  { color: #b3362c; }
+.ledger-light .rc-c4  { color: #6a3fb0; }
+.ledger-light .rc-c5  { color: #0d6f68; }
+.ledger-light .rc-c6  { color: #a35a10; }
+.ledger-light .rc-c7  { color: #a53c7c; }
+.ledger-light .rc-c8  { color: #4d6b12; }
+.ledger-light .rc-c9  { color: #3b4fa0; }
+.ledger-light .rc-c10 { color: #4a4d52; }
+.ledger-light .rc-c11 { color: #7a4a20; }
+
+/* explainer / static pages */
+.page { max-width: 780px; margin: 0 auto; padding: 0 16px 40px; }
+.page h1 { font-size: 1.3rem; margin: 18px 0 4px; }
+.page .band { margin: 22px 0 8px; }
+.page p, .page li { font-size: var(--fs-body); line-height: 1.5; color: var(--ink); }
+.page li { margin: 3px 0; }
+.page .table-ledger { margin: 8px 0; }
+.page .table-ledger td, .page .table-ledger th { font-size: var(--fs-small); }
+.changelog-date { color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 10px; }
+
+footer { margin-top: 22px; color: var(--ink-3); font-size: var(--fs-small); }
