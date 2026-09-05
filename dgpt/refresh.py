@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 
-from . import export, liveodds, movers, schedule, simulate, snapshot, standings
+from . import export, feed, liveodds, movers, schedule, simulate, snapshot, standings
 
 
 def main() -> None:
@@ -47,6 +47,7 @@ def main() -> None:
 
     if not args.skip_sim:
         movers.write_movers()
+        print("  " + feed.write_feed())
         print("  " + liveodds.write_json())
 
     # Publish-gate invariants (flag-only): the refresh must still succeed —
