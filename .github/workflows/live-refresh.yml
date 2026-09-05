@@ -10,20 +10,40 @@ name: Live refresh
 # scores actually moved. It keeps looping until no points event is live or it
 # nears the 6h per-job ceiling, then yields.
 #
-# Continuation across that ceiling needs no PAT: the shared concurrency group
-# keeps exactly one run active and one queued, and the coarse cron reliably
-# leaves a queued successor during any 5.5h window, so it starts the instant
-# the active run yields. Between rounds / overnight the loop idles on the cheap
-# check (no pip, no sim) and, when nothing is live, exits in seconds. Public
-# repo => Actions minutes are free, so holding a runner during an event is fine.
+# Continuation across that ceiling is explicit, and needs no PAT: before it
+# yields, the run dispatches its own successor (.github/dispatch-successor.sh)
+# and confirms a run actually appeared. `workflow_dispatch` is the documented
+# exception to the rule that GITHUB_TOKEN-triggered events create no workflow
+# run, so this costs only the `actions: write` permission below.
+#
+# It used to rely instead on the coarse cron having left a queued successor in
+# the concurrency group during the 5.5h window. On 2026-08-27 none had been:
+# GitHub delivered zero scheduled fires for this workflow between 14:30Z and
+# 23:17Z, so the loop yielded into nothing and the site sat on a stale bundle
+# for 3h16m during round 2 of Worlds (and 5h38m earlier the same day). The cron
+# now only has to START the loop when an event begins; it is no longer what
+# keeps it alive. Between rounds / overnight the loop idles on the cheap check
+# (no pip, no sim) and, when nothing is live, exits in seconds. Public repo =>
+# Actions minutes are free, so holding a runner during an event is fine.
 on:
   schedule:
-    - cron: "*/15 * * * *"   # only needs to (re)start / keep a successor queued
-  workflow_dispatch: {}
+    - cron: "*/15 * * * *"   # only needs to (re)start the loop when one goes live
+  workflow_dispatch:
+    inputs:
+      after_failure:
+        # Deliberately a string, not a boolean: this is dispatched by
+        # `gh workflow run -f after_failure=true`, which sends inputs as
+        # strings, and the loop compares it as one. A boolean-typed input
+        # would put a coercion between the two for no benefit — nothing
+        # reads this except the [ "$AFTER_FAILURE" = "true" ] below.
+        description: "Internal: marks the one automatic retry that follows a failed run, so the chain stops there."
+        type: string
+        default: "false"
 
 permissions:
   contents: write
   pages: write
+  actions: write   # dispatch our own successor; see .github/dispatch-successor.sh
 
 concurrency:
   group: refresh-forecast-v2   # share with the weekly full refresh; never overlap
@@ -75,6 +95,7 @@ jobs:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
           PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
           GH_TOKEN: ${{ github.token }}
+          AFTER_FAILURE: ${{ github.event.inputs.after_failure || 'false' }}
         run: |
           set -uo pipefail
           git config user.name "github-actions[bot]"
@@ -91,11 +112,24 @@ jobs:
             python -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)'
           }
 
+          # A crash-out gets ONE automatic retry: this run hands off with
+          # after_failure=true, and a run carrying that flag does not chain
+          # again. So a transient break (a PDGA blip, a bad runner) self-heals
+          # in a minute instead of waiting on a cron fire that may be hours
+          # away, while a persistent one cannot spin runners in a tight loop —
+          # past that single hop the cron is the only restart, which is the
+          # right amount of patience for a break that is not going to fix
+          # itself. The run still goes red either way; the owner is notified.
           fail_step() {
             failures=$((failures + 1))
             echo "::warning::$1 (consecutive failures: $failures)"
             if [ "$failures" -ge 3 ]; then
-              echo "::error::Three consecutive live-refresh failures — failing the run so it gets seen. The cron restarts the loop."
+              echo "::error::Three consecutive live-refresh failures — failing the run so it gets seen."
+              if [ "$AFTER_FAILURE" = "true" ]; then
+                echo "::warning::Already the post-failure retry — not chaining again. The cron restarts the loop."
+              elif ! .github/dispatch-successor.sh after_failure=true; then
+                echo "::warning::Could not hand off after failure; the cron restarts the loop."
+              fi
               exit 1
             fi
           }
@@ -166,28 +200,75 @@ jobs:
               fi
               gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null 2>&1 || true
 
+              # Publish-gate invariants: DECIDE here, ALERT after the push.
+              # The decision has to happen before the state commit so the
+              # de-dupe marker is committed with it. It used to live in
+              # data/cache/, which is gitignored and carried only by
+              # actions/cache — whose save step is skipped when the job ends
+              # non-zero, which the alerting run always does. So the marker
+              # written by the run that alerts was the one guaranteed not to
+              # survive, and every restart re-alerted and died again (observed
+              # 2026-08-29, runs #1027 and #1029). See .github/invariant-alert.sh.
+              alert=0
+              .github/invariant-alert.sh || alert=$?
+              if [ "$alert" = 1 ]; then
+                fail_step "invariant-alert failed"
+                sleep 300; continue
+              fi
+
               # Cross-run state only: the bundle no longer lands on main, so
-              # most live iterations now make no commit here at all.
+              # most live iterations now make no commit here at all. This is
+              # also what persists data/invariant_alerted.txt.
               git add data predictions
+              state_pushed=1
               if git diff --cached --quiet; then
                 echo "no state change after refresh"
               else
                 git commit -m "Refresh pipeline state ($(date -u +'%F %H:%MZ'))"
                 # a concurrent merge/weekly refresh could have moved main
-                git push || { git pull --rebase --autostash && git push; }
+                if git push || { git pull --rebase --autostash && git push; }; then
+                  :
+                else
+                  state_pushed=0
+                  echo "::warning::could not push pipeline state to main"
+                fi
               fi
-              # publish-gate invariants: alert on NEW violations, after the push
-              viol=data/cache/invariant_violations.txt
-              if [ -s "$viol" ] && ! cmp -s "$viol" data/cache/invariant_alerted.txt; then
-                cp "$viol" data/cache/invariant_alerted.txt
+
+              if [ "$alert" = 3 ]; then
                 echo "::error::Live data failed invariant checks (data still published — see dgpt/invariants.py):"
-                cat "$viol"
+                cat data/cache/invariant_violations.txt
+                # Hand off before dying. The run still goes red so the owner is
+                # notified, but the loop no longer stays down until someone
+                # restarts it by hand: the successor reads the marker committed
+                # just above, sees this violation set as already alerted, and
+                # keeps publishing. On 2026-08-29 two of these deaths left the
+                # site on hourly updates for 2h26m and 70m during round 4.
+                # Unbounded on purpose — a repeat cannot re-alert, so this
+                # cannot chain; only a genuinely new violation set alerts again.
+                # That guarantee rests entirely on the marker having reached
+                # main, so a failed state push withholds the hand-off: a
+                # successor starting from the old marker WOULD re-alert, and
+                # that is the one way this could spin.
+                if [ "$state_pushed" = 1 ]; then
+                  .github/dispatch-successor.sh \
+                    || echo "::warning::could not hand off after an invariant alert; the cron restarts the loop"
+                else
+                  echo "::warning::state push failed, so the marker is not on main — not handing off, because the successor would re-alert. The cron restarts the loop."
+                fi
                 exit 1
               fi
             fi
 
             if [ "$(date +%s)" -ge "$BUDGET" ]; then
-              echo "Near job time limit — yielding; the queued successor takes over."
+              # Dispatch BEFORE breaking, so the successor sits in the
+              # concurrency group as the pending run and starts the moment this
+              # one releases the slot. A hand-off that cannot be confirmed is
+              # precisely the 2026-08-27 outage, so it fails the run instead of
+              # exiting quietly with nothing lined up to take over.
+              echo "Near job time limit — handing off to a fresh run."
+              if ! .github/dispatch-successor.sh; then
+                exit 1
+              fi
               exit_reason=yield
               break
             fi

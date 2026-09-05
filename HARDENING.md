@@ -103,6 +103,54 @@ pattern across them, not any single bug, is what this backlog addresses.
     UTC-rollover bug waiting for a US Sunday finish, and the second one
     (permanent caching keyed on date) was sitting behind the first.
 
+11. **The loop yielded at the job ceiling and nothing took over.** The
+    live loop holds a runner ~5.5h and exits under GitHub's 6h per-job
+    ceiling; continuation depended on the `*/15` cron having left a
+    queued successor in the shared concurrency group — described in the
+    workflow as something the coarse cron did "reliably". On 2026-08-27,
+    round 2 of Worlds, it had not. Run #1019 yielded at 20:01Z
+    announcing "the queued successor takes over" and nothing did. GitHub
+    delivered **zero** scheduled fires for the workflow between 14:30Z
+    and 23:17Z, when it was restarted by hand — including the 3h11m
+    after the yield, when the concurrency slot was completely free, so a
+    congested queue does not explain it. Corroboration that the
+    scheduler rather than the queue was at fault: `refresh.yml`'s
+    `0 11 * * *` cron fired that day at 20:57Z, ~10 hours late. That
+    late run is also the only reason the site was 2h15m stale instead of
+    3h16m — the once-a-day job happened to land in the hole. An earlier
+    gap the same day went unnoticed entirely: #1018 ended 08:52Z, #1019
+    started 14:30Z, 5h38m uncovered. Nothing in the pipeline was broken;
+    the loop, the gate, the publish path and the invariants were all
+    healthy, which is why no run went red and nobody was notified.
+    Lesson: "best effort" in GitHub's cron documentation means the
+    delivery rate can go to zero for hours, so anything load-bearing
+    built on "a fire will arrive within this window" is a scheduled
+    outage rather than a design — and a liveness failure that produces
+    no failing run produces no alert either.
+
+12. **The publish-gate alert took the live loop down, and could not
+    de-duplicate.** Two PDGA rows at Worlds carried impossible cumulative
+    scores on 2026-08-29 — MPO Sander Bahnerth `cur=+981` and, two hours
+    later, FPO Samantha Zaborowski `cur=+849`, both far outside the
+    per-round bounds. The checks did exactly their job: published the
+    data, then failed the run so the owner was notified. What nobody had
+    noticed is what that costs. `exit 1` ends the run, and the run is the
+    live loop, so each bad row also stopped the site updating — and the
+    de-dupe meant to keep a persistent violation from re-alerting could
+    never fire, because its marker lived in `data/cache/`, which is
+    gitignored and carried between runs only by `actions/cache`, whose
+    save step is skipped when the job ends non-zero. The alerting run is
+    always the failing run, so the marker written by the run that alerts
+    was precisely the one guaranteed not to survive. Every restart
+    re-alerted and died again. Round 4 ran on hourly updates (16:10,
+    17:26, 18:38Z) instead of six-minute ones, the 17:26 refresh being the
+    daily cron rather than the loop. Fix: item 10's hand-off extended to
+    this exit, and the marker moved into tracked state so it is committed
+    with the rest of the cross-run state before the run dies. Lesson: an
+    alerting path that shares a process with the thing it monitors will
+    take that thing down with it, and state that only exists on the
+    success path cannot protect the failure path.
+
 ## The plan
 
 Ordered by expected payoff. "In-season safe" = additive, can't change a
@@ -114,7 +162,8 @@ published number.
 failure posture in `.github/workflows/live-refresh.yml`. Item 6 shipped
 2026-08 (`.github/publish-site.sh`). Items 7 and 9 are offseason work;
 item 8's first two pieces (a resnapshot command, the invariant gate on
-recording) are in-season safe and still open.*
+recording) are in-season safe and still open. Items 10 and 11 shipped
+2026-08 (`.github/dispatch-successor.sh`, `.github/invariant-alert.sh`).*
 
 ### 1. Commit the regression corpus; make it a test suite *(shipped 2026-07)*
 
@@ -264,3 +313,54 @@ broken.
 - `validate.py`'s HTML parsing is regex over `<tr>`; if item 7 lands,
   a parse failure downgrades from "blind spot" to "lost redundancy,"
   which is the right severity for it.
+
+### 10. Hand the live loop off explicitly *(shipped 2026-08)*
+
+`.github/dispatch-successor.sh`, after incident 11. Before yielding at
+the ~5.5h budget the run dispatches its own successor and polls until
+that run actually exists, re-dispatching once and failing the run if it
+cannot confirm one. The verification is the substance, not politeness: a
+204 from the dispatch endpoint is not a run, as the 2026-08-26 Actions
+incident showed, and a hand-off that reports success with nothing
+enqueued reproduces the outage exactly. `workflow_dispatch` (with
+`repository_dispatch`) is the documented exception to the rule that
+GITHUB_TOKEN-triggered events start no workflow run, so this needs no
+PAT — only `actions: write`.
+
+The dispatch happens *before* the current run exits, so the successor
+lands in the concurrency group as the pending run and starts the moment
+the slot frees: the shape the cron was supposed to produce, minus the
+dependency on delivery. A crash-out gets one automatic retry, marked
+`after_failure=true`, and a run carrying that flag does not chain again
+— transient breaks self-heal in a minute, persistent ones cannot spin
+runners.
+
+What still rides on the cron is *starting* the loop when an event goes
+live. That is the more forgiving window — the loop exits in seconds when
+nothing is live, so a late start costs the opening minutes of a round
+rather than hours mid-round — but it is the same dependency, and a
+multi-hour delivery gap across a Sunday-morning tee time would show. The
+fix if it bites: keep looping while a points event starts within the
+next several hours, instead of exiting on "nothing live right now".
+
+### 11. Stop the invariant alert from killing the loop *(shipped 2026-08)*
+
+`.github/invariant-alert.sh`, after incident 12. The alert decision moved
+out of the workflow body and ahead of the state commit, so the de-dupe
+marker (`data/invariant_alerted.txt`, tracked — not `data/cache/`, which
+no failing run can save) is committed before the run exits. The publish
+still happens first and the run still goes red; what changed is that the
+loop hands off to a successor on the way out, and that successor reads
+the committed marker, sees the same violation set, and stays quiet
+instead of dying on it.
+
+The semantics are per episode, not per season: a clean run clears the
+marker, so a row that breaks, gets fixed, and breaks again is reported
+both times. The hand-off here is deliberately unbounded — unlike the
+crash-out retry, a repeat cannot re-alert, so it cannot chain.
+
+Not addressed: `refresh.yml`'s own invariant step has no de-dupe and will
+still go red once a day while a violation persists. That is a daily job
+rather than the liveness path, so a red run there is the intended signal
+and costs nothing but noise — but if a violation ever persists for a week
+it will be a week of red dailies.
