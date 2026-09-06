@@ -131,12 +131,40 @@ def test_export_is_empty_without_history():
     assert series_for("fpo") is None
 
 
-def test_x_axis_is_holes_played_and_never_walks_back():
+def test_x_axis_is_the_fields_mean_progress():
+    liveodds.record(res({1: stat(0.4, thru=18), 2: stat(0.3, thru=12)}), "MPO")
+    liveodds.record(res({1: stat(0.5, thru=36), 2: stat(0.2, thru=30)}), "MPO")
+    assert series_for("mpo")["x"] == [15, 33]
+
+
+def test_x_axis_never_walks_back_when_the_recorded_set_changes():
+    """The set shrinks as players fall out of contention; the clock cannot."""
     liveodds.record(res({1: stat(0.4, thru=18), 2: stat(0.3, thru=12)}), "MPO")
     liveodds.record(res({1: stat(0.5, thru=36), 2: stat(0.2, thru=30)}), "MPO")
     # the front of the field drops out of the recorded set entirely
     liveodds.record(res({2: stat(0.9, thru=33)}), "MPO")
-    assert series_for("mpo")["x"] == [18, 36, 36]
+    assert series_for("mpo")["x"] == [15, 33, 33]
+
+
+def test_a_finished_front_card_does_not_stall_the_axis():
+    """The regression this axis exists for (Idlewild R1, 2026-09-04).
+
+    Reading the front of the field pins x the moment the first card is in:
+    the max sat at 18 for six hours while the late cards played, collapsing
+    an afternoon of the tournament onto one x and drawing the odds as a
+    vertical line. Anchoring on the lead card inverts the same fault — it
+    tees off last, so it pins through the morning wave instead.
+    """
+    # card 1 is done; the rest of the field plays on behind it
+    liveodds.record(res({1: stat(0.4, thru=18), 2: stat(0.3, thru=9),
+                         3: stat(0.2, thru=6)}), "MPO")
+    liveodds.record(res({1: stat(0.4, thru=18), 2: stat(0.3, thru=14),
+                         3: stat(0.2, thru=11)}), "MPO")
+    liveodds.record(res({1: stat(0.4, thru=18), 2: stat(0.3, thru=18),
+                         3: stat(0.2, thru=17)}), "MPO")
+    x = series_for("mpo")["x"]
+    assert x == [11, 14, 18]
+    assert len(set(x)) == len(x), "every observation must land on its own x"
 
 
 def test_a_missing_player_reads_as_zero_not_as_a_gap():

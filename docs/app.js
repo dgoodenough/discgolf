@@ -5,7 +5,7 @@
 
 const state = { div: "mpo", view: "forecast", data: {}, sort: { key: "p_champ", dir: "desc" },
                 colsMode: "auto", permalink: null, moverWin: "week", moversOpen: false,
-                cloudMode: "chart", lev: {} };
+                cloudMode: "chart", lev: {}, raceAxis: "time" };
 
 // player permalinks: #mpo-75412 opens that division with the player expanded
 {
@@ -1853,15 +1853,58 @@ function raceScale(r) {
   return { step, ymax: Math.min(1, Math.max(step, Math.ceil((peak * 1.05) / step) * step)) };
 }
 
+/* The two axes, and why there are two.
+
+   HOLES is the field's mean progress (see dgpt/liveodds.py): rounds come out
+   as equal slices and the overnight gaps close to nothing, which is the right
+   shape for reading a tournament back.
+
+   TIME is the honest one: it shows the real pace, a frantic last hour is wide,
+   and the gaps between rounds are visible as gaps. It costs the dead ground
+   overnight — at a three-day event that is a third of the axis — which is
+   exactly the trade the toggle exists to let the reader make.
+
+   Both plot the same observations. Neither changes a probability: each column
+   is one simulation run at one instant, so a vertical slice sums to ~100%
+   whichever axis is showing. Only the spacing differs. */
+const raceAxisVals = (r) =>
+  state.raceAxis === "time" ? r.t.map((s) => Date.parse(s)) : r.x;
+
 function raceGeom(r) {
   const { W, H, L, R, T, B } = RC;
-  const x0 = r.x[0], x1 = Math.max(r.holes, r.x[r.x.length - 1], x0 + 18);
+  const v = raceAxisVals(r), last = v[v.length - 1];
+  // Holes keeps a runway to the finish; time has no known finish instant to
+  // draw one to, so the axis ends at the newest observation rather than
+  // inventing a projected end.
+  const x0 = v[0];
+  const x1 = state.raceAxis === "time"
+    ? Math.max(last, x0 + 36e5)                       // at least an hour wide
+    : Math.max(r.holes, last, x0 + 18);
   const { ymax } = raceScale(r);
   return {
-    x0, x1, ymax, pw: W - L - R, ph: H - T - B,
+    v, x0, x1, ymax, pw: W - L - R, ph: H - T - B,
     X: (h) => L + ((h - x0) / (x1 - x0)) * (W - L - R),
     Y: (p) => T + (1 - Math.min(1, p / ymax)) * (H - T - B),
   };
+}
+
+/* Day bands on the time axis, the counterpart of the round bands on holes:
+   a rule at each local midnight, the weekday centred in its own day. */
+function raceDayBands(g) {
+  const out = [];
+  const d = new Date(g.x0);
+  const cur = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  for (let guard = 0; guard < 40 && cur.getTime() <= g.x1; guard++) {
+    const next = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
+    out.push({
+      boundary: cur.getTime(),
+      from: Math.max(cur.getTime(), g.x0),
+      to: Math.min(next.getTime(), g.x1),
+      label: cur.toLocaleDateString(undefined, { weekday: "short" }),
+    });
+    cur.setTime(next.getTime());
+  }
+  return out;
 }
 
 function raceChartHtml(r) {
@@ -1877,24 +1920,37 @@ function raceChartHtml(r) {
       <text class="pc-tick" x="${L - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${
         +(p * 100).toFixed(1)}%</text>`;
   }
-  // Round boundaries are the chart's real x-axis: a golf tournament moves in
-  // rounds, and holes-played puts the overnight gaps at zero width.
+  // Bands along the bottom: rounds on the holes axis, days on the time axis.
+  // Same treatment either way — a rule at the boundary, the name centred in
+  // its own span, and nothing drawn where there is no room for it.
+  const bands = state.raceAxis === "time"
+    ? raceDayBands(g)
+    : Array.from({ length: Math.ceil(g.x1 / 18) }, (_, k) => ({
+        boundary: k * 18,
+        from: Math.max(k * 18, g.x0),
+        to: Math.min((k + 1) * 18, g.x1),
+        label: `R${k + 1}`,
+      }));
   let rounds = "";
-  for (let h = 18; h <= g.x1; h += 18) {
-    if (h > g.x0) {
-      rounds += `<line class="rc-round" x1="${g.X(h).toFixed(1)}" y1="${T}" x2="${g.X(h).toFixed(1)}" y2="${T + g.ph}"/>`;
+  for (const b of bands) {
+    if (b.to <= b.from) continue;
+    if (b.boundary > g.x0) {
+      const bx = g.X(b.boundary).toFixed(1);
+      rounds += `<line class="rc-round" x1="${bx}" y1="${T}" x2="${bx}" y2="${T + g.ph}"/>`;
     }
-    const mid = (Math.max(h - 18, g.x0) + Math.min(h, g.x1)) / 2;
-    if (Math.min(h, g.x1) - Math.max(h - 18, g.x0) > 6) {
-      rounds += `<text class="rc-rlabel" x="${g.X(mid).toFixed(1)}" y="${T + g.ph + 16}"
-        text-anchor="middle">R${h / 18}</text>`;
+    if (g.X(b.to) - g.X(b.from) > 22) {
+      rounds += `<text class="rc-rlabel" x="${g.X((b.from + b.to) / 2).toFixed(1)}"
+        y="${T + g.ph + 16}" text-anchor="middle">${b.label}</text>`;
     }
   }
 
   // The holes not yet played, shaded: without it the leader lines running out
-  // to the label gutter read as the odds continuing flat to the finish.
-  const lastX = g.X(r.x[n - 1]), fw = W - R - lastX;
-  const future = fw > 3
+  // to the label gutter read as the odds continuing flat to the finish. Only
+  // on the holes axis — the time axis ends at the newest observation, so
+  // there is no runway, and shading "the future" there would be a guess at
+  // when the round finishes.
+  const lastX = g.X(g.v[n - 1]), fw = W - R - lastX;
+  const future = (state.raceAxis !== "time" && fw > 3)
     ? `<rect class="rc-future" x="${lastX.toFixed(1)}" y="${T}" width="${fw.toFixed(1)}" height="${g.ph}"/>${
         fw > 90 ? `<text class="rc-flabel" x="${(lastX + fw / 2).toFixed(1)}" y="${T + 12}"
           text-anchor="middle">${g.x1 - r.x[n - 1]} holes still to play</text>` : ""}`
@@ -1905,14 +1961,14 @@ function raceChartHtml(r) {
   r.series.forEach((s, si) => {
     const c = `rc-c${si % RC_LINES}`;
     let dAttr = "";
-    for (let i = 0; i < n; i++) dAttr += `${i ? "L" : "M"}${g.X(r.x[i]).toFixed(1)} ${g.Y(s.y[i]).toFixed(1)}`;
+    for (let i = 0; i < n; i++) dAttr += `${i ? "L" : "M"}${g.X(g.v[i]).toFixed(1)} ${g.Y(s.y[i]).toFixed(1)}`;
     lines += n > 1
       ? `<path class="rc-line ${c}" d="${dAttr}"/>`
-      : `<circle class="rc-dot ${c}" cx="${g.X(r.x[0]).toFixed(1)}" cy="${g.Y(s.y[0]).toFixed(1)}" r="3"/>`;
+      : `<circle class="rc-dot ${c}" cx="${g.X(g.v[0]).toFixed(1)}" cy="${g.Y(s.y[0]).toFixed(1)}" r="3"/>`;
     // Labels sit in a column in the right margin, not beside the last point:
     // mid-event that point is nowhere near the right edge, and free-floating
     // labels over the runway read as data. A leader line keeps the link.
-    const px = g.X(r.x[n - 1]), py = g.Y(s.y[n - 1]), lx = W - R + 8;
+    const px = g.X(g.v[n - 1]), py = g.Y(s.y[n - 1]), lx = W - R + 8;
     ends += `<path class="rc-lead ${c}" d="M${px.toFixed(1)} ${py.toFixed(1)}H${
         (lx - 26).toFixed(1)}L${(lx - 4).toFixed(1)} ${endY[si].toFixed(1)}"/>
       <circle class="rc-dot ${c}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6"/>
@@ -1922,7 +1978,8 @@ function raceChartHtml(r) {
 
   return `<div class="pv-scroll"><svg class="pv-svg rc-svg" id="race-chart" width="${W}" height="${H}"
     viewBox="0 0 ${W} ${H}" role="img"
-    aria-label="Probability of winning the event, per contender, over the holes played">
+    aria-label="Probability of winning the event, per contender, over ${
+      state.raceAxis === "time" ? "time" : "the holes played"}">
     ${grid}${future}${rounds}
     <line class="rc-guide" id="race-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
     <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
@@ -2005,11 +2062,17 @@ function renderRace(d) {
   // bundle carries for every recorded player rather than only the charted ones
   const prev = series && Object.keys(series.prev || {}).length ? series.prev : null;
 
+  const axisSeg = `<div class="pv-tools"><div class="seg pv-seg" id="race-seg">
+      <button data-axis="time" class="${state.raceAxis === "time" ? "active" : ""}">Time</button>
+      <button data-axis="holes" class="${state.raceAxis === "holes" ? "active" : ""}">Holes</button>
+     </div><span class="pv-legend">${state.raceAxis === "time"
+       ? "real pace — the gaps between rounds are real gaps"
+       : "the field's mean progress — every round an equal slice"}</span></div>`;
   const chart = !series ? `<p class="hint">No updates recorded yet — the chart starts with the
       next scoring change.</p>`
-    : series.x.length < 2 ? `${raceChartHtml(series)}<p class="hint">Tracking started at hole
-      ${series.tracked_from} of ${series.holes}; the lines fill in from here as play continues.</p>`
-    : raceChartHtml(series);
+    : `${axisSeg}<div id="race-holder">${raceChartHtml(series)}</div>${
+        series.x.length < 2 ? `<p class="hint">Tracking started at hole
+      ${series.tracked_from} of ${series.holes}; the lines fill in from here as play continues.</p>` : ""}`;
 
   el.innerHTML = `
     <p class="pv-intro"><b>${name}${onNow ? " is on now" : " — final"}.</b>
@@ -2023,9 +2086,12 @@ function renderRace(d) {
 
     ${panel(`Who wins ${name}?`,
       series ? `${series.x.length} update${series.x.length === 1 ? "" : "s"} recorded` : "no history yet",
-      `Win probability through the event, one line per contender. Holes played on the
-       x-axis rather than clock time, so the overnight gaps close up and each round is
-       an equal slice.`,
+      `Win probability through the event, one line per contender, ${state.raceAxis === "time"
+        ? `against the clock — the pace is real, so a frantic last hour is wide and the
+           hours between rounds are visible as the gaps they are`
+        : `against how far through the event the field is, which closes the gaps between
+           rounds and makes each one an equal slice`}. Neither view moves a number:
+       every column is one simulation at one instant.`,
       chart,
       series ? `Lines are drawn for the ${series.series.length} biggest contender${
        series.series.length === 1 ? "" : "s"} — anyone above ${fmtPct(series.chart_min || 0.001)} now,
@@ -2042,6 +2108,12 @@ function renderRace(d) {
        points this event pays them. <b>Δ</b> is the move since the previous recorded update.`)}`;
 
   wireRaceTips(el, series);
+  el.querySelectorAll("#race-seg button").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.raceAxis = b.dataset.axis;
+      renderRace(d);   // the lede and the legend move with the axis, not just the plot
+    })
+  );
 }
 
 /* One SVG, up to a dozen lines: hover resolves the nearest recorded update from
@@ -2055,8 +2127,8 @@ function wireRaceTips(root, r) {
     const rect = svg.getBoundingClientRect(), sc = svg.viewBox.baseVal.width / rect.width;
     const x = (cx - rect.left) * sc;
     let best = 0;
-    r.x.forEach((h, i) => { if (Math.abs(g.X(h) - x) < Math.abs(g.X(r.x[best]) - x)) best = i; });
-    const gx = g.X(r.x[best]);
+    g.v.forEach((h, i) => { if (Math.abs(g.X(h) - x) < Math.abs(g.X(g.v[best]) - x)) best = i; });
+    const gx = g.X(g.v[best]);
     guide.setAttribute("x1", gx.toFixed(1));
     guide.setAttribute("x2", gx.toFixed(1));
     guide.setAttribute("visibility", "visible");
@@ -2066,7 +2138,9 @@ function wireRaceTips(root, r) {
       .filter((s) => s.v > 0.001)
       .slice(0, 8)
       .map((s) => `${s.name} ${fmtPct(s.v)}`);
-    return `Hole ${r.x[best]} of ${r.holes}\n${
+    const when = new Date(Date.parse(r.t[best]))
+      .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+    return `${when} · hole ${r.x[best]} of ${r.holes}\n${
       board.length ? board.join("\n") : "nobody above 0.1%"}`;
   // the vertical guide is this chart's own cursor, so it retracts with the
   // readout — including when a tap elsewhere or a scroll dismisses it
