@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DGPT Standings Forecast</title>
+<meta name="description" content="Powerball Cup qualification odds for every DGPT player — a 100,000-run Monte Carlo of the 2026 World Standings, updated live during events.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="DGPT Standings Forecast">
+<meta property="og:description" content="Who makes the Powerball Cup? Live qualification odds for every DGPT player, from a 100,000-run simulation of the 2026 season.">
+<meta property="og:url" content="https://dgoodenough.github.io/discgolf/">
+<meta property="og:image" content="https://dgoodenough.github.io/discgolf/card.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DGPT Standings Forecast">
+<meta name="twitter:description" content="Who makes the Powerball Cup? Live qualification odds for every DGPT player.">
+<meta name="twitter:image" content="https://dgoodenough.github.io/discgolf/card.png">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<script data-goatcounter="https://dgoodenough.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</head>
+<body class="ledger">
+<div id="app">
+  <header id="top">
+    <div class="title">
+      <p class="kicker">2026 DGPT Season Forecast</p>
+      <h1>Who makes the Powerball Cup?</h1>
+      <p id="stakes-line" class="stakes"></p>
+      <p class="sub">Qualification odds from a 100k-run Monte Carlo ·
+        <span id="meta-line"></span> ·
+        <a href="how-it-works.html">how the points system works</a></p>
+      <p id="live-note" hidden></p>
+    </div>
+    <div class="controls">
+      <div class="seg" id="view-seg">
+        <button data-view="forecast" class="active">Forecast</button>
+        <button data-view="possible">What's left</button>
+        <button data-view="race">Event odds</button>
+      </div>
+      <div class="seg" id="division-seg">
+        <button data-div="mpo" class="active">MPO</button>
+        <button data-div="fpo">FPO</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section id="view-forecast"></section>
+    <section id="view-possible" hidden></section>
+    <section id="view-race" hidden></section>
+  </main>
+
+  <footer>
+    <p id="pdga-attribution">Event and player data © 2026 <a href="https://www.pdga.com">PDGA</a> ·
+      PDGA Authorized Developer</p>
+    <p>Points engine validated exactly against official StatMando standings ·
+      <a href="how-it-works.html">how it works & changelog</a> ·
+      <a href="data/movers.xml">movers feed (RSS)</a> ·
+      <a href="https://github.com/dgoodenough/discgolf">source & methodology</a></p>
+  </footer>
+</div>
+<div id="spark-tip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

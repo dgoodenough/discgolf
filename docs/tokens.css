@@ -1,0 +1,165 @@
+/* ============================================================================
+   LEDGER — design tokens + core components
+   dgoodenough's portfolio style. Greyscale carries structure; color carries
+   meaning: green = positive/have/happened · red = negative/missing/never ·
+   yellow = pending/upcoming. Excel heritage, 538 numerals, McMaster speed.
+
+   DARK is the default. A "newsprint" light variant ships as .ledger-light
+   (and is forced in print) for paper-adjacent projects: checklists, reports.
+
+   Vendor this file per project (pin a copy); source of truth:
+   https://github.com/dgoodenough/style
+   ========================================================================== */
+
+:root {
+  /* ---- greyscale (structure) — dark ---- */
+  --paper: #24272b;        /* the data sheet: tables, cards, inputs */
+  --paper-2: #2a2e33;      /* zebra rows, subtle wells */
+  --chrome: #17191c;       /* app background around the data */
+  --chrome-2: #1f2226;     /* control panels / pickers (lighter chrome) */
+  --grid: #33373d;         /* hairline gridlines */
+  --grid-strong: #454a52;  /* emphasized rules / control borders */
+  --ink: #e7eaf0;          /* primary text */
+  --ink-2: #9aa3b2;        /* secondary text */
+  --ink-3: #6d7480;        /* hints, captions */
+  --band: #000000;         /* header band background (Excel black header) */
+  --band-ink: #ffffff;     /* text on a band */
+
+  /* ---- semantic accents (meaning) — solid / dark-fill pairs ---- */
+  --pos: #4fd688;          /* green: positive / have / happened */
+  --pos-fill: #1d3a2a;
+  --neg: #ef6f64;          /* red: negative / missing / never */
+  --neg-fill: #46211e;
+  --pend: #d9ab26;         /* yellow: pending / upcoming */
+  --pend-fill: #3d3416;
+  --pend-solid: #d9ab26;   /* yellow as a block colour (cells, swatches) */
+  --accent: var(--pos);    /* green is THE interactive colour */
+
+  /* variants for use on a black band */
+  --pos-on-band: #7ee2a8;
+  --neg-on-band: #ff8f85;
+  --pend-on-band: #ffd21e;
+
+  /* text on a pale/dark semantic fill */
+  --pos-fill-ink: #9fe8bf;
+  --neg-fill-ink: #f5a9a2;
+  --pend-fill-ink: #e8cf7a;
+
+  /* ---- type ---- */
+  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --fs-body: 14px;
+  --fs-small: 12px;
+  --fs-caption: 11px;
+  --fs-stat: 2.5rem;       /* 538-style headline number */
+
+  /* ---- density ---- */
+  --pad: 6px;              /* base cell padding */
+  --pad-2: 10px;           /* section padding */
+  --radius: 4px;           /* maximum rounding anywhere */
+}
+
+/* ---- newsprint light variant (print-adjacent projects) --------------------
+   Apply class="ledger ledger-light" — nothing brighter than off-white. */
+.ledger-light {
+  --paper: #edebe4;
+  --paper-2: #e2dfd7;
+  --chrome: #c6c3bc;
+  --chrome-2: #d6d3cb;
+  --grid: #b3b0a8;
+  --grid-strong: #97948c;
+  --ink: #26241f;
+  --ink-2: #5d5a53;
+  --ink-3: #85827a;
+  --band: #171614;
+  --band-ink: #f2f0ea;
+  --pos: #0f7040;
+  --pos-fill: #d3e6da;
+  --neg: #b3362c;
+  --neg-fill: #f0d9d5;
+  --pend: #8a6d00;
+  --pend-fill: #efe6c0;
+  --pend-solid: #e3b93a;
+  --pos-fill-ink: #0b5c30;
+  --neg-fill-ink: #8e2b23;
+  --pend-fill-ink: #6e5800;
+}
+
+/* ---- base ---------------------------------------------------------------- */
+.ledger, body.ledger {
+  background: var(--chrome);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+}
+.ledger a { color: var(--accent); text-decoration-thickness: 1px; }
+.ledger a:hover { color: var(--ink); }
+.num, .ledger td.num, .ledger .stat { font-variant-numeric: tabular-nums; }
+
+/* ---- header band (Excel black header) ------------------------------------ */
+.band {
+  background: var(--band);
+  color: var(--band-ink);
+  padding: var(--pad) var(--pad-2);
+  font-weight: 700;
+}
+.band .dim { color: #b9bcbf; font-weight: 400; }
+
+/* ---- stat (538 headline number) ------------------------------------------ */
+.stat { font-size: var(--fs-stat); font-weight: 800; line-height: 1; letter-spacing: -0.5px; }
+.stat.pos { color: var(--pos); }
+.stat.neg { color: var(--neg); }
+.stat-label { font-size: var(--fs-small); color: var(--ink-2); }
+
+/* ---- ledger table (the first-class citizen) ------------------------------ */
+.table-ledger { border-collapse: collapse; font-size: var(--fs-body); background: var(--paper); }
+.table-ledger th {
+  background: var(--band); color: var(--band-ink);
+  font-weight: 700; text-align: left; padding: var(--pad) 9px;
+  border: 1px solid var(--band);
+}
+.table-ledger td { padding: 4px 9px; border: 1px solid var(--grid); }
+.table-ledger tr:nth-child(even) td { background: var(--paper-2); }
+.table-ledger td.num, .table-ledger th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* conditional-formatting fills */
+.table-ledger td.pos, .pos-fill { background: var(--pos-fill) !important; color: var(--pos-fill-ink); }
+.table-ledger td.neg, .neg-fill { background: var(--neg-fill) !important; color: var(--neg-fill-ink); }
+.table-ledger td.pend, .pend-fill { background: var(--pend-fill) !important; color: var(--pend-fill-ink); }
+
+/* ---- controls ------------------------------------------------------------ */
+.btn {
+  font: inherit; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--grid-strong); border-radius: var(--radius);
+  padding: 5px 12px; cursor: pointer;
+}
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--pos); border-color: var(--pos); color: #06231a; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.chip {
+  display: inline-block; font-size: var(--fs-caption); border: 1px solid var(--grid-strong);
+  border-radius: var(--radius); padding: 1px 7px; color: var(--ink-2); background: var(--paper);
+}
+.ledger input[type="search"], .ledger input[type="text"], .ledger select {
+  font: inherit; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--grid-strong); border-radius: var(--radius); padding: 5px 8px;
+}
+.ledger input[type="checkbox"], .ledger input[type="range"] { accent-color: var(--pos); }
+
+/* ---- inline data bar ------------------------------------------------------ */
+.bar { height: 8px; background: var(--paper-2); border: 1px solid var(--grid); overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--pos); }
+
+/* ---- print: always newsprint --------------------------------------------- */
+@media print {
+  :root {
+    --paper: #ffffff; --paper-2: #f2f0ea; --chrome: #ffffff; --chrome-2: #ffffff;
+    --grid: #b3b0a8; --grid-strong: #97948c;
+    --ink: #000000; --ink-2: #444440; --ink-3: #6b6862;
+    --band: #000000; --band-ink: #ffffff;
+    --pos: #0f7040; --pos-fill: #d3e6da; --neg: #b3362c; --neg-fill: #f0d9d5;
+    --pend: #8a6d00; --pend-fill: #efe6c0;
+    --pos-fill-ink: #0b5c30; --neg-fill-ink: #8e2b23; --pend-fill-ink: #6e5800;
+  }
+  .ledger { font-size: 9pt; }
+  .band, .table-ledger th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
