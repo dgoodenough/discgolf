@@ -182,13 +182,29 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
     n = len(stamps)
 
     # X is holes played, not wall-clock: it puts the overnight gaps at zero
-    # width and makes the round boundaries real gridlines. Read off the front
-    # of the field and forced non-decreasing, because the recorded set changes
-    # between blocks and a leader dropping out of it must not walk time back.
+    # width and makes the round boundaries real gridlines.
+    #
+    # It is the field's MEAN progress, not the front of the field. Reading the
+    # front pins the axis the moment the first card finishes: at Idlewild R1
+    # the max sat at 18 for six hours and 54 consecutive observations while
+    # the late cards played and the odds moved, so an afternoon of the
+    # tournament collapsed onto one x and the chart drew a vertical line.
+    #
+    # The lead card is worse, not better, and it is worth writing down why:
+    # it tees off LAST, so anchoring there pins the axis through the whole
+    # morning wave instead. Measured over the same event, the share of
+    # observations that land on top of their predecessor is 80% for the front
+    # of the field, 82% for the lead card, and 3% for the mean.
+    #
+    # Still forced non-decreasing: the recorded set shrinks as players fall
+    # out of contention, and a change in who is in it must not walk the
+    # tournament backwards.
     x = [0] * n
+    seen: dict[int, list[int]] = {}
     for r in rows:
-        i = at[r["taken_at"]]
-        x[i] = max(x[i], int(r["thru"]))
+        seen.setdefault(at[r["taken_at"]], []).append(int(r["thru"]))
+    for i, thrus in seen.items():
+        x[i] = round(sum(thrus) / len(thrus))
     for i in range(1, n):
         x[i] = max(x[i], x[i - 1])
 
