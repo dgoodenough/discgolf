@@ -113,6 +113,37 @@ If the effect is real but tiny, log it as "confirmed, immaterial" and move on.
 
 _Add new hunches here as they come up; promote to a full section when we dig in._
 
+- **Model the USDGC's actual qualification.** The 2027 schedule brings the
+  USDGC into the MPO Powerball World Standings for the first time, so for the
+  first time its field decides points. It is an invitational, and its
+  invitations are not a standings cut: broadly, past champions, the previous
+  year's top 10, and the top 2 at each of a menu of qualifying events — a menu
+  that includes DGPT stops but is not limited to them. The 2027 projection
+  (`dgpt/project.py`) models attendance there like any other US stop, which is
+  the weakest single assumption on that tab and is labelled as such on the
+  page. Fixing it needs the 2027 qualifier list, which is not out; it is worth
+  doing once it is, because a 300-point major with a field the standings do not
+  choose is exactly the kind of event a rate-based attendance model gets wrong
+  in both directions — it lets in players who could not qualify, and it leaves
+  out the past champion who plays nothing else. Not urgent: the tab is
+  experimental and the season is a year away.
+
+- **Model EuroTour Tour Card displacement.** The 2028 card bands are published
+  (`season2027.ET_CARDS`: MPO top 6 Full / top 24 EuroTour, FPO top 3 / top
+  12), but so is a displacement rule the model ignores. A European who has
+  already earned a Full Tour Card through the DGPT World Standings passes their
+  EuroTour Card spot down, and a Full Tour Card winner may elect to take a
+  EuroTour Card instead if they expect less US travel. Both only ever push
+  cards further down the standings, so today's `p_card` is a floor for anyone
+  just outside a band and the page says so. Modelling it properly means
+  simulating 2028 Full Tour Card qualification off the 2027 World Standings —
+  which the DGPT tab already simulates — and then resolving the two races
+  together, plus a behavioural guess about who elects down. The join is the
+  interesting part and the guess is the reason it has not been done: the two
+  tabs currently share a roster and a score model but not a season, and wiring
+  them together for a rule that moves one or two spots is a lot of coupling for
+  the payoff.
+
 - **[Done, 2026-08] Consume real playoff rosters, then re-enable playoff
   registration tracking.** Shipped, though not the way this entry expected:
   `movers.REG_GATED_CLASSES` was NOT lifted. Playoff attendance stayed excluded

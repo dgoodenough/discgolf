@@ -47,6 +47,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # The daily run is the one that regenerates the experimental 2027 /
+      # EuroTour projections; the live loop skips them (see live-refresh.yml).
       - name: Refresh standings and projections
         env:
           PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from dgpt import (config, export, fields, invariants, live_api, liveodds, movers, points,
-                  ratings, schedule, snapshot)
+                  project, ratings, schedule, season2027, snapshot)
 
 PAYLOADS = Path(__file__).parent / "fixtures" / "payloads"
 
@@ -39,6 +39,7 @@ def _isolate(monkeypatch, tmp_path):
     live_api._memo.clear()
     live_api._page_memo.clear()
     points.refresh_classes()
+    season2027.load.cache_clear()
     monkeypatch.setattr(ratings, "_memo", None)
     # The last-known-good roster is real committed data; point it at an absent
     # path so a test only sees one if it writes one (see known_fields).
@@ -61,6 +62,7 @@ def _isolate(monkeypatch, tmp_path):
     live_api._page_memo.clear()
     live_api._known_memo = None
     points.refresh_classes()
+    season2027.load.cache_clear()
 
 
 # ------------------------------------------------------------- fake live API
@@ -217,6 +219,7 @@ def tiny_world(tmp_path, fake_api, monkeypatch) -> World:
     monkeypatch.setattr(invariants, "MARKER", cache_dir / "invariant_violations.txt")
     monkeypatch.setattr(fields, "OVERRIDES_CSV", data_dir / "overrides" / "fields.csv")
     monkeypatch.setattr(export, "DOCS_DATA", docs_data)
+    monkeypatch.setattr(project, "DOCS_DATA", docs_data)
     monkeypatch.setattr(snapshot, "SNAP_DIR", tmp_path / "predictions")
     monkeypatch.setattr(movers, "APP_DATA", docs_data)
     monkeypatch.setattr(movers, "OUT", docs_data / "movers.json")

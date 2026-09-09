@@ -177,9 +177,100 @@
   see are just how often each outcome happened. Full methodology and source:
   <a href="https://github.com/dgoodenough/discgolf">github.com/dgoodenough/discgolf</a>.</p>
 
+  <div class="band" id="experimental">7 · The two experimental tabs: 2027 and the EuroTour</div>
+  <p>Everything above describes a season being played. The <b>2027</b> and
+  <b>EuroTour</b> tabs describe two that have not started, and they are a
+  different kind of thing — a projection built out of a schedule announcement
+  rather than a forecast built out of results. They are labelled experimental
+  on the page for a reason, and it is worth knowing exactly which parts are
+  facts and which are ours.</p>
+
+  <p><b>What is real.</b> The calendar. The DGPT published the 2027 schedule:
+  every event, its designation, its host city and its dates. Round counts are
+  read off those dates — a three-day stop plays three rounds, Pro Worlds'
+  five-day window five — which is the rule every 2026 event obeys. Three
+  structural changes are real too, and they are the interesting part: the
+  postseason moves behind the <b>USDGC</b>, which enters the MPO points race
+  for the first time as a fourth major; the Playoffs move to <b>Ivy Hill</b>
+  and the <b>Kansas City Wide Open</b>, with the Cup in Austin; and the
+  JomezPro Series grows from three stops to <b>seven</b>, which quietly makes
+  its all-counting bonus pool one of the larger terms in a touring pro's
+  season total.</p>
+
+  <p><b>What is assumed on the 2027 tab.</b> That the points structure does
+  not change: same per-place curves, same class multipliers, same per-class
+  counting caps (best 10 DGPT, both playoffs, best 2 majors, all JomezPro
+  bonus), same playoff qualification windows and the same Cup seed ladder,
+  with Ivy Hill inheriting the Green Mountain Championship's rules and the
+  Kansas City Wide Open the MVP Open's. That players carry today's ratings
+  into next season unchanged. And that each of them plays the same <i>share</i>
+  of US stops, European stops and JomezPro stops as they played this year —
+  applied to a bigger calendar, so more starts rather than the same ones. The
+  weakest single assumption is the USDGC: it is an invitational whose 2027
+  invitation rules are not published, and it is modelled here like any other
+  US stop.</p>
+
+  <p><b>The EuroTour's scoring is published, and it is used as published.</b>
+  Eight events across three points categories, each paying a fixed amount for a
+  win and counting a fixed number of results:</p>
+
+  <table class="table-ledger">
+    <thead><tr><th>Cat.</th><th>Win</th><th>Events</th><th class="num">Counted</th><th class="num">Max</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>250</td><td>European Disc Golf Championships, European Open</td><td class="num">best 1 of 2</td><td class="num">250</td></tr>
+      <tr><td>2</td><td>200</td><td>both European Elite Series stops, the Pärnu Open</td><td class="num">best 2 of 3</td><td class="num">400</td></tr>
+      <tr><td>3</td><td>150</td><td>RPM Open, Turku Open, your National Championship</td><td class="num">all 3</td><td class="num">450</td></tr>
+    </tbody>
+  </table>
+
+  <p>Six results counted, and 1,100 points for a perfect season — the DGPT's
+  own figure, which is the arithmetic check that the table above has been read
+  correctly. The counting caps are the interesting part rather than the points:
+  category 1 is the only place to bank 250 and it can only be banked once, so
+  winning both the European Championships and the European Open is worth no
+  more than winning either, while category 3 discards nothing and gives a
+  player who cannot travel a floor to build on. The 2028 card bands are
+  published too: a Full Tour Card to the top 6 MPO / top 3 FPO, a EuroTour Card
+  through 24th / 12th.</p>
+
+  <p><b>What is assumed there.</b> Only the win value of each category is
+  published, so the shape of the curve below first place is ours — the DGPT's
+  own per-place curve, scaled so first pays the category's number. That scaling
+  lands category 3 on exactly the Elite Series curve and categories 2 and 1 on
+  the DGPT+ and Playoff multipliers, which is a good sign that it is how the
+  table was built, but it is still an inference. The national championship
+  weekend is modelled as parallel single-country fields, which is what the
+  eligibility rules describe — entry restricted by citizenship or residence,
+  one championship per player — with the smallest federations pooled into a
+  single regional championship, itself an eligible category, so that a lone
+  entrant cannot win a national title unopposed every season.</p>
+
+  <p><b>The EuroTour tab's real blind spot is its roster.</b> It is built from
+  players who appear in the 2026 DGPT World Standings, which is where the
+  ratings and the attendance rates come from. A European who plays only
+  domestic events has no row in it, and in a real EuroTour standings a good
+  number of them certainly would. At the three stops that are open to the whole
+  tour — the European Open and both European Elite Series events — the model at
+  least races the table against an outside field drawn from the rest of the
+  standings, so a European's finish there is set against everyone who shows up
+  rather than against Europeans alone. Nowhere else can it do that. Read the
+  table as "how the players we can see would fare", not as the field.</p>
+
+  <p><b>Displacement is not modelled.</b> A European who has already earned a
+  Full Tour Card through the DGPT World Standings passes their EuroTour Card
+  down the standings, and a Full Tour Card winner may elect to take a EuroTour
+  Card instead if they expect less US travel. Both rules only ever push cards
+  <i>further down</i>, so for a player sitting just outside a band the odds here
+  are a floor.</p>
+
+  <p>Both tabs are rebuilt once a day off the current standings, at 20,000
+  simulated seasons rather than 100,000 — the assumptions above are worth far
+  more uncertainty than the extra runs would buy back.</p>
+
   <div class="band">Changelog</div>
   <table class="table-ledger">
     <tbody>
+      <tr><td class="changelog-date">Sep 9</td><td><b>Two experimental tabs: 2027 and the EuroTour.</b> The DGPT published its 2027 schedule, so the whole of next season is now projected — every announced event, round counts read off the dates, this year's ratings and this year's attendance rates, and the 2026 points structure, playoff ladder and Cup seed table assumed to carry over. The new postseason cadence is in it: the USDGC enters the MPO points race as a fourth major, and the Playoffs follow it at Ivy Hill and the Kansas City Wide Open before the Cup in Austin. A second tab does the same for the announced <b>EuroTour</b>, whose 2028 Tour Cards it races for, using its published points structure: three categories paying 250 / 200 / 150 for a win, your best six results, 1,100 for a perfect season. Its weakness there is the field rather than the rules — the table can only hold European players who appear in the 2026 DGPT World Standings. Both tabs open with what they are missing and carry the model's own assumption list; <a href="#experimental">section 7 above</a> spells out which parts are facts. Nothing about the 2026 forecast changed.</td></tr>
       <tr><td class="changelog-date">Sep 4</td><td><b>Every explanation on the site now works on a phone.</b> The definitions behind each column, the exact odds under a sparkline, the standings board on the event-odds chart — all of it was a mouse hover, which meant that on a touchscreen none of it existed, and several panels cheerfully instructed you to "hover any cell". Charts and sparklines now read out on a tap or a drag (the page still scrolls vertically underneath, so nothing is trapped), inline marks like the 🥇 open their note when tapped, and a new <b>What do these columns mean?</b> panel above the table carries every column definition plus the names they lean on — MPO, GMC, MVP Open — for anyone who did not arrive already knowing them. Nothing changed for a mouse.</td></tr>
       <tr><td class="changelog-date">Sep 4</td><td><b>Percentages are quoted to the whole percent above 10%.</b> The site used to print 41.3%, which claimed a precision it does not have: the score model's spread is a single pooled number for every player, and the what-if replay moves about half a point run to run. Below 10% a tenth still tells you something real and stays. The exact figures did not go anywhere — open any row and they are the first line, carried to two decimals. Nothing about the model changed, only what it admits to knowing.</td></tr>
       <tr><td class="changelog-date">Sep 4</td><td><b>Rows open from the keyboard, and there is an RSS feed of the movers.</b> The row expander was the site's main control and was mouse-only; it now takes Tab and Enter, and announces whether it is open. And the Biggest Movers panel is published as a <a href="data/movers.xml">feed</a> — point any reader at it to be told when someone's Cup odds swing, without this site needing to send anything. A player's daily entry updates in place as a tournament plays rather than notifying every five minutes.</td></tr>
