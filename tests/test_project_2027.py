@@ -59,7 +59,7 @@ def test_division_only_majors():
 
 
 def test_every_event_is_classified_and_dated():
-    known_cls = set(config.MULTIPLIERS) | set(season2027.ET_MULTIPLIERS)
+    known_cls = set(config.MULTIPLIERS) | {"et_a", "et_champs", "et_nat"}
     seen_ids = set()
     for e in season2027.load():
         assert e.cls in known_cls, e.short_name
@@ -70,6 +70,9 @@ def test_every_event_is_classified_and_dated():
         seen_ids.add(e.event_id)
         dt.date.fromisoformat(e.start_date)
         assert e.end_date >= e.start_date
+        # a EuroTour event has a points category and nothing else does
+        assert (e.et_cat is not None) == e.on("eurotour"), e.short_name
+        assert e.et_cat in (None, 1, 2, 3), e.short_name
 
 
 def test_playoff_ladder_is_ordered_and_last():
@@ -89,15 +92,71 @@ def test_eurotour_membership():
     assert len(et) == 8, "three A-Tiers, the Championships, two Elite stops, the EO, nationals"
     both = {e.short_name for e in et if e.tour == "both"}
     assert both == {"European Disc Golf Festival", "European Elite Series TBA", "European Open"}
-    # an event on both tours is scored twice, at two different values
-    eo_dgpt = season2027.curve("MPO", "major", "dgpt")
-    eo_et = season2027.curve("MPO", "major", "eurotour")
-    assert eo_dgpt[1] == eo_et[1] == 300.0
+    # an event on both tours is scored twice, and at DIFFERENT values: the
+    # European Open is a 300-point DGPT major and a 250-point EuroTour
+    # category-1 event, which is the whole reason `curve` takes a tour
+    eo = next(e for e in et if e.short_name == "European Open")
+    assert season2027.curve("MPO", eo, "dgpt")[1] == 300.0
+    assert season2027.curve("MPO", eo, "eurotour")[1] == 250.0
 
 
 def test_dgpt_scoring_is_2026s_untouched():
-    for cls in ("elite", "elite_plus", "major", "playoff", "doubles"):
-        assert season2027.curve("MPO", cls, "dgpt") == points.event_curve("MPO", cls)
+    for ev in season2027.load():
+        if ev.on("dgpt") and ev.cls in config.MULTIPLIERS:
+            assert season2027.curve("MPO", ev, "dgpt") == points.event_curve("MPO", ev.cls)
+
+
+@pytest.mark.parametrize("division", ["MPO", "FPO"])
+def test_eurotour_points_match_the_published_table(division):
+    """250 / 200 / 150 for a win, and 1,100 for a perfect season.
+
+    The 1,100 is the arithmetic check on the whole structure: it only comes
+    out if both the win values and the per-category counting caps are right.
+    """
+    wins = {}
+    for ev in season2027.load():
+        if ev.on("eurotour"):
+            wins[ev.short_name] = season2027.curve(division, ev, "eurotour")[1]
+    assert wins == {
+        "European Championships": 250.0, "European Open": 250.0,
+        "European Disc Golf Festival": 200.0, "European Elite Series TBA": 200.0,
+        "Pärnu Open": 200.0,
+        "RPM Open": 150.0, "Turku Open": 150.0, "National Championships": 150.0,
+    }
+    assert season2027.max_points() == 1100.0
+    assert sum(p.keep for p in season2027.EUROTOUR.pools) == 6, "top 6 finishes"
+    # category 3 lands exactly on the Elite Series curve, and 2 and 1 on the
+    # DGPT's own DGPT+ and Playoff multipliers
+    assert season2027.et_multiplier(division, 3) == pytest.approx(config.MULTIPLIERS["elite"])
+    assert season2027.et_multiplier(division, 2) == pytest.approx(config.MULTIPLIERS["elite_plus"])
+    assert season2027.et_multiplier(division, 1) == pytest.approx(config.MULTIPLIERS["playoff"])
+
+
+def test_eurotour_pools_are_the_published_categories():
+    """Category, not class: two A-Tiers sit in different pools."""
+    by_short = {e.short_name: e for e in season2027.load()}
+    pool = {n: project._pool_of(season2027.EUROTOUR, by_short[n])
+            for n in ("RPM Open", "Turku Open", "Pärnu Open", "European Open",
+                      "European Championships", "National Championships",
+                      "European Disc Golf Festival", "European Elite Series TBA")}
+    assert pool["Pärnu Open"] == "et2" != pool["Turku Open"] == "et3"
+    assert pool["RPM Open"] == pool["National Championships"] == "et3"
+    assert pool["European Open"] == pool["European Championships"] == "et1"
+    assert pool["European Disc Golf Festival"] == "et2"
+    counts = {p.name: sum(1 for v in pool.values() if v == p.name)
+              for p in season2027.EUROTOUR.pools}
+    assert counts == {"et1": 2, "et2": 3, "et3": 3}
+
+
+def test_category_one_counts_only_the_better_of_two():
+    """Winning both the European Championships and the European Open is worth
+    no more than winning either — that is what "best 1 of 2" means, and it is
+    the structure's sharpest edge."""
+    c, n = 2, 2
+    both = {"et1": [np.full((c, n), 250.0), np.full((c, n), 250.0)]}
+    one = {"et1": [np.full((c, n), 250.0), np.zeros((c, n))]}
+    assert np.all(project._pool_total(both, season2027.EUROTOUR, c, n) == 250.0)
+    assert np.all(project._pool_total(one, season2027.EUROTOUR, c, n) == 250.0)
 
 
 # --------------------------------------------------------------- fixtures
@@ -246,12 +305,22 @@ def test_eurotour_roster_is_european(world):
 
 
 def test_eurotour_card_bands_partition_the_top(world):
+    """Both published bands are cumulative ranks, and the Full band nests
+    inside the EuroTour one — so a player holds exactly one of the two."""
     res = _run(season2027.EUROTOUR, world)
     cards = season2027.ET_CARDS["MPO"]
+    assert (cards["full"], cards["card_through"]) == (6, 24)
+    assert season2027.ET_CARDS["FPO"] == {"full": 3, "card_through": 12}
     assert np.all(res.p_full >= 0.0) and np.all(res.p_card >= -1e-12)
-    # exactly one player per band per season
-    assert res.p_full.sum() == pytest.approx(cards["full"], abs=1e-6)
-    assert res.p_card.sum() == pytest.approx(cards["card"], abs=1e-6)
+    # every season deals exactly `full` Full cards and fills the band to
+    # `card_through` — the EuroTour band is what is left of the wider one.
+    # A table shorter than the band (this fixture holds 16 Europeans against a
+    # 24-deep MPO band) simply hands everyone in it a card, which is the right
+    # answer and not a case to special-case away.
+    n = len(res.names)
+    assert res.p_full.sum() == pytest.approx(min(cards["full"], n), abs=1e-6)
+    assert res.p_card.sum() == pytest.approx(
+        min(cards["card_through"], n) - cards["full"], abs=1e-6)
     # a Full Tour Card is strictly better than a EuroTour Card: the best player
     # takes more of the former and the bands never overlap
     assert res.p_full[0] > res.p_full[-1]
@@ -377,3 +446,77 @@ def test_a_broken_projection_never_fails_the_refresh(tiny_world, monkeypatch, ca
     monkeypatch.setattr(project, "run", boom)
     refresh.project_season("MPO", standings.compute("MPO"), schedule.load(), n_sims=10)
     assert "projection skipped" in capsys.readouterr().out
+
+
+# ------------------------------------------------- the outside field
+
+def test_only_the_open_events_carry_an_outside_field(world):
+    """Three DGPT-calendar stops are open to the whole tour; the rest are not.
+
+    The EuroTour's A-Tiers, its Championships and the national weekend have
+    European fields, so the players missing from them are the domestic-only
+    Europeans nothing in this repo can see. Inventing opponents there would
+    paper over a stated blind spot rather than fix it.
+    """
+    table, sched, countries, _out = world
+    roster = project._roster(season2027.EUROTOUR, table, countries)
+    evs = [e for e in season2027.load()
+           if e.on("eurotour") and e.plays("MPO") and e.cls != "championship"]
+    rates = {r["pdga_number"]: {"us": 0.5, "eu": 0.5, "jomez": 0.5} for r in table}
+    out = project._outside_fields(season2027.EUROTOUR, evs, roster, table, rates, countries)
+    assert {evs[i].short_name for i in out} == {
+        "European Disc Golf Festival", "European Elite Series TBA", "European Open"}
+    # the pool is everyone in the standings without a row in this table
+    n_out = len(table) - len(roster)
+    assert all(rtg.size == n_out for rtg, _ in out.values())
+    assert not any(countries[r["pdga_number"]] in fields.EU_COUNTRIES
+                   for r in table if r["pdga_number"] not in
+                   {q["pdga_number"] for q in roster})
+
+
+def test_the_dgpt_tab_has_no_outside_field(world):
+    """Its table already holds everyone who could enter."""
+    table, _sched, countries, _out = world
+    evs = [e for e in season2027.load() if e.on("dgpt") and e.plays("MPO")]
+    roster = project._roster(season2027.DGPT, table, countries)
+    assert project._outside_fields(season2027.DGPT, evs, roster, table, {}, countries) == {}
+
+
+def test_the_outside_field_costs_the_table_points(world):
+    """Racing 16 Europeans against each other at the European Open is not the
+    same event as racing them against the tour, and the difference is exactly
+    where categories 1 and 2 pay."""
+    table, sched, _countries, _out = world
+    with_outside = _run(season2027.EUROTOUR, world)
+
+    import unittest.mock as mock
+    with mock.patch.object(project, "_outside_fields", return_value={}):
+        alone = _run(season2027.EUROTOUR, world)
+
+    assert alone.mean_points.sum() > with_outside.mean_points.sum(), (
+        "an open field can only push the table's finishes down"
+    )
+    # and the curve is deep enough to score a finish behind that field
+    n = len(with_outside.names)
+    assert np.all(with_outside.mean_points >= 0)
+    assert n < len(table)
+
+
+def test_curve_reaches_past_the_table(world):
+    """A place earned behind an outside field must pay the curve, not zero."""
+    table, sched, countries, _out = world
+    roster = project._roster(season2027.EUROTOUR, table, countries)
+    evs = [e for e in season2027.load()
+           if e.on("eurotour") and e.plays("MPO") and e.cls != "championship"]
+    rates = {r["pdga_number"]: {"us": 0.5, "eu": 0.5, "jomez": 0.5} for r in table}
+    outside = project._outside_fields(season2027.EUROTOUR, evs, roster, table, rates, countries)
+    drawer = project._Drawer(
+        "MPO", evs, "eurotour", np.array([float(r["rating"]) for r in roster]),
+        np.random.default_rng(1), None,
+        [{"field_size": 0.0, "field_listed": 0.0, "field_avg_rating": 0.0} for _ in evs],
+        outside,
+    )
+    assert drawer.depth == len(roster) + (len(table) - len(roster))
+    eo = next(i for i, e in enumerate(evs) if e.short_name == "European Open")
+    # last place in the combined field still pays the curve's floor
+    assert drawer.curves[eo][drawer.depth] > 0.0

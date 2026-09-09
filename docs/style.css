@@ -458,6 +458,8 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .expl-list { margin: 0; padding-left: 20px; max-width: 88ch; }
 .expl-list li { margin: 4px 0; color: var(--ink-2); line-height: 1.5; }
 .expl-list li b { color: var(--ink); }
+.expl-note { margin: 8px 0 0; color: var(--ink-2); max-width: 88ch; }
+.expl-note b { color: var(--ink); }
 .expl-band {
   margin: 14px 0 6px; font-size: var(--fs-caption); font-weight: 700;
   text-transform: uppercase; letter-spacing: .6px; color: var(--ink-3);

@@ -2191,13 +2191,15 @@ const PROJ_VIEWS = {
     h1: "Who earns a 2028 Tour Card?",
     lede: "A projection of the announced 2027 EuroTour standings",
     warn: "Even more experimental",
-    caveat: "No points table · no counting rule · no card allocation",
-    banner: `Everything the 2027 tab warns about, and then some. The DGPT has
-      announced which events make up the 2027 EuroTour and that its final standings
-      award 2028 Tour Cards — and has published <b>no points table, no counting rule
-      and no card allocation</b>. All three are assumed below, and the table is built
-      only from players who appear in the 2026 DGPT World Standings, so Europe's
-      domestic-only players are missing from a race they would really be in.`,
+    caveat: "No results · a partial field · displacement not modelled",
+    banner: `Everything the 2027 tab warns about, plus one of its own. The points
+      structure here <b>is</b> the published one — three categories, 250 / 200 / 150
+      for a win, your best six results — and so are the 2028 card bands. What is
+      missing is the field: this table holds only European players who appear in the
+      2026 DGPT World Standings, so a European who plays purely domestic events is
+      absent from a race they would really be in. Nor is <b>displacement</b>
+      modelled, which only ever passes cards further down the standings — so for a
+      player just outside a band, these are a floor.`,
   },
 };
 
@@ -2243,8 +2245,14 @@ async function loadProj(tour, div) {
 function projNotesHtml(d, view) {
   const m = d.meta;
   const pools = m.pools.map((p) =>
-    `<li><b>${p.classes.map((c) => PROJ_CLS_LABEL[c] || c).join(", ")}</b> — ` +
+    `<li><b>${p.label || p.classes.map((c) => PROJ_CLS_LABEL[c] || c).join(", ")}</b> — ` +
     `${p.keep == null ? "every result counts" : `best ${p.keep} count`}</li>`).join("");
+  // The EuroTour publishes what a perfect season is worth, which is the one
+  // number that proves the category table above has been read correctly.
+  const perfect = m.max_points
+    ? `<p class="expl-note">${m.et_count} results counted, and ${fmtPts(m.max_points)}
+       points for a perfect season — the DGPT's own figure, and the arithmetic check
+       on the table above.</p>` : "";
   return `<details class="expl">
     <summary>What this projection assumes</summary>
     <div class="expl-body">
@@ -2252,7 +2260,7 @@ function projNotesHtml(d, view) {
         code's assumptions change, this list changes with them.</p>
       <ol class="expl-list">${m.notes.map((n) => `<li>${n}</li>`).join("")}</ol>
       <p class="expl-band">Counting rules used</p>
-      <ul class="expl-list">${pools}</ul>
+      <ul class="expl-list">${pools}</ul>${perfect}
       <p class="expl-band">Carried over from ${m.base_season}</p>
       <ul class="expl-list">
         <li>Player ratings, as they stand today — nobody improves, declines or turns pro
@@ -2273,15 +2281,37 @@ function projNotesHtml(d, view) {
 
 /* ---------- the schedule panel ---------- */
 
+/* How many events feed one EuroTour points category — the denominator in
+   "best 2 of 3", which the published table gives but the schedule row does
+   not. Counted off the schedule so it cannot disagree with it. */
+const categorySize = (d, cat) => d.schedule.filter((e) => e.et_cat === cat).length;
+
 function projScheduleHtml(d) {
   const m = d.meta;
+  // What a row counts toward, read from the pool that actually holds it: by
+  // class on the DGPT, by published points category on the EuroTour.
   const keepBy = {};
-  for (const p of m.pools) for (const c of p.classes) keepBy[c] = p.keep;
+  for (const p of m.pools) {
+    for (const c of p.classes) keepBy[`c:${c}`] = p.keep;
+    for (const k of (p.cats || [])) keepBy[`k:${k}`] = p.keep;
+  }
   const rows = d.schedule.map((e) => {
-    const counts = e.counts
-      ? (keepBy[e.cls] == null ? "bonus — all count" : `best ${keepBy[e.cls]} of class`)
-      : e.cls === "championship" ? "no points" : "—";
-    const note = PROJ_FIELD_NOTE[e.cls];
+    const keep = e.et_cat ? keepBy[`k:${e.et_cat}`] : keepBy[`c:${e.cls}`];
+    const win = e.et_cat && m.categories ? m.categories[e.et_cat].win : null;
+    const counts = !e.counts
+      ? (e.cls === "championship" ? "no points" : "—")
+      : keep == null ? "bonus — all count"
+      : e.et_cat ? `Cat ${e.et_cat} · ${win} to win · best ${keep} of ${categorySize(d, e.et_cat)}`
+      : `best ${keep} of class`;
+    // A field bigger than the part of it with rows here is worth saying out
+    // loud — it is the difference between "you beat forty people" and "you
+    // beat forty of the ninety who showed up".
+    const hidden = Math.round(e.field_size - (e.field_listed ?? e.field_size));
+    const note = hidden > 0
+      ? `Open to the whole tour: about ${Math.round(e.field_size)} entrants, of whom
+         ${Math.round(e.field_listed)} have a row in this table. The rest are drawn as
+         unnamed opponents who take the places they earn and no points.`
+      : PROJ_FIELD_NOTE[e.cls];
     const field = e.ei == null ? ""
       : note ? `<span class="side-door" ${tipAttrs(note)}>${e.field_size.toFixed(0)} *</span>`
       : e.field_size.toFixed(0);
@@ -2307,7 +2337,7 @@ function projScheduleHtml(d) {
         <table class="table-ledger pv-tbl"><thead><tr>
           <th>Dates</th><th>Event</th><th class="t3">Location</th><th>Type</th>
           <th class="num">Rds</th><th class="t2">Counting</th>
-          <th class="num" title="Mean number of players from this table projected to enter">Proj. field</th>
+          <th class="num" title="Mean number of players the model puts in this field. A starred figure includes entrants with no row in this table — hover it for the split">Proj. field</th>
         </tr></thead><tbody>${rows}</tbody></table>
       </div>
     </div>
@@ -2343,9 +2373,9 @@ function projCols(d) {
   if (!cup) {
     return [
       ...common,
-      { key: "p_any", label: "A card", title: `P(finishes inside the assumed 2028 card allocation: top ${m.full_cards + m.cards})`, num: true, get: (p) => p.p_any, cell: (p) => `<b class="${probClass(p.p_any)}">${fmtPct(p.p_any)}</b>`, dir0: "desc" },
-      { key: "p_full", label: "Full Tour Card", hide: "t1", title: `P(finishes top ${m.full_cards} — the assumed Full Tour Card band)`, num: true, get: (p) => p.p_full, cell: (p) => `<span class="${probClass(p.p_full)}">${fmtPct(p.p_full)}</span>`, dir0: "desc" },
-      { key: "p_card", label: "EuroTour Card", hide: "t2", title: `P(finishes in the next ${m.cards} — the assumed EuroTour Card band)`, num: true, get: (p) => p.p_card, cell: (p) => `<span class="${probClass(p.p_card)}">${fmtPct(p.p_card)}</span>`, dir0: "desc" },
+      { key: "p_any", label: "A card", title: `P(finishes top ${m.card_through} — a 2028 card of either kind. Displacement, which is not modelled, only ever passes cards further down, so this is a floor)`, num: true, get: (p) => p.p_any, cell: (p) => `<b class="${probClass(p.p_any)}">${fmtPct(p.p_any)}</b>`, dir0: "desc" },
+      { key: "p_full", label: "Full Tour Card", hide: "t1", title: `P(finishes top ${m.full_cards} — a 2028 Full Tour Card: every DGPT event in the US and Europe)`, num: true, get: (p) => p.p_full, cell: (p) => `<span class="${probClass(p.p_full)}">${fmtPct(p.p_full)}</span>`, dir0: "desc" },
+      { key: "p_card", label: "EuroTour Card", hide: "t2", title: `P(finishes ${m.full_cards + 1}th–${m.card_through}th — a 2028 EuroTour Card: every DGPT and EuroTour event in Europe, plus up to three US Elite Series stops)`, num: true, get: (p) => p.p_card, cell: (p) => `<span class="${probClass(p.p_card)}">${fmtPct(p.p_card)}</span>`, dir0: "desc" },
       { key: "p_first", label: "Wins it", hide: "t3", title: "P(finishes first in the EuroTour standings)", num: true, get: (p) => p.p_first, cell: (p) => `<span class="${probClass(p.p_first)}">${fmtPct(p.p_first)}</span>`, dir0: "desc" },
       sparkCol("t1"),
       ...tail,
@@ -2452,7 +2482,7 @@ async function renderProjection(view) {
       `projected ${agoText(mins)} · ${m.n_sims.toLocaleString()} sims · ` +
       (m.championship
         ? `top ${m.cut} qualify directly, field of ${m.field_size}`
-        : `top ${m.full_cards} Full Tour Cards, next ${m.cards} EuroTour Cards (assumed)`);
+        : `top ${m.full_cards} take a Full Tour Card, top ${m.card_through} a EuroTour Card`);
   }
   $("#stakes-line").innerHTML =
     `<span class="exp-chip">${view.warn}</span> ` +

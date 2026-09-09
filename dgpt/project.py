@@ -194,7 +194,7 @@ def _curve_vector(division: str, ev: season2027.Event, tour: str, n: int) -> np.
         for place in range(1, n + 1):
             vec[place] = points.jomez_bonus(place)
         return vec
-    curve = season2027.curve(division, ev.cls, tour)
+    curve = season2027.curve(division, ev, tour)
     for place, val in curve.items():
         if place <= n:
             vec[place] = val
@@ -204,33 +204,88 @@ def _curve_vector(division: str, ev: season2027.Event, tour: str, n: int) -> np.
     return vec
 
 
+def _outside_fields(spec: season2027.TourSpec, evs: list[season2027.Event],
+                    roster: list[dict], table: list[dict],
+                    rates: dict[int, dict[str, float]],
+                    countries: dict[int, str]) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    """Opponents who contest an event but have no row in this table.
+
+    Only the EuroTour needs this, and only at its three DGPT-calendar stops:
+    the European Open and both European Elite Series events are open to the
+    whole tour. Everyone in the 2026 standings who is not already in the
+    roster is drawn there at their own European-swing rate, purely to fill the
+    places above and below. Nobody in this pool banks anything.
+
+    The A-Tiers, the European Championships and the national championships get
+    no pool: their fields are European too, so the players missing from them
+    are the domestic-only Europeans nothing here can see — which is the tab's
+    stated blind spot, not something an outside pool would honestly fix.
+    """
+    if not spec.european_only:
+        return {}
+    listed = {r["pdga_number"] for r in roster}
+    pool = [r for r in table if r.get("rating") and r["pdga_number"] not in listed]
+    if not pool:
+        return {}
+    rtg = np.array([float(r["rating"]) for r in pool])
+    prob = np.array([min(max(rates.get(r["pdga_number"], {}).get("eu", 0.0), 0.0), 1.0)
+                     for r in pool])
+    keep = prob > 0.0
+    if not keep.any():
+        return {}
+    return {i: (rtg[keep], prob[keep]) for i, e in enumerate(evs) if e.tour == "both"}
+
+
 class _Drawer:
-    """Draws one event's points and places for a chunk of sims."""
+    """Draws one event's points and places for a chunk of sims.
+
+    Some events are contested by players who are not in the table. The
+    EuroTour's three DGPT-calendar stops — the European Open and both European
+    Elite Series events — are open to the whole tour, and the table is
+    European. Ranking the Europeans against each other there would hand the
+    twentieth-best of them a twentieth-place finish at a major that the rest
+    of the world also enters, and category 1 and 2 are precisely where the
+    EuroTour's points are. So those events carry an `outside` field: unnamed
+    opponents drawn from the rest of the 2026 standings, at their own European
+    attendance rates, who set the bar and take no points. Same device the 2026
+    model uses to race the Worlds play-in against its full entry list.
+    """
 
     def __init__(self, division: str, evs: list[season2027.Event], tour: str,
                  ratings: np.ndarray, rng: np.random.Generator,
-                 groups: list[np.ndarray] | None, meta: list[dict]):
+                 groups: list[np.ndarray] | None, meta: list[dict],
+                 outside: dict[int, tuple[np.ndarray, np.ndarray]] | None = None):
         self.evs = evs
         self.rtg = ratings
         self.rng = rng
         self.rpps = simulate.RATING_PTS_PER_STROKE[division]
         self.groups = groups          # per-country index arrays, for et_nat
         self.meta = meta
+        self.outside = outside or {}
         n = ratings.shape[0]
-        self.curves = [_curve_vector(division, e, tour, n) for e in evs]
+        # Curves have to reach the deepest place anyone in the table can
+        # finish, which is now the whole field rather than the table — score a
+        # 90th-place finish off a 66-long vector and it silently pays zero.
+        self.depth = n + max((r.size for r, _ in self.outside.values()), default=0)
+        self.curves = [_curve_vector(division, e, tour, self.depth) for e in evs]
         self.att_count = np.zeros((len(evs), n))
 
     def draw(self, ei: int, plays: np.ndarray, rows_ix: np.ndarray,
              first_chunk: bool) -> tuple[np.ndarray, np.ndarray]:
         ev = self.evs[ei]
         c, n = plays.shape
-        scores = self._scores(ev, plays, c, n)
+        scores, ext = self._scores(ev, plays, c, n, self.outside.get(ei))
         if ev.cls == "et_nat" and self.groups:
             place = self._place_by_country(scores, plays, n)
         else:
-            order = np.argsort(scores, axis=1)
-            place = np.empty_like(order)
-            place[rows_ix, order] = np.arange(1, n + 1)[None, :]
+            # one ranking over everyone on the course; the table's places are
+            # read back out of it, and the outside field simply occupies the
+            # positions it earns
+            full = scores if ext is None else np.concatenate([scores, ext], axis=1)
+            order = np.argsort(full, axis=1)
+            place_full = np.empty_like(order)
+            place_full[rows_ix, order] = np.arange(1, full.shape[1] + 1)[None, :]
+            place = place_full[:, :n]
         if ev.cls == "doubles":
             # Unpaired doubles: rank the entrants as singles, then read the
             # team place off that ranking. Exactly simulate._draw_singles'
@@ -239,29 +294,49 @@ class _Drawer:
             # this event can take.
             place = (place + 1) // 2
         if first_chunk:
-            self._record_meta(ei, plays, scores)
+            self._record_meta(ei, plays, ext)
         self.att_count[ei] += plays.sum(axis=0)
-        pts = self.curves[ei][np.minimum(place, n + 1)]
+        pts = self.curves[ei][np.minimum(place, self.depth + 1)]
         pts[~plays] = 0.0
         return pts, place
 
-    def _scores(self, ev: season2027.Event, plays: np.ndarray, c: int, n: int) -> np.ndarray:
-        """Event totals relative to the field: the 2026 score model, exactly."""
+    def _scores(self, ev: season2027.Event, plays: np.ndarray, c: int, n: int,
+                out: tuple[np.ndarray, np.ndarray] | None
+                ) -> tuple[np.ndarray, np.ndarray | None]:
+        """Event totals for the table, and for the outside field if there is one.
+
+        The 2026 score model exactly: a player's expected total is their
+        rating's distance from the field average, converted to strokes, with
+        event-level noise. What "the field average" means is the only thing
+        that varies — the whole course at an open event, your compatriots at a
+        national championship.
+        """
         rnds = ev.rounds
+        sd = simulate.ROUND_SD * np.sqrt(rnds)
         if ev.cls == "et_nat" and self.groups:
             # each country plays its own championship, so "the field" a player
             # is measured against is their compatriots, not the continent
             mu = np.zeros(n)
             for ix in self.groups:
                 mu[ix] = -(self.rtg[ix] - self.rtg[ix].mean()) / self.rpps * rnds
-            mu = np.broadcast_to(mu, (c, n))
+            scores = np.broadcast_to(mu, (c, n)) + self.rng.normal(0.0, sd, (c, n))
+            return np.where(plays, scores, np.inf), None
+
+        if out is None:
+            fsum, fcnt = (plays * self.rtg).sum(axis=1), plays.sum(axis=1)
+            ext = None
         else:
-            fsum = (plays * self.rtg).sum(axis=1)
-            fcnt = plays.sum(axis=1)
-            avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
-            mu = -(self.rtg[None, :] - avg[:, None]) / self.rpps * rnds
-        scores = mu + self.rng.normal(0.0, simulate.ROUND_SD * np.sqrt(rnds), (c, n))
-        return np.where(plays, scores, np.inf)
+            rtg_o, prob_o = out
+            plays_o = self.rng.random((c, rtg_o.size)) < prob_o
+            fsum = (plays * self.rtg).sum(axis=1) + (plays_o * rtg_o).sum(axis=1)
+            fcnt = plays.sum(axis=1) + plays_o.sum(axis=1)
+        avg = np.where(fcnt > 0, fsum / np.maximum(fcnt, 1), 1000.0)
+        mu = -(self.rtg[None, :] - avg[:, None]) / self.rpps * rnds
+        scores = np.where(plays, mu + self.rng.normal(0.0, sd, (c, n)), np.inf)
+        if out is not None:
+            mu_o = -(rtg_o[None, :] - avg[:, None]) / self.rpps * rnds
+            ext = np.where(plays_o, mu_o + self.rng.normal(0.0, sd, (c, rtg_o.size)), np.inf)
+        return scores, ext
 
     def _place_by_country(self, scores: np.ndarray, plays: np.ndarray, n: int) -> np.ndarray:
         """Finishing place inside each country's own championship."""
@@ -276,9 +351,19 @@ class _Drawer:
             place[:, ix] = sub_place
         return np.where(plays, place, n + 1)
 
-    def _record_meta(self, ei: int, plays: np.ndarray, scores: np.ndarray) -> None:
+    def _record_meta(self, ei: int, plays: np.ndarray, ext: np.ndarray | None) -> None:
+        """Field size as modelled, and how much of it is in the table.
+
+        The two differ only at an event with an outside field, and there the
+        difference is the point: the page needs to be able to say that an
+        entrant is competing against a hundred and fifty people while only
+        forty of them have a row.
+        """
         m = self.meta[ei]
-        m["field_size"] = round(float(plays.sum(axis=1).mean()), 1)
+        listed = float(plays.sum(axis=1).mean())
+        outside = float(np.isfinite(ext).sum(axis=1).mean()) if ext is not None else 0.0
+        m["field_size"] = round(listed + outside, 1)
+        m["field_listed"] = round(listed, 1)
         played = plays[0]
         m["field_avg_rating"] = round(float(self.rtg[played].mean()), 1) if played.any() else 0.0
 
@@ -301,9 +386,9 @@ def _pool_total(cols: dict[str, list[np.ndarray]], spec: season2027.TourSpec,
     return total
 
 
-def _pool_of(spec: season2027.TourSpec, cls: str) -> str | None:
+def _pool_of(spec: season2027.TourSpec, ev: season2027.Event) -> str | None:
     for pool in spec.pools:
-        if cls in pool.classes:
+        if pool.holds(ev):
             return pool.name
     return None
 
@@ -337,19 +422,20 @@ def run(spec: season2027.TourSpec, division: str, table: list[dict],
     events_meta = [
         {"id": e.event_id, "name": e.name, "short": e.short_name, "loc": e.location,
          "cls": e.cls, "tour": e.tour, "start": e.start_date, "end": e.end_date,
-         "rounds": e.rounds, "field_size": 0.0, "field_avg_rating": 0.0,
-         "pool": _pool_of(spec, e.cls) or ""}
+         "rounds": e.rounds, "field_size": 0.0, "field_listed": 0.0,
+         "field_avg_rating": 0.0, "pool": _pool_of(spec, e) or "", "et_cat": e.et_cat}
         for e in evs
     ]
 
     groups = _national_fields(roster, countries) if any(e.cls == "et_nat" for e in evs) else None
 
     att = _attendance(spec, evs, roster, rates, countries)
-    drawer = _Drawer(division, evs, spec.tour, rtg, rng, groups, events_meta)
+    outside = _outside_fields(spec, evs, roster, table, rates, countries)
+    drawer = _Drawer(division, evs, spec.tour, rtg, rng, groups, events_meta, outside)
 
     post = _Postseason.build(spec, evs, division) if spec.championship else None
-    cards = season2027.ET_CARDS.get(division, {"full": 0, "card": 0})
-    cut = post.standings_cut if post else cards["full"] + cards["card"]
+    cards = season2027.ET_CARDS.get(division, {"full": 0, "card_through": 0})
+    cut = post.standings_cut if post else cards["card_through"]
     acc = _Accumulators(n, n_sims, post, _hist_depth(cut, n))
 
     done = 0
@@ -442,7 +528,7 @@ def _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first) -> None:
         plays = rng.random((c, n)) < att[ei]
         pts, place = drawer.draw(ei, plays, rows_ix, first)
         ev = drawer.evs[ei]
-        pool = _pool_of(spec, ev.cls)
+        pool = _pool_of(spec, ev)
         if pool:
             cols.setdefault(pool, []).append(pts)
         if post and ev.cls in post.invite_classes:
@@ -522,9 +608,9 @@ def _finish(spec, division, roster, countries, rtg, n_sims, acc, post,
             drawer, events_meta) -> ProjResult:
     n = len(roster)
     zeros = np.zeros(n)
-    cards = season2027.ET_CARDS.get(division, {"full": 0, "card": 0})
+    cards = season2027.ET_CARDS.get(division, {"full": 0, "card_through": 0})
     full_to = cards["full"]
-    card_to = cards["full"] + cards["card"]
+    card_to = cards["card_through"]
 
     # P(finish inside the top k) is the finishing histogram read cumulatively —
     # the histogram already counts every season, so there is nothing to
@@ -536,8 +622,12 @@ def _finish(spec, division, roster, countries, rtg, n_sims, acc, post,
             return zeros
         return cum[:, min(k, acc.depth) - 1]
 
-    p_full = le(full_to) if spec.card_bands else zeros
-    p_card = (le(card_to) - p_full) if spec.card_bands else zeros
+    # Both published bands are cumulative ranks, and the Full Tour Card band
+    # sits inside the EuroTour Card one — so a player holds exactly one of the
+    # two, and P(EuroTour Card) is what is left of the wider band once the Full
+    # cards are dealt. Displacement would push that band deeper; see ET_CARDS.
+    p_full = le(full_to) if spec.cards else zeros
+    p_card = (le(card_to) - p_full) if spec.cards else zeros
 
     return ProjResult(
         spec=spec, division=division, n_sims=n_sims,
@@ -574,7 +664,7 @@ def export(res: ProjResult) -> None:
     n_sims = res.n_sims
     hist = res.rank_hist / n_sims
     strokes = res.strokes_hist / n_sims if len(res.stroke_values) else None
-    cards = season2027.ET_CARDS.get(res.division, {"full": 0, "card": 0})
+    cards = season2027.ET_CARDS.get(res.division, {"full": 0, "card_through": 0})
 
     players = []
     for i in range(len(res.names)):
@@ -599,7 +689,7 @@ def export(res: ProjResult) -> None:
                 "p_cup_win": round(float(res.p_cup_win[i]), 5),
                 "strokes": [round(float(x), 4) for x in strokes[i]],
             })
-        if spec.card_bands:
+        if spec.cards:
             p.update({
                 "p_full": round(float(res.p_full[i]), 5),
                 "p_card": round(float(res.p_card[i]), 5),
@@ -607,7 +697,7 @@ def export(res: ProjResult) -> None:
             })
         players.append(p)
 
-    key = "p_champ" if spec.championship else "p_any" if spec.card_bands else "mean_pts"
+    key = "p_champ" if spec.championship else "p_any" if spec.cards else "mean_pts"
     players.sort(key=lambda q: (-q.get(key, 0), -q["mean_pts"]))
     keep = players[:EXPORT_LIMIT]
     if spec.championship:
@@ -626,7 +716,8 @@ def export(res: ProjResult) -> None:
         "roster_size": len(res.names),
         "shown": len(keep),
         "notes": list(spec.notes),
-        "pools": [{"name": p.name, "keep": p.keep, "classes": list(p.classes)}
+        "pools": [{"name": p.name, "keep": p.keep, "label": p.label,
+                   "classes": list(p.classes), "cats": list(p.cats)}
                   for p in spec.pools],
         "rating_pts_per_stroke": simulate.RATING_PTS_PER_STROKE[res.division],
         "round_sd": simulate.ROUND_SD,
@@ -648,13 +739,18 @@ def export(res: ProjResult) -> None:
                 "bands": [[rank, adv] for rank, adv in config.CUP_START_STROKES[res.division]],
             },
         })
-    if spec.card_bands:
+    if spec.cards:
         meta.update({
-            "cut": cards["full"] + cards["card"],   # what the sparkline greens
+            "cut": cards["card_through"],   # what the sparkline greens
             "full_cards": cards["full"],
-            "cards": cards["card"],
-            "et_count": season2027.ET_COUNT,
-            "multipliers": season2027.ET_MULTIPLIERS,
+            "card_through": cards["card_through"],
+            "et_count": sum(p.keep for p in spec.pools),
+            "max_points": season2027.max_points(),
+            "categories": {
+                str(cat): {"win": c["win"], "keep": c["keep"], "label": c["label"],
+                           "mult": round(season2027.et_multiplier(res.division, cat), 4)}
+                for cat, c in season2027.ET_CATEGORY.items()
+            },
         })
 
     bundle = {
@@ -668,8 +764,9 @@ def export(res: ProjResult) -> None:
         ] + [
             {"id": e.event_id, "name": e.name, "short": e.short_name, "loc": e.location,
              "cls": e.cls, "tour": e.tour, "start": e.start_date, "end": e.end_date,
-             "rounds": e.rounds, "field_size": 0.0, "field_avg_rating": 0.0,
-             "pool": "", "ei": None, "counts": False}
+             "rounds": e.rounds, "field_size": 0.0, "field_listed": 0.0,
+             "field_avg_rating": 0.0, "pool": "", "et_cat": e.et_cat,
+             "ei": None, "counts": False}
             for e in season2027.load()
             if e.cls == "championship" and e.on(spec.tour) and e.plays(res.division)
         ],

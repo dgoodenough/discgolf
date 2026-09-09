@@ -19,13 +19,13 @@ Two tours are described here and they are experimental to different degrees:
       and that is data, not modelling.
 
   EuroTour 2027 (`EUROTOUR`)
-      The announcement describes a *structure* (which events belong, and that
-      the standings award 2028 Tour Cards) and publishes no points table, no
-      counting rule and no card allocation. Every number in EUROTOUR below is
-      therefore an assumption of ours, not a rule of theirs. They are grouped
-      in ET_* constants so they can be corrected in one edit when the DGPT
-      publishes the real thing, and every one of them is surfaced on the page
-      under "what this assumes" rather than presented as a fact.
+      The DGPT published this one in full: three points categories paying 250 /
+      200 / 150 for a win, counted 1-of-2, 2-of-3 and 3-of-3, which is where
+      both "keep your top 6 finishes" and the 1,100-point perfect season come
+      from. ET_CATEGORY is that table, and the card bands are theirs too. Two
+      things are still ours and are labelled as such on the page: the shape of
+      each curve BELOW first place (only the win value is published, so the
+      DGPT's own curve is scaled to it), and who is in the table at all.
 
 Event ids are OURS. The PDGA has not assigned 2027 tournament ids, so the
 schedule carries synthetic 2700xx ids: stable keys for the pipeline, never
@@ -64,6 +64,7 @@ class Event:
     cls: str          # elite / elite_plus / doubles / major / jomez / playoff /
                       # championship / et_a / et_champs / et_nat
     tour: str         # dgpt / eurotour / both
+    et_cat: int | None  # EuroTour points category (1-3); None off that tour
     start_date: str
     end_date: str
     mpo: bool
@@ -87,6 +88,7 @@ def load() -> list[Event]:
             Event(
                 event_id=int(r["event_id"]), name=r["name"], short_name=r["short_name"],
                 location=r["location"], cls=r["cls"], tour=r["tour"],
+                et_cat=int(r["et_cat"]) if r["et_cat"] else None,
                 start_date=r["start_date"], end_date=r["end_date"],
                 mpo=r["mpo"] == "True", fpo=r["fpo"] == "True",
             )
@@ -97,64 +99,99 @@ def load() -> list[Event]:
 
 # --------------------------------------------------------------- points
 
-# EuroTour points, entirely assumed (see the module docstring). Expressed on
-# the same base curve as everything else so the two tours stay comparable: a
-# EuroTour A-Tier win is worth an Elite Series win, and the two events the
-# announcement singles out as the tour's peaks — the European Open and the
-# European Disc Golf Championships, which "will award EuroTour points
-# alongside" it — are worth a major.
+# The 2027 EuroTour points structure, as published. Three categories, each
+# paying a fixed amount for a win and each counting a fixed number of results:
 #
-# The national/regional championship weekend is the one deliberately low
-# multiplier. Those are country-level fields of wildly different depth, they
-# are opt-in for the organisers ("can apply for EuroTour points sanctioning"),
-# and treating a national title as half an A-Tier is the conservative reading.
-ET_MULTIPLIERS = {
-    "et_a": 1.0,          # RPM Open, Turku Open, the Pärnu Finale
-    "et_champs": 2.0,     # European Disc Golf Championships
-    "et_nat": 0.5,        # the national/regional championship weekend
-    "elite": 1.0,         # the two DGPT European Elite Series stops
-    "major": 2.0,         # the European Open
+#   1   250   European Championships, European Open           best 1 of 2
+#   2   200   both European Elite Series stops, Pärnu Open    best 2 of 3
+#   3   150   RPM Open, Turku Open, your National Championship    3 of 3
+#
+# Six results counted in total, which is the announcement's "players keep
+# their top 6 finishes", and 250 + 400 + 450 = 1,100 for the perfect season it
+# quotes. That arithmetic is the check that this table has been read right, and
+# `max_points` below asserts it.
+#
+# `keep` is what makes the categories more than a points scale. Category 1 is
+# the only place a European can bank 250, and only once: winning both the
+# European Championships and the European Open is worth no more than winning
+# either. Category 3 discards nothing, so its three events are pure addition —
+# which is what gives a player who cannot travel much a floor to build on, and
+# is the stated point of the structure.
+ET_CATEGORY = {
+    1: {"win": 250.0, "keep": 1,
+        "label": "European Championships & European Open"},
+    2: {"win": 200.0, "keep": 2,
+        "label": "European Elite Series stops & the Pärnu Open"},
+    3: {"win": 150.0, "keep": 3,
+        "label": "RPM Open, Turku Open & National Championships"},
 }
 
-# How many results count toward the EuroTour standings. Assumed. Eight events
-# are reachable in 2027 (three A-Tiers, two Elite Series stops, the European
-# Open, the European Championships, a national title); counting the best five
-# keeps the race open to players who cannot travel to all of them, which is
-# the stated point of the structure.
-ET_COUNT = 5
+# Only the win value is published, so the shape below first place is ours: the
+# DGPT's own per-place curve, scaled so that first pays the category's number.
+# Category 3's scale factor comes out at exactly 1.0 — a EuroTour category-3
+# win is an Elite Series win — and 2 and 3 land on 4/3 and 5/3, which are the
+# DGPT's own DGPT+ and Playoff multipliers. Three exact hits is unlikely to be
+# a coincidence, but it is still an inference, and it is labelled as one.
+def et_multiplier(division: str, category: int) -> float:
+    return ET_CATEGORY[category]["win"] / points.base_curves()[division][1]
 
-# 2028 card allocation off the final standings. The announcement says the
-# EuroTour "will continue to award Full Tour Cards and EuroTour Cards" and
-# names no numbers, so these are ours. Shown on the page as assumed.
+
+def max_points() -> float:
+    """The perfect season: every counted result a win. The DGPT says 1,100."""
+    return sum(c["win"] * c["keep"] for c in ET_CATEGORY.values())
+
+
+# 2028 Tour Cards off the final EuroTour standings, as published. Both bands
+# are cumulative ranks, not counts: in MPO the top 6 take a Full Tour Card and
+# everyone through 24th takes a EuroTour Card, so the EuroTour Card band is
+# 7th-24th once the Full cards are dealt.
+#
+# NOT modelled: displacement. A European who has already earned a Full Tour
+# Card through the DGPT World Standings passes their EuroTour Card spot down,
+# and a Full Tour Card winner may elect to take a EuroTour Card instead. Both
+# only ever push cards FURTHER down the standings, so the odds this model
+# publishes are a floor for players just outside a band, never a ceiling.
 ET_CARDS = {
-    "MPO": {"full": 3, "card": 7},
-    "FPO": {"full": 2, "card": 4},
+    "MPO": {"full": 6, "card_through": 24},
+    "FPO": {"full": 3, "card_through": 12},
 }
 
 
-def curve(division: str, cls: str, tour: str) -> dict[int, float]:
+def curve(division: str, ev: "Event", tour: str) -> dict[int, float]:
     """Points by finishing place for one event, on one tour's ledger.
 
-    An event can pay into both: the European Open is a DGPT major AND a
-    EuroTour event, and the two ledgers value it differently, so the tour
-    being scored is part of the question. DGPT scoring is 2026's engine
-    untouched; EuroTour scoring is ET_MULTIPLIERS on the same base curve.
+    An event can pay into both, at different values: the European Open is a
+    DGPT major (300 for a win) and a EuroTour category-1 event (250), so the
+    tour being scored is part of the question. DGPT scoring is 2026's engine
+    untouched; EuroTour scoring is the published category value on the same
+    base curve.
     """
     if tour == "dgpt":
-        return points.event_curve(division, cls)
-    base = points.base_curves()[division]
-    mult = ET_MULTIPLIERS[cls]
-    return {p: v * mult for p, v in base.items()}
+        return points.event_curve(division, ev.cls)
+    mult = et_multiplier(division, ev.et_cat)
+    return {p: v * mult for p, v in points.base_curves()[division].items()}
 
 
 # --------------------------------------------------------- tour rulesets
 
 @dataclass(frozen=True)
 class Pool:
-    """One counting bucket: which classes feed it, and how many count."""
+    """One counting bucket: what feeds it, and how many results count.
+
+    The two tours bucket by different things and both are first-class here.
+    The DGPT counts by event CLASS — best 10 of anything Elite-ish, best 2
+    majors — while the EuroTour counts by published points CATEGORY, which
+    cuts across class: the Pärnu Open and the Turku Open are both A-Tiers and
+    they sit in different categories.
+    """
     name: str
-    classes: tuple[str, ...]
-    keep: int | None      # None = every result counts (bonus pools)
+    keep: int | None                  # None = every result counts (bonus pools)
+    classes: tuple[str, ...] = ()     # DGPT: event classes feeding this pool
+    cats: tuple[int, ...] = ()        # EuroTour: points categories feeding it
+    label: str = ""                   # what the page calls it
+
+    def holds(self, ev: "Event") -> bool:
+        return ev.cls in self.classes or (ev.et_cat is not None and ev.et_cat in self.cats)
 
 
 @dataclass(frozen=True)
@@ -171,8 +208,8 @@ class TourSpec:
     european_only: bool = False    # roster restricted to European players
     # Which pools' classes grant the Cup's event-winner special invite.
     invite_classes: tuple[str, ...] = ()
-    # EuroTour card bands, as (label, last rank in the band).
-    card_bands: tuple[tuple[str, str], ...] = ()
+    # True when the tour's prize is the 2028 card bands rather than a Cup.
+    cards: bool = False
     notes: tuple[str, ...] = field(default=())
 
 
@@ -186,10 +223,11 @@ DGPT = TourSpec(
     # against three makes the bonus pool much larger, which is the single
     # biggest structural change to a player's total.
     pools=(
-        Pool("dgpt", ("elite", "elite_plus", "doubles"), config.COUNT_DGPT),
-        Pool("playoff", ("playoff",), config.COUNT_PLAYOFF),
-        Pool("major", ("major",), config.COUNT_MAJOR),
-        Pool("jomez", ("jomez",), None),
+        Pool("dgpt", config.COUNT_DGPT, classes=("elite", "elite_plus", "doubles"),
+             label="DGPT & DGPT+ (incl. the doubles championship)"),
+        Pool("playoff", config.COUNT_PLAYOFF, classes=("playoff",), label="Playoffs"),
+        Pool("major", config.COUNT_MAJOR, classes=("major",), label="Majors"),
+        Pool("jomez", None, classes=("jomez",), label="JomezPro Series bonus"),
     ),
     playoff1="Ivy Hill",
     playoff2="Kansas City Wide Open",
@@ -215,30 +253,45 @@ EUROTOUR = TourSpec(
     key="et",
     label="2027 EuroTour",
     tour="eurotour",
-    pools=(Pool("et", ("et_a", "et_champs", "et_nat", "elite", "major"), ET_COUNT),),
+    # The published category table, verbatim. Pool names carry the category
+    # number so the page can label them from ET_CATEGORY rather than repeat it.
+    pools=tuple(
+        Pool(f"et{cat}", spec["keep"], cats=(cat,),
+             label=f"Category {cat} — {spec['label']} ({spec['win']:.0f} for a win)")
+        for cat, spec in sorted(ET_CATEGORY.items())
+    ),
     european_only=True,
-    card_bands=(("Full Tour Card", "full"), ("EuroTour Card", "card")),
+    cards=True,
     notes=(
-        "No EuroTour points table has been published. Every event here is "
-        "scored off the same base curve the DGPT uses, at an assumed "
-        "multiplier: A-Tier and Elite Series stops at Elite Series scale, the "
-        "European Open and the European Championships at major scale, and a "
-        "national or regional championship at half an A-Tier.",
-        f"The standings are assumed to count each player's best {ET_COUNT} "
-        "results of the eight reachable events. No counting rule has been "
-        "announced.",
+        "The points structure here is the published one: three categories "
+        f"paying {ET_CATEGORY[1]['win']:.0f}, {ET_CATEGORY[2]['win']:.0f} and "
+        f"{ET_CATEGORY[3]['win']:.0f} for a win, counted best 1 of 2, best 2 "
+        "of 3 and all 3 — six results in total, and 1,100 points for a perfect "
+        "season. So are the 2028 card bands.",
+        "What is assumed is the shape of each curve BELOW first place. Only "
+        "the win value is published, so the DGPT's own per-place curve is "
+        "scaled to it. That scaling lands category 3 on exactly the Elite "
+        "Series curve and categories 2 and 1 on the DGPT+ and Playoff "
+        "multipliers, which is a good sign but is still an inference.",
         "The national championship weekend is modelled as a set of parallel "
-        "single-country fields: a player can only enter their own country's "
-        "championship, and is ranked against their compatriots alone. "
-        "Countries with almost nobody in this table are pooled into one "
-        "regional championship instead, so a lone entrant cannot win a "
-        "national title unopposed every season. Which federations will "
-        "actually apply for points sanctioning is unknown.",
+        "single-country fields, which is what the eligibility rules describe: "
+        "entry restricted by citizenship or residence, one championship per "
+        "player. Countries with almost nobody in this table are pooled into "
+        "one regional championship — itself an eligible category — so a lone "
+        "entrant cannot win a national title unopposed every season. Which "
+        "federations will apply for sanctioning by the December 2026 deadline "
+        "is not yet known, so every group here is assumed to run one.",
         "The table is built from players who appear in the 2026 DGPT World "
-        "Standings. A European player who plays only domestic events has no "
-        "row here at all, and in a real EuroTour standings they certainly "
-        "would — this is the tab's biggest blind spot.",
-        "2028 card allocations are assumed, not announced.",
+        "Standings, and only European ones. A European who plays purely "
+        "domestic events has no row here and in a real EuroTour standings "
+        "would; a non-European who plays the European Open and both Elite "
+        "Series stops could bank category 1 and 2 points and is left out too. "
+        "This is the tab's biggest blind spot.",
+        "Displacement is not modelled. A European who earns a Full Tour Card "
+        "through the DGPT World Standings passes their EuroTour Card down, and "
+        "a Full Tour Card winner may take a EuroTour Card instead. Both push "
+        "cards further down the standings, so these odds are a floor for "
+        "players just outside a band, never a ceiling.",
     ),
 )
 

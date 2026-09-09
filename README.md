@@ -86,12 +86,23 @@ is shown on the page above the numbers. In short:
   projected to play the same *share* of US stops, European stops and JomezPro
   stops as in 2026 — on a longer calendar, so more starts. Nobody improves,
   retires or turns pro, and a 2027 rookie does not exist.
-- **The EuroTour tab assumes its whole points system.** The DGPT announced
-  which events belong and that the standings award 2028 Tour Cards, and
-  published no points table, no counting rule and no card allocation. Ours are
-  `ET_MULTIPLIERS`, `ET_COUNT` and `ET_CARDS`, all in one place to be corrected
-  in one edit. Its roster is European players with a 2026 DGPT standings row,
-  which is its biggest blind spot: domestic-only Europeans are missing.
+- **The EuroTour's points structure is the published one.** Three categories
+  paying 250 / 200 / 150 for a win, counted best 1-of-2, 2-of-3 and 3-of-3 —
+  six results, and 1,100 for a perfect season, which `season2027.max_points()`
+  asserts. The 2028 card bands (MPO top 6 Full / top 24 EuroTour, FPO top 3 /
+  top 12) are theirs too. Ours is only the shape of each curve *below* first
+  place: the DGPT's own per-place curve scaled to the published win value,
+  which lands category 3 on exactly the Elite Series curve and 2 and 1 on the
+  DGPT+ and Playoff multipliers.
+- **What the EuroTour tab is still missing is the field, not the rules.** Its
+  roster is European players with a 2026 DGPT standings row, so domestic-only
+  Europeans are absent from a race they would really be in. At the three stops
+  that are open to the whole tour — the European Open and both European Elite
+  Series events — the table is at least raced against an outside field drawn
+  from the rest of the standings, so a European's finish there is not measured
+  against Europeans alone. Displacement (a Full Tour Card holder passing their
+  EuroTour Card down) is not modelled and only ever pushes cards deeper, so the
+  published odds are a floor for anyone just outside a band.
 
 Both run at 20,000 simulated seasons in the daily refresh
 (`--project-sims`, or `--skip-projection` to leave them alone, which is what
