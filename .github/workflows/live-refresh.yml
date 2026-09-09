@@ -58,6 +58,24 @@ jobs:
           key: pdga-cache-2026-${{ github.run_id }}
           restore-keys: pdga-cache-2026-
 
+      # The loop refreshes with --skip-projection: the experimental 2027 and
+      # EuroTour bundles are a season away and cost ~35s a run to regenerate,
+      # which is a lot to spend every five minutes on numbers that move only
+      # when the participation rates behind them do. But publish-site.sh
+      # force-pushes the WHOLE docs tree, so anything not on disk at publish
+      # time is deleted from the site. Carry the published bundles in once, at
+      # the start of the run, and every iteration republishes them unchanged.
+      # Best-effort: on a `site` branch that predates those files there is
+      # simply nothing to carry, and the tabs say so until the daily refresh
+      # writes them.
+      - name: Carry the published projection bundles across
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          git fetch --depth=1 origin site || exit 0
+          git restore --source=FETCH_HEAD --worktree -- docs/data || exit 0
+          ls -l docs/data || true
+
       # Failure posture (added after a season of silent failure modes): any
       # step that throws counts a consecutive failure; three in a row fail the
       # RUN so the owner is notified, and the cron restarts the loop within
@@ -144,7 +162,7 @@ jobs:
                   sleep 300; continue
                 fi
               fi
-              if python -m dgpt.refresh --sims 100000; then
+              if python -m dgpt.refresh --sims 100000 --skip-projection; then
                 failures=0
                 did_refresh=1
               else

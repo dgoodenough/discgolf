@@ -414,6 +414,60 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .ledger-light .rc-c10 { color: #4a4d52; }
 .ledger-light .rc-c11 { color: #7a4a20; }
 
+/* ==========================================================================
+   THE EXPERIMENTAL TABS — 2027 and the EuroTour
+
+   Yellow is already this site's "pending / not settled yet" colour, and a
+   season nobody has played is the most unsettled thing on it, so the banner
+   and its chip borrow --pend rather than introducing a hue. Nothing else here
+   is new either: the tables, sparklines and probability colours are the
+   forecast tab's, which is the point — the caveat is loud, the numbers are
+   read exactly as they are everywhere else.
+   ========================================================================== */
+.exp-banner {
+  border: 1px solid var(--pend); border-left-width: 4px; background: var(--pend-fill);
+  padding: 9px 12px; margin: 0 0 12px; border-radius: var(--radius);
+}
+.exp-title {
+  margin: 0 0 4px; font-size: var(--fs-caption); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .8px; color: var(--pend-fill-ink);
+}
+.exp-text { margin: 0; font-size: var(--fs-small); line-height: 1.5; color: var(--ink); max-width: 88ch; }
+.exp-text b { font-weight: 700; }
+.exp-chip {
+  display: inline-block; font-size: var(--fs-caption); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px; padding: 1px 6px; margin-right: 4px;
+  border: 1px solid var(--pend); border-radius: var(--radius);
+  background: var(--pend-fill); color: var(--pend-fill-ink);
+}
+.both-tag { font-size: var(--fs-caption); color: var(--pend); cursor: help; white-space: nowrap; }
+
+/* Assumptions panel — the column guide's shape, because it does the same job:
+   a <details> that is keyboard- and screen-reader-operable with no JS. */
+.expl { font-size: var(--fs-small); margin: 0 0 12px; }
+.expl > summary {
+  cursor: pointer; padding: 4px 0; color: var(--ink-2);
+  border-bottom: 1px dotted var(--grid-strong); width: max-content; list-style: none;
+}
+.expl > summary::-webkit-details-marker { display: none; }
+.expl > summary::before { content: "? "; color: var(--pend); font-weight: 700; }
+.expl > summary:hover { border-color: var(--ink-2); color: var(--ink); }
+.expl[open] > summary { color: var(--ink); border-color: var(--ink-2); }
+.expl-body { border: 1px solid var(--grid); background: var(--paper); padding: 10px 12px 12px; margin-top: 8px; }
+.expl-lede { margin: 0 0 10px; color: var(--ink-2); max-width: 78ch; }
+.expl-list { margin: 0; padding-left: 20px; max-width: 88ch; }
+.expl-list li { margin: 4px 0; color: var(--ink-2); line-height: 1.5; }
+.expl-list li b { color: var(--ink); }
+.expl-band {
+  margin: 14px 0 6px; font-size: var(--fs-caption); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--ink-3);
+}
+
+/* Five tabs no longer fit one line on a phone; let the row wrap rather than
+   scroll the header sideways. */
+.controls { flex-wrap: wrap; }
+#view-seg { flex-wrap: wrap; }
+
 /* explainer / static pages */
 .page { max-width: 780px; margin: 0 auto; padding: 0 16px 40px; }
 .page h1 { font-size: 1.3rem; margin: 18px 0 4px; }

@@ -1,0 +1,35 @@
+event_id,name,short_name,location,cls,tour,start_date,end_date,mpo,fpo
+270001,Greater Atlanta Open,Greater Atlanta Open,"Conyers, GA",jomez,dgpt,2027-02-26,2027-02-28,True,True
+270002,Supreme Flight Open,Supreme Flight Open,"Brooksville, FL",elite,dgpt,2027-03-12,2027-03-14,True,True
+270003,Big Easy Open,Big Easy Open,"Jefferson Parish, LA",elite,dgpt,2027-03-19,2027-03-21,True,True
+270004,Queen City Classic,Queen City Classic,"Charlotte, NC",elite,dgpt,2027-04-02,2027-04-04,True,True
+270005,Blue Ridge Championship,Blue Ridge Championship,"Marion, NC",jomez,dgpt,2027-04-09,2027-04-11,True,True
+270006,PDGA Champions Cup,Champions Cup,"Lynchburg / Bedford County, VA",major,dgpt,2027-04-15,2027-04-18,True,True
+270007,Tulsa Open at POSTOAK,Tulsa Open,"Tulsa, OK",jomez,dgpt,2027-04-23,2027-04-25,True,True
+270008,The Open at Austin,The Open at Austin,"Austin, TX",elite_plus,dgpt,2027-04-29,2027-05-02,True,True
+270009,Morley Field Classic,Morley Field Classic,"San Diego, CA",jomez,dgpt,2027-05-14,2027-05-16,True,True
+270010,RPM Open,RPM Open,"Lille Leland, Norway",et_a,eurotour,2027-05-14,2027-05-16,True,True
+270011,OTB Open,OTB Open,"Stockton, CA",elite_plus,dgpt,2027-05-20,2027-05-23,True,True
+270012,Redwood Open at Brooktrails,Redwood Open,"Willits, CA",jomez,dgpt,2027-05-28,2027-05-30,True,True
+270013,Turku Open,Turku Open,"Turku, Finland",et_a,eurotour,2027-05-28,2027-05-30,True,True
+270014,Cascade Challenge,Cascade Challenge,"Shelton, WA",elite,dgpt,2027-06-04,2027-06-06,True,True
+270015,PDGA Pro World Championships,Pro Worlds,"Portland, OR",major,dgpt,2027-06-16,2027-06-20,True,True
+270016,European Disc Golf Championships,European Championships,"Tampere, Finland",et_champs,eurotour,2027-07-01,2027-07-04,True,True
+270017,European Disc Golf Festival,European Disc Golf Festival,"Tallinn, Estonia",elite,both,2027-07-09,2027-07-11,True,True
+270018,Event TBA (European Elite Series),European Elite Series TBA,TBA,elite,both,2027-07-16,2027-07-18,True,True
+270019,European Open,European Open,"Nol, Sweden",major,both,2027-07-22,2027-07-25,True,True
+270020,European National Championship Weekend,National Championships,Various,et_nat,eurotour,2027-07-29,2027-08-01,True,True
+270021,Eagles Crossing Open hosted by Go Throw,Eagles Crossing Open,"Hawk Point, MO",jomez,dgpt,2027-07-30,2027-08-01,True,True
+270022,Ledgestone Open,Ledgestone Open,"Greater Peoria, IL",elite_plus,dgpt,2027-08-05,2027-08-08,True,True
+270023,DGPT Doubles Championship at the Preserve,Doubles Championship,"Clearwater, MN",doubles,dgpt,2027-08-13,2027-08-15,True,True
+270024,U.S. Women's Disc Golf Championship,USWDGC,"Columbia, MO",major,dgpt,2027-08-19,2027-08-22,False,True
+270025,Discraft Great Lakes Open,Great Lakes Open,"Milford, MI",elite_plus,dgpt,2027-08-26,2027-08-29,True,True
+270026,LWS Open at Idlewild,Idlewild,"Burlington, KY",elite,dgpt,2027-09-03,2027-09-05,True,True
+270027,Greater Toronto Open,Greater Toronto Open,"Milton, ON, Canada",jomez,dgpt,2027-09-10,2027-09-12,True,True
+270028,EuroTour Finale – Pärnu Open,Pärnu Open,"Pärnu, Estonia",et_a,eurotour,2027-09-10,2027-09-12,True,True
+270029,Green Mountain Championship,Green Mountain Championship,"Jeffersonville, VT",elite_plus,dgpt,2027-09-16,2027-09-19,True,True
+270030,MVP Open x OTB,MVP Open,"Leicester, MA",elite_plus,dgpt,2027-09-23,2027-09-26,True,True
+270031,United States Disc Golf Championship,USDGC,"Rock Hill, SC",major,dgpt,2027-10-07,2027-10-10,True,False
+270032,DGPT Playoffs at Ivy Hill,Ivy Hill,"Lynchburg / Bedford County, VA",playoff,dgpt,2027-10-14,2027-10-17,True,True
+270033,Kansas City Wide Open,Kansas City Wide Open,"Liberty, MO",playoff,dgpt,2027-10-21,2027-10-24,True,True
+270034,Powerball Cup,Powerball Cup,"Austin, TX",championship,dgpt,2027-11-04,2027-11-07,True,True

@@ -23,12 +23,12 @@
 <div id="app">
   <header id="top">
     <div class="title">
-      <p class="kicker">2026 DGPT Season Forecast</p>
-      <h1>Who makes the Powerball Cup?</h1>
+      <p class="kicker" id="kicker">2026 DGPT Season Forecast</p>
+      <h1 id="headline">Who makes the Powerball Cup?</h1>
       <p id="stakes-line" class="stakes"></p>
-      <p class="sub">Qualification odds from a 100k-run Monte Carlo ·
+      <p class="sub"><span id="sub-lede">Qualification odds from a 100k-run Monte Carlo</span> ·
         <span id="meta-line"></span> ·
-        <a href="how-it-works.html">how the points system works</a></p>
+        <a id="how-link" href="how-it-works.html">how the points system works</a></p>
       <p id="live-note" hidden></p>
     </div>
     <div class="controls">
@@ -36,6 +36,8 @@
         <button data-view="forecast" class="active">Forecast</button>
         <button data-view="possible">What's left</button>
         <button data-view="race">Event odds</button>
+        <button data-view="next">2027</button>
+        <button data-view="euro">EuroTour</button>
       </div>
       <div class="seg" id="division-seg">
         <button data-div="mpo" class="active">MPO</button>
@@ -48,6 +50,8 @@
     <section id="view-forecast"></section>
     <section id="view-possible" hidden></section>
     <section id="view-race" hidden></section>
+    <section id="view-next" hidden></section>
+    <section id="view-euro" hidden></section>
   </main>
 
   <footer>
