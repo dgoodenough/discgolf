@@ -247,7 +247,7 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
     tid = int(rows[0]["tid"])
     # Total holes from the feed's own remaining-rounds count rather than the
     # model's per-class round constant, which is a class default and lands a
-    # round short at events that play more (see app.js liveThru).
+    # round short at events that play more (see docs/js/cells.js liveThru).
     holes = max(int(r["thru"]) + round(float(r["rem"]) * 18) for r in rows)
     return {
         "tid": tid,
