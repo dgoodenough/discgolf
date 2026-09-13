@@ -3,7 +3,7 @@
 Emits docs/data/movers.json for the app's "Biggest movers" panel, as
 {division: {window: {baseline, latest, spark_dates, movers: [...]}}}.
 
-Windows (see MOVERS_DESIGN.md):
+Windows (see notes/MOVERS_DESIGN.md):
 
 - **week** — both endpoints pinned to the most recent snapshot on-or-before a
   Monday: the current week's for "now", the prior week's for the baseline. The

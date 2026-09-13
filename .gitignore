@@ -5,7 +5,7 @@ __pycache__/
 data/cache/
 
 # Generated output. Published to the `site` branch by .github/publish-site.sh,
-# never committed to main (HARDENING.md item 6). Cross-run STATE that the
+# never committed to main (notes/HARDENING.md item 6). Cross-run STATE that the
 # pipeline reads back — data/live_signature.txt, data/current_ratings.json,
 # data/live_odds.csv, predictions/history_*.csv — stays tracked.
 docs/data/

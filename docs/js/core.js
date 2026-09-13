@@ -35,12 +35,12 @@ const fmtPts = (x) => (Math.round(x * 100) / 100).toLocaleString("en-US");
 
    The middle of the range is deliberately coarser than it was. A tenth of a
    percent is inside what this model can actually resolve — the score model's
-   variance term is a single pooled constant (MODEL_IDEAS.md item 1), and the
-   cutline replay carries about half a point of Monte Carlo noise run to run —
-   so "41.3%" claimed a precision nothing behind it supports. Above 10% the
-   display is a whole percent. Below it a tenth still earns its place, because
-   there 2.1% and 2.9% differ by 40% of a longshot's season rather than by a
-   rounding artifact.
+   variance term is a single pooled constant (notes/MODEL_IDEAS.md item 1), and
+   the cutline replay carries about half a point of Monte Carlo noise run to
+   run — so "41.3%" claimed a precision nothing behind it supports. Above 10%
+   the display is a whole percent. Below it a tenth still earns its place,
+   because there 2.1% and 2.9% differ by 40% of a longshot's season rather than
+   by a rounding artifact.
 
    `fmtPctExact` keeps the unrounded number for the expanded row, which is
    where the exact value stays one tap away. */
