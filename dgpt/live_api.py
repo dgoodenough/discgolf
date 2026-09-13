@@ -164,7 +164,7 @@ def _body(envelope: dict) -> dict:
     `.get("scores")` died with `'list' object has no attribute 'get'`. That is
     livecheck, which crashed on all three loop iterations, failed the run, and
     left the site serving Sunday's numbers a day before round 1 (2026-08-26).
-    Sixth live-API shape variant this season; see HARDENING.md item 1.
+    Sixth live-API shape variant this season; see notes/HARDENING.md item 1.
 
     A NON-empty list is read as the rows themselves rather than discarded, so
     this can never quietly empty a sheet that really does carry scores.
