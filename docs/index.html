@@ -16,6 +16,20 @@
 <meta name="twitter:image" content="https://dgoodenough.github.io/discgolf/card.png">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
+
+<!-- app.js is an ES module and its imports are a five-deep graph (app -> forecast
+     -> sim -> cells -> tooltip -> core), which the browser would otherwise
+     discover one network round trip at a time. Preloading the whole graph here
+     collapses that waterfall into a single parallel fetch. -->
+<link rel="modulepreload" href="js/core.js">
+<link rel="modulepreload" href="js/tooltip.js">
+<link rel="modulepreload" href="js/cells.js">
+<link rel="modulepreload" href="js/sim.js">
+<link rel="modulepreload" href="js/movers.js">
+<link rel="modulepreload" href="js/forecast.js">
+<link rel="modulepreload" href="js/possible.js">
+<link rel="modulepreload" href="js/race.js">
+<link rel="modulepreload" href="js/projection.js">
 <script data-goatcounter="https://dgoodenough.goatcounter.com/count"
         async src="//gc.zgo.at/count.js"></script>
 </head>
@@ -64,6 +78,6 @@
   </footer>
 </div>
 <div id="spark-tip" hidden></div>
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
