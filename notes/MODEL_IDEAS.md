@@ -103,9 +103,160 @@ If the effect is real but tiny, log it as "confirmed, immaterial" and move on.
 - Variance may track *course type* (tight wooded vs open bomber courses) or
   weather more than rating — a wooded-course SD multiplier could be the better
   lever, or a confound to control here.
+- Item 2 below finds the same shape in a different quantity: a player's *rating*
+  is also more stable the higher it is (drift SD 7.18 at the bottom of the MPO
+  table against 4.77 at the top). Two measures of consistency moving together is
+  either one cause or one artifact — fit them looking at each other, not blind.
 - The truncation point above argues for capturing a per-round data-quality /
   WD-rate summary during refresh, so the offseason fit isn't blind to what's
   missing.
+
+---
+
+## 2. Rating drift over a forecast horizon (and why the good ones drift down)
+
+**Status:** logged, not scheduled · raised 2026-09, after the 2027 tab shipped ·
+deliberately parked until the 2026 Cup is played and this season's predictions
+are frozen
+
+**Hypothesis.** A player's rating on the day of a future event is not their
+rating today, and the difference is not symmetric noise. It has a *level*
+(ratings mean-revert, so the further above the field you are the more the pull
+is downward) and a *spread* that grows with the horizon. The model currently
+has neither.
+
+**What surfaced it.** The 2027 projection makes Gannon Buhr a 42.9% favourite
+to win the Powerball Cup. The live 2026 forecast, with 21 of 24 events banked,
+makes him 43.2%. Those are the same number, and they are the same number for a
+structural reason worth writing down: the Cup is one four-round event whose
+outcome is a function of (rating vs the field) and (starting strokes), the seed
+ladder tops out at -7, and he is at the cap in both years. So an entire extra
+season of dominance buys him nothing at the Cup — there is nothing above -7 to
+win. The whole top of the board repeats too (Wysocki 17→16, Heimburg 11→12,
+Robinson 7→7, McMahon 5→5).
+
+None of that is wrong. What *is* wrong is the confidence: a forecast fourteen
+months out is exactly as sharp as one taken three events from the end, and it
+has no business being. Frozen ratings are the reason. This is the single
+assumption most responsible for the 2027 tab reading as an echo of the 2026 one.
+
+**Prior art — we already had a version of this, in 2021.**
+`archive/2021/DGPTModelV2.ipynb` (cells 2 and 4) carried an
+`EventMeanRegression` term:
+
+```python
+# Create a Mean Regression so that Events further out have more uncertainty
+EventMeanRegressionValue = np.log10(np.absolute(days_until_event))
+SingleRoundExpectedScoreValue = -1 * (
+    (Rating - EventDivisionAverageRating)
+    / (RatingPointsPerStroke + EventMeanRegressionValue)   # inflated divisor
+)
+```
+
+It did not survive the rebuild — nothing in `simulate.py` reads a start date
+into the score model. Three things to know before porting it back:
+
+- **It shrank the mean, not the variance,** despite the comment. Inflating
+  rating-points-per-stroke pulls every player's expected score toward the field
+  average, so a distant event gets a flatter, more egalitarian field rather than
+  a wider one. `ROUND_SD` never moved. The favourite's edge does dent, which is
+  the effect it was remembered for, but it gets there by making everyone more
+  alike rather than by admitting we do not know who anyone will be.
+- **The units are arbitrary.** It adds log10(days) — a pure number — to a
+  rating-points-per-stroke quantity. It works because the magnitudes happen to
+  land well, not because it measures anything, and there is nothing for the
+  constant to be fit against.
+- **It never saturates.** log10 keeps creeping: a decade out gives a divisor of
+  9.6, not infinity. And the archived cell's own `###Placeholder` comments flag
+  that a past event takes `log10(|negative days|)` and gets a positive shrink.
+
+For scale, the 2021 formula applied to the 2027 calendar (170-407 days out from
+today) leaves every event keeping only **70-73%** of the rating edge. Gannon's
+~60-point gap over a 1000-rated field would read as ~7 strokes over four rounds
+instead of ~10 — easily enough to move 43% into the thirties. So the term is not
+a rounding detail; whatever replaces it needs to be defensible.
+
+**First look: the asymmetry is real, and it is in our own data.**
+`predictions/history_*.csv` carries a per-snapshot `rating` column, so this
+season is already a rating time series. Over 2026-07-04 to 2026-09-08 (58
+snapshots, though PDGA publishes monthly so that is really only ~2 rating
+updates), per player first-vs-last, by starting-rating quartile:
+
+```
+MPO (716 players)          start range   mean change    sd    gained
+  bottom quartile           853-978         +3.64      7.18     62%
+  2nd                       979-997         +0.31      5.94     47%
+  3rd                       997-1010        +0.06      5.73     47%
+  top quartile             1010-1062        -0.34      4.77     40%
+  slope of change on starting rating: -0.065 per rating point
+
+FPO (222 players)          start range   mean change    sd    gained
+  bottom quartile           805-877         +3.24     10.09     56%
+  2nd                       879-906         +1.76      9.03     53%
+  3rd                       906-935         +1.67      8.18     58%
+  top quartile              935-990         +1.54      6.55     53%
+  slope of change on starting rating: -0.013 per rating point
+```
+
+The bigger they are, the harder they fall — and the less room they had to climb
+in the first place. In MPO the top quartile is the only band with a negative
+mean and the only one where a minority (40%) gained at all, while the bottom
+quartile gained 62%. That is what a rating ceiling looks like: 1030 to 1040 is a
+much scarcer move than 970 to 980, because rating is scored against course
+rating and the headroom thins out at the top.
+
+Note the second finding hiding in that table: **the spread shrinks with rating
+too** (7.18 → 4.77 in MPO). Higher-rated players are more stable in rating, not
+just more capped — which rhymes with item 1 above and may share a cause.
+
+FPO is much weaker (slope -0.013, every band positive, whole division up +2.05),
+on a third of the sample. Treat the effect as an MPO finding for now.
+
+**Why it matters.** It is the difference between a 2027 tab that echoes 2026 and
+one that says something. Symmetric drift would barely move Gannon — he could
+drift to 1075 as readily as 1045. Mean-reverting drift puts his *expected* 2027
+rating below today's and caps his upside, which is what actually brings 43%
+down and widens the field behind him. It should also make the 2026 forecast very
+slightly less sharp about its own remaining events, which is correct and which
+is why this cannot ship mid-season.
+
+**How to test.**
+- Fit an Ornstein-Uhlenbeck / AR(1) form on the history file: `Δrating = -k *
+  (rating - mu) * Δt + sigma * sqrt(Δt) * eps`, with `k`, `mu` and `sigma`
+  estimated per division. The quartile table above is the crude version of `k`;
+  the fit is the real one.
+- **Do not extrapolate the 9-week slope linearly.** -0.065 per rating point over
+  two months is a *reversion rate*, and over fourteen months reversion saturates
+  toward an equilibrium rather than compounding — a naive linear read would pull
+  a 1060 player 25 points below a 1000 player, which is nonsense. The OU form
+  handles this; a linear fit does not.
+- Let `sigma` be rating-dependent, per the spread column above, and check it
+  against item 1's variance work rather than fitting the two blind to each other.
+- Grade it: re-run the 2027 tab with and without drift and look at whether the
+  favourite's odds and the size of the contending pack move the way a
+  fourteen-month horizon should.
+
+**Confounds to rule out.**
+- *Selection.* Players enter the standings table by playing, and playing well.
+  The bottom quartile's +3.64 is partly genuine improvement and partly a low
+  starting point regressing up. Fit on the full ratings snapshot, not on the
+  standings table.
+- *Two rating updates is thin.* 58 snapshots is not 58 observations — PDGA
+  publishes monthly. A full season (or two) of history is the honest sample, and
+  `data/current_ratings.json` only keeps the current one. Consider retaining a
+  dated ratings archive during refresh so the offseason fit is not this short.
+- *Age and career stage.* "High rating drifts down" and "young players drift up"
+  are different claims that this table cannot separate. Worth a birth-year or
+  first-PDGA-year covariate before attributing it all to the ceiling.
+- *Is it a ceiling or a cap?* Check whether the top-band effect is smooth in
+  rating or a hard shelf near ~1050 where almost nobody has ever gone higher.
+
+**Worth-it gate.** Ship only if the drift materially widens the 2027 tab
+(favourite off 43% by more than Monte Carlo noise, and a visibly larger
+contending pack) AND the 2026 forecast's own calibration does not degrade —
+this touches both, and the live forecast is the product. If the fit comes back
+with reversion too slow to matter over a season, log it as "confirmed,
+immaterial" and just say so on the tab instead.
 
 ---
 
