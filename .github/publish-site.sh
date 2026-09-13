@@ -66,6 +66,15 @@ trap 'rm -f "$index"' EXIT
 
 # --force because docs/data is gitignored on main and still must be published
 GIT_INDEX_FILE="$index" git add --force --all docs
+
+# ...but not the agent instructions. docs/CLAUDE.md is source, and `add --all`
+# would serve it from the published site as /CLAUDE.md. Nothing secret — the
+# repo is public — just not part of the site. The glob covers a nested one
+# (docs/js/CLAUDE.md) as well, since --ignore-unmatch makes both harmless when
+# absent.
+GIT_INDEX_FILE="$index" git rm --cached -q --ignore-unmatch \
+  'docs/CLAUDE.md' ':(glob)docs/**/CLAUDE.md'
+
 tree="$(GIT_INDEX_FILE="$index" git write-tree)"
 commit="$(git commit-tree "$tree" -m "Publish site ($(date -u +'%F %H:%MZ'))")"
 
