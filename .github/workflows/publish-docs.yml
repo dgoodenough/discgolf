@@ -2,9 +2,9 @@ name: Publish docs (no re-simulation)
 
 # Push the static pages live without re-running the forecast.
 #
-# Since HARDENING item 6 the site is published from the `site` branch by the
-# refresh workflows, which means an edit to index.html, how-it-works.html or
-# the stylesheets does NOT go live when it merges — it waits for the next
+# Since notes/HARDENING.md item 6 the site is published from the `site` branch
+# by the refresh workflows, which means an edit to index.html, how-it-works.html
+# or the stylesheets does NOT go live when it merges — it waits for the next
 # refresh (the 11:00 UTC cron, or a live-refresh iteration during play). That
 # is fine for a copy tweak and wrong for a fix someone is waiting on, so this
 # publishes `docs/` on demand in well under a minute: no pip, no 100k sims.
