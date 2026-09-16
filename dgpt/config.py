@@ -152,12 +152,21 @@ REG_PHASES = {
         # 8 MPO / 4 FPO at GMC who did not already qualify on points earn a
         # spot. Nobody can know who they are until GMC has been played, so the
         # MVP roster cannot be final before then however authoritative PDGA
-        # Live looks — which is exactly what this phase exists to say. Dated
-        # the day after GMC ends (schedule_2026.csv: Sep 17-20); the count is
-        # PLAYOFF_QUAL's, referenced rather than repeated so the two cannot
-        # drift apart.
-        {"opens": "2026-09-21T00:00:00Z", "label": "GMC performance qualifiers",
-         "perf": PLAYOFF_QUAL["mvp"]["perf"]},
+        # Live looks — which is exactly what this phase exists to say.
+        #
+        # Two keys, because they are two separate facts and either can land
+        # second. `opens` is when the DGPT's window opens: midnight EDT on the
+        # day after GMC ends (schedule_2026.csv: Sep 17-20). `after_event` is
+        # when the spots are decided, read off the schedule's `completed` flag
+        # rather than the calendar. The date alone was wrong in both
+        # directions: 00:00Z is 8pm EDT on GMC's own final Sunday, so it fired
+        # while the last card could still be on the course — the same UTC
+        # rollover that froze Ledgestone mid-round (notes/HARDENING.md item
+        # 10) — and a calendar can never see a weather delay push the finish
+        # to Monday. The count is PLAYOFF_QUAL's, referenced rather than
+        # repeated so the two cannot drift apart.
+        {"opens": "2026-09-21T04:00:00Z", "label": "GMC performance qualifiers",
+         "after_event": TID_GMC, "perf": PLAYOFF_QUAL["mvp"]["perf"]},
     ],
 }
 

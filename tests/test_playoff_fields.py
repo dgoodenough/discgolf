@@ -208,7 +208,7 @@ def test_the_same_roster_is_final_once_every_wave_has_opened(fake_api, monkeypat
     assert fields.signed_up(config.TID_GMC, "MPO", list(range(7001, 7021))).final is True
 
 
-def test_gmc_closes_while_the_mvp_open_stays_open():
+def test_gmc_closes_while_the_mvp_open_stays_open(monkeypatch):
     """The asymmetry between the two playoff rosters is a decision, not a gap.
 
     GMC's last wave opens Sep 1 and nothing decides its field afterwards, so it
@@ -222,8 +222,51 @@ def test_gmc_closes_while_the_mvp_open_stays_open():
     assert not fields._waves_all_open(config.TID_MVP, after_last_invite_wave)
 
     once_gmc_is_played = dt.datetime(2026, 9, 22, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(fields, "_event_completed", lambda tid: tid == config.TID_GMC)
     assert fields._waves_all_open(config.TID_GMC, once_gmc_is_played)
     assert fields._waves_all_open(config.TID_MVP, once_gmc_is_played)
+
+
+def test_the_performance_phase_waits_on_the_result_not_the_date(monkeypatch):
+    """The date is a floor, not the trigger.
+
+    GMC is scheduled Sep 17-20, but a US Sunday final round runs past 00:00
+    UTC and weather can push the finish to Monday outright. A calendar cannot
+    see either, so the phase waits on the schedule's `completed` flag — the
+    same signal schedule._refresh_row banks behind its grace night. Until GMC
+    is banked the window is shut however late the clock reads, which keeps the
+    MVP roster open and its 8/4 spots outstanding.
+    """
+    well_past_the_date = dt.datetime(2026, 9, 30, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(fields, "_event_completed", lambda tid: False)
+    assert not fields._waves_all_open(config.TID_MVP, well_past_the_date)
+
+    # ...and the result alone does not open a window the DGPT has not reached.
+    monkeypatch.setattr(fields, "_event_completed", lambda tid: True)
+    mid_gmc = dt.datetime(2026, 9, 19, tzinfo=dt.timezone.utc)
+    assert not fields._waves_all_open(config.TID_MVP, mid_gmc)
+
+
+def test_the_performance_phase_reads_gmc_off_the_schedule(tiny_world):
+    """_event_completed is the schedule's flag, not a re-derivation of it."""
+    assert not fields._event_completed(config.TID_GMC)   # conftest: not played
+
+    rows = schedule.load()
+    for r in rows:
+        if r["tournament_id"] == config.TID_GMC:
+            r["completed"] = True
+    with open(schedule.SCHEDULE_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=schedule.FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+    assert fields._event_completed(config.TID_GMC)
+
+
+def test_an_unreadable_schedule_holds_the_mvp_field_open(monkeypatch):
+    """The safe direction: a field held open over-admits a few bubble players,
+    one closed early zeroes out players who are really in it."""
+    monkeypatch.setattr(schedule, "load", lambda: (_ for _ in ()).throw(OSError))
+    assert not fields._event_completed(config.TID_GMC)
 
 
 def test_the_play_in_has_no_waves_to_wait_for(fake_api):

@@ -22,7 +22,7 @@ import unicodedata
 from collections import defaultdict
 from typing import NamedTuple
 
-from . import config, live_api
+from . import config, live_api, schedule
 
 OVERRIDES_CSV = config.DATA_DIR / "overrides" / "fields.csv"
 
@@ -154,17 +154,50 @@ def _waves_all_open(tid: int, now: dt.datetime | None = None) -> bool:
 
     The MVP Open cannot close the same way, because its last spots are won at
     GMC rather than invited (config.REG_PHASES carries that as a phase of its
-    own). Holding it open is not the general case leaking back in — it is the
-    one event whose field genuinely is not knowable yet.
+    own, gated on the result). Holding it open is not the general case leaking
+    back in — it is the one event whose field genuinely is not knowable yet.
     """
     key = PHASE_KEY_BY_TID.get(tid)
     if key is None:
         return True
     now = now or dt.datetime.now(dt.timezone.utc)
-    return all(
-        dt.datetime.fromisoformat(ph["opens"].replace("Z", "+00:00")) <= now
-        for ph in config.REG_PHASES[key]
-    )
+    return all(_phase_open(ph, now) for ph in config.REG_PHASES[key])
+
+
+def _phase_open(ph: dict, now: dt.datetime) -> bool:
+    """Has one registration window opened?
+
+    `opens` is the DGPT's announced window. `after_event`, where a phase has
+    one, is the event whose result fills it, and both must hold: GMC finishing
+    early does not open a window the DGPT has not opened, and the window's
+    date arriving does not award spots GMC has not played for.
+    """
+    if dt.datetime.fromisoformat(ph["opens"].replace("Z", "+00:00")) > now:
+        return False
+    after = ph.get("after_event")
+    return after is None or _event_completed(after)
+
+
+def _event_completed(tid: int) -> bool:
+    """Has this event actually been played?
+
+    The schedule's own `completed` flag, never a date. schedule._refresh_row
+    banks it off live_api.event_complete behind a grace night precisely
+    because a US Sunday final round runs past 00:00 UTC, so the calendar calls
+    an event over while its last card is still on the course. A phase that
+    waits on a result has to wait on the same signal — the scoreboard outranks
+    the calendar here for exactly the reason it does there.
+
+    A schedule we cannot read answers False, which keeps the phase shut and
+    the field open: the safe direction everywhere in this module, since a
+    field held open over-admits a few bubble players while one closed early
+    zeroes out players who are really in it.
+    """
+    try:
+        rows = schedule.load()
+    except (OSError, csv.Error, KeyError, ValueError):
+        return False
+    return any(r["tournament_id"] == tid and r["completed"] for r in rows)
 
 
 class Signups(NamedTuple):
