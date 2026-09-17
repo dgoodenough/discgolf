@@ -15,7 +15,12 @@ name: Refresh forecast
 on:
   schedule:
     - cron: "0 11 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run even while a points event is live (races the live loop's publish)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -68,9 +73,21 @@ jobs:
             *) echo "::error::live_events() check crashed (rc=$rc)"; exit 1 ;;
           esac
 
+  # `force` is the manual override. The live gate is there to stop the daily
+  # CRON walking into a tournament; a person dispatching this has a reason the
+  # schedule cannot know — on 2026-09-17 it was publishing the What-if tab's
+  # `meta.whatif`, which only a full projection run produces and which the
+  # live loop, running --skip-projection, can never generate on its own.
+  #
+  # Forcing during play is not free, and the cost is not the publish race —
+  # it is that the live loop carries the projection bundles across ONCE, at
+  # the start of its run, and republishes that snapshot every iteration. A
+  # bundle published underneath a running loop is overwritten within ~5
+  # minutes. To make a forced run stick, stop the live loop first and restart
+  # it after, so it re-carries what this run published.
   refresh:
     needs: gate
-    if: needs.gate.outputs.live != 'true'
+    if: needs.gate.outputs.live != 'true' || inputs.force
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
