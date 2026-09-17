@@ -59,6 +59,12 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   the whole 2027 DGPT season, and the new EuroTour. Both are built from the
   announcement plus this year's ratings and attendance rates; see
   [what they assume](#the-experimental-tabs) below.
+- **And one for a player who doesn't exist.** The **What if** tab drops an
+  invented player into the projected 2027 field: set a rating and how many
+  DGPT, DGPT+, major and JomezPro events they enter, and every column the 2027
+  table carries is recomputed in the browser, 8,000 simulated seasons per
+  slider move. The playoffs are not sliders — those are earned on points,
+  which is half of what is being computed.
 
 ## The experimental tabs
 
@@ -107,6 +113,38 @@ is shown on the page above the numbers. In short:
 Both run at 20,000 simulated seasons in the daily refresh
 (`--project-sims`, or `--skip-projection` to leave them alone, which is what
 the live loop does).
+
+### The What-if tab
+
+`dgpt/whatif.py` rides along with the 2027 DGPT projection and reduces it to a
+~25 KB summary — the season total sitting at each standings position as a
+quantile ladder, both playoff qualification lines, the odds a given finish at a
+playoff event wins a Cup place, the ratings behind each Cup seed, and each
+event's field as twenty equal-weight rating bands. `dropIn()` in
+`docs/js/sim.js` draws seasons against it in the browser.
+
+Four approximations are the tab's own, on top of everything the 2027
+projection already assumes, and the page lists all four:
+
+- **The field is frozen.** A dropped-in player is *added* to the standings,
+  not swapped into them, so the points they win are not taken off anybody.
+  That flatters them most where the race is tightest — and at the very top it
+  means racing a player the model still has winning the season. Correcting it
+  needs a re-simulation of the field, which a slider cannot do between frames;
+  it is the same trade the 2026 row expander's what-if makes.
+- **Which events is a draw, not a plan.** Each simulated season picks a fresh
+  random subset of the size asked for, because nothing here knows which stops
+  a given player would choose.
+- **The doubles championship is left out.** It needs a partner, and 2027
+  pairings cannot be known.
+- **The Cup's opponents are averages** — the mean rating at each seed rather
+  than a distribution over who holds it.
+
+The ladder is shipped as marginal quantiles per rank and read at one uniform,
+which is a comonotone approximation of the joint distribution. It is exact for
+every number the tab prints, because each is a statement about a single rank:
+`P(rank <= r)` is `P(total > the r-th best total)`, and that rank keeps its
+true marginal. `dgpt/whatif.py`'s docstring is the full argument.
 
 ## Running it
 

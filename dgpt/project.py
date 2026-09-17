@@ -36,7 +36,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import config, fields, season2027, simulate
+from . import config, fields, season2027, simulate, whatif
 
 DEFAULT_SIMS = 20_000
 MAX_HIST_RANK = simulate.MAX_HIST_RANK
@@ -107,6 +107,9 @@ class ProjResult:
     # EuroTour cards
     p_full: np.ndarray             # P(finishes inside the Full Tour Card band)
     p_card: np.ndarray             # P(finishes inside the EuroTour Card band)
+    # The drop-in what-if's summary of this run (see whatif.py). None on a
+    # tour with no postseason, which is the only shape that tab describes.
+    kit: dict | None = None
 
 
 # ----------------------------------------------------------------- roster
@@ -437,17 +440,23 @@ def run(spec: season2027.TourSpec, division: str, table: list[dict],
     cards = season2027.ET_CARDS.get(division, {"full": 0, "card_through": 0})
     cut = post.standings_cut if post else cards["card_through"]
     acc = _Accumulators(n, n_sims, post, _hist_depth(cut, n))
+    # The drop-in kit summarises the postseason ladder, so it only exists for
+    # a tour that has one. The EuroTour tab has no what-if and ships none.
+    kit = whatif.Kit(
+        whatif.ladder_ranks(acc.depth, n), season2027.FIELD_SIZE[division],
+        (post.fill1, post.cut2 + post.perf2),
+    ) if post else None
 
     done = 0
     while done < n_sims:
         c = min(chunk, n_sims - done)
         rows_ix = np.arange(c)[:, None]
         first = done == 0
-        _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first)
+        _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first, kit)
         done += c
 
     return _finish(spec, division, roster, countries, rtg, n_sims, acc, post,
-                   drawer, events_meta)
+                   drawer, events_meta, kit)
 
 
 # ------------------------------------------------------------ postseason
@@ -519,7 +528,7 @@ class _Accumulators:
         self.strokes = np.zeros((n, nb), dtype=np.int64)
 
 
-def _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first) -> None:
+def _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first, kit=None) -> None:
     pre = post.pre if post else list(range(len(drawer.evs)))
     cols: dict[str, list[np.ndarray]] = {}
     sim_win = np.zeros((c, n), dtype=bool)
@@ -542,6 +551,8 @@ def _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first) -> None:
     # -- playoff 1: field = top `fill1` in the standings as they stand --
     rank_pre1 = simulate._rank_of(base, rows_ix, n)
     plays1 = rank_pre1 <= post.fill1
+    if kit:
+        kit.gate("play1", base, post.fill1)
     acc.play1 += plays1.sum(axis=0)
     pts1, place1 = drawer.draw(post.ei1, plays1, rows_ix, first)
     sim_win |= (place1 == 1) & plays1
@@ -551,7 +562,11 @@ def _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first) -> None:
     rank_pre2 = simulate._rank_of(after1, rows_ix, n)
     plays2 = rank_pre2 <= post.cut2
     elig = plays1 & ~plays2
-    plays2 = plays2 | simulate._top_k_by_place(place1, elig, post.perf2, n)
+    advanced = simulate._top_k_by_place(place1, elig, post.perf2, n)
+    if kit:
+        kit.gate("play2", after1, post.cut2)
+        kit.perf("play2", place1, elig, advanced)
+    plays2 = plays2 | advanced
     acc.play2 += plays2.sum(axis=0)
     pts2, place2 = drawer.draw(post.ei2, plays2, rows_ix, first)
     sim_win |= (place2 == 1) & plays2
@@ -566,7 +581,11 @@ def _one_chunk(spec, drawer, att, post, acc, rng, c, n, rows_ix, first) -> None:
     # -- Cup field: automatic bids, the playoff-2 performance path, invites --
     auto = ranks <= post.standings_cut
     champ = auto.copy()
-    perf = simulate._top_k_by_place(place2, plays2 & ~auto, post.perf_champ, n)
+    elig_champ = plays2 & ~auto
+    perf = simulate._top_k_by_place(place2, elig_champ, post.perf_champ, n)
+    if kit:
+        kit.final(totals, drawer.rtg)
+        kit.perf("champ", place2, elig_champ, perf)
     acc.perf += perf.sum(axis=0)
     champ |= perf
     champ |= sim_win
@@ -604,10 +623,44 @@ def _rank_and_record(totals: np.ndarray, acc: _Accumulators, rows_ix: np.ndarray
     return ranks
 
 
+def _drop_in_kit(kit, spec, division, drawer, att_probs, events_meta) -> dict:
+    """Finish the drop-in summary: the run's ladder, plus the field's shape.
+
+    The two tables the client needs to score a hypothetical entry are the
+    projection's own and are read out of it here rather than rebuilt: the
+    per-class points curve is `_curve_vector`, the same function that paid
+    every simulated finish, and the seed ladder is `config.cup_start_strokes`,
+    the same one the Cup was played out on. A second opinion about either
+    would let the tab disagree with the table above it.
+    """
+    seen: dict[str, season2027.Event] = {}
+    for ev in drawer.evs:
+        seen.setdefault(ev.cls, ev)
+    # `spec.tour`, not the event's own: an event can pay into both ledgers at
+    # different values, and `season2027.curve` picks which by the tour being
+    # scored. Reading it off the row would price a `tour == "both"` event on
+    # the EuroTour's table inside a DGPT bundle.
+    curves = {
+        cls: [round(float(x), 2) for x in
+              _curve_vector(division, ev, spec.tour, whatif.CURVE_DEPTH)[
+                  1 : whatif.CURVE_DEPTH + 1]]
+        for cls, ev in seen.items()
+    }
+    # Realized attendance, not the rate: at a playoff event the field is the
+    # standings gate, and the rate says nothing about who cleared it.
+    for ei, m in enumerate(events_meta):
+        m["field_rq"] = whatif.field_bands(drawer.rtg, att_probs[ei])
+    return kit.build(curves, config.cup_start_strokes(division), spec.invite_classes)
+
+
 def _finish(spec, division, roster, countries, rtg, n_sims, acc, post,
-            drawer, events_meta) -> ProjResult:
+            drawer, events_meta, kit=None) -> ProjResult:
     n = len(roster)
     zeros = np.zeros(n)
+    att_probs = drawer.att_count / n_sims
+    # Ahead of the constructor because it also writes each event's rating
+    # bands onto events_meta, and that is easier to follow as a statement.
+    kit_out = _drop_in_kit(kit, spec, division, drawer, att_probs, events_meta) if kit else None
     cards = season2027.ET_CARDS.get(division, {"full": 0, "card_through": 0})
     full_to = cards["full"]
     card_to = cards["card_through"]
@@ -642,7 +695,7 @@ def _finish(spec, division, roster, countries, rtg, n_sims, acc, post,
         p_first=acc.first / n_sims,
         rank_hist=acc.rank_hist,
         hist_depth=acc.depth,
-        att_probs=drawer.att_count / n_sims,
+        att_probs=att_probs,
         events_meta=events_meta,
         p_cut=acc.cut / n_sims,
         p_perf=acc.perf / n_sims,
@@ -653,6 +706,7 @@ def _finish(spec, division, roster, countries, rtg, n_sims, acc, post,
         strokes_hist=acc.strokes,
         stroke_values=post.stroke_values if post else (),
         p_full=p_full, p_card=p_card,
+        kit=kit_out,
     )
 
 
@@ -739,6 +793,12 @@ def export(res: ProjResult) -> None:
                 "bands": [[rank, adv] for rank, adv in config.CUP_START_STROKES[res.division]],
             },
         })
+    # Everything the drop-in what-if tab needs to add a player to this field
+    # and rank them against it. Absent on a tour with no postseason, and
+    # absent from any bundle published before the tab existed — the page
+    # treats a missing block as "not generated yet" rather than as an error.
+    if res.kit:
+        meta["whatif"] = res.kit
     if spec.cards:
         meta.update({
             "cut": cards["card_through"],   # what the sparkline greens

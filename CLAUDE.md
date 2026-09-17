@@ -35,7 +35,7 @@ Working in one half rarely needs the other. `dgpt/CLAUDE.md` and
 - **The pipeline runs unattended every 15 minutes during live play.** Anything
   that can fail has to fail loudly and leave the last good bundle up, rather
   than publish something wrong.
-- Tests: `python -m pytest tests -q` (231 tests, ~3s). CI gates every PR.
+- Tests: `python -m pytest tests -q` (243 tests, ~4s). CI gates every PR.
 - No secrets in the repo. PDGA credentials come from `.env` (see
   `.env.example`).
 

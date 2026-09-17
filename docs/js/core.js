@@ -11,7 +11,11 @@ const state = { div: "mpo", view: "forecast", data: {}, sort: { key: "p_champ", 
                 cloudMode: "chart", lev: {}, raceAxis: "time",
                 // the experimental tabs load their own bundles and keep their
                 // own sort, so switching tabs never disturbs the forecast table
-                proj: {}, projSort: {} };
+                proj: {}, projSort: {},
+                // the drop-in what-if's sliders, per division: the two have
+                // different rating ranges, so one shared setting would land a
+                // 1030 MPO reader at the top of the FPO field
+                whatif: {} };
 
 // player permalinks: #mpo-75412 opens that division with the player expanded
 {

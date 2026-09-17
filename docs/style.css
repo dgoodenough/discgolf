@@ -465,7 +465,87 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
   text-transform: uppercase; letter-spacing: .6px; color: var(--ink-3);
 }
 
-/* Five tabs no longer fit one line on a phone; let the row wrap rather than
+
+/* ==========================================================================
+   THE WHAT-IF TAB — one invented player against the projected 2027 field
+
+   Controls above, readout below, and nothing new in the palette: the tiles
+   take their colour from probClass() exactly as a table cell does, the two
+   distributions are the same sparklines every row draws (scaled up, because
+   here they are the headline rather than a column), and the banner keeps the
+   experimental yellow the other two forward tabs use.
+   ========================================================================== */
+.wi-controls { display: grid; gap: 9px 0; margin: 2px 0 4px; }
+.wi-row {
+  display: grid; align-items: center; gap: 2px 12px;
+  grid-template-columns: 104px minmax(120px, 280px) 52px minmax(0, 1fr);
+}
+.wi-label { font-size: var(--fs-small); font-weight: 700; color: var(--ink); }
+.wi-of { font-weight: 400; color: var(--ink-3); font-size: var(--fs-caption); }
+.wi-out {
+  font-variant-numeric: tabular-nums; font-weight: 700; font-size: var(--fs-body);
+  color: var(--accent); text-align: right;
+}
+.wi-rating .wi-out { color: var(--ink); }
+.wi-hint { font-size: var(--fs-caption); color: var(--ink-3); }
+/* beside the reset button, not wrapping around it */
+.pv-note .wi-hint { display: inline-block; vertical-align: middle; margin-left: 10px; max-width: 62ch; }
+/* The four class sliders pair up the moment there is room, which keeps the
+   whole control panel above the fold on a laptop — the tiles below it are the
+   point of the tab, and a reader should be able to see one move the other. */
+.wi-2up { column-gap: 32px; }
+.wi-2up .wi-row { grid-template-columns: 96px minmax(80px, 1fr) 46px; }
+@media (min-width: 700px) { .wi-2up { grid-template-columns: 1fr 1fr; } }
+
+/* The one native control on the site, so it is dressed rather than rebuilt —
+   a range input keeps its keyboard behaviour, its screen-reader role and its
+   touch target for free. `pan-y` is the same bargain the scrub probes strike:
+   the browser keeps vertical page scrolling and hands over horizontal drags,
+   which is the only axis a slider reads along. */
+.wi-range {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 20px; background: none; cursor: pointer; touch-action: pan-y;
+}
+.wi-range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--grid-strong); }
+.wi-range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--grid-strong); }
+.wi-range::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px;
+  border-radius: 50%; background: var(--accent); border: 2px solid var(--paper);
+}
+.wi-range::-moz-range-thumb {
+  width: 14px; height: 14px; border: 2px solid var(--paper);
+  border-radius: 50%; background: var(--accent);
+}
+.wi-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Every column the 2027 table carries, as a hairline-separated tile grid. */
+.wi-tiles {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(98px, 1fr));
+  gap: 1px; background: var(--grid); border: 1px solid var(--grid); margin: 0 0 14px;
+}
+.wi-tile { background: var(--paper); padding: 7px 9px 8px; }
+.wi-tile-v { display: block; font-size: 1.3rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.wi-big .wi-tile-v { font-size: 1.6rem; }
+.wi-tile-k {
+  display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--ink-2);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.wi-split { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.wi-split > div { flex: 1 1 280px; min-width: 0; }
+.wi-dists { display: flex; gap: 18px; flex-wrap: wrap; }
+.wi-dists > div { flex: 1 1 230px; min-width: 0; }
+/* the headline of this tab, not a table column: same SVG, more room */
+.wi-dists .spark, .wi-dists .sspark { width: 100%; max-width: 340px; height: 46px; }
+.wi-you td { background: var(--pend-fill); color: var(--pend-fill-ink); font-weight: 700; }
+.wi-you td b { color: inherit; }
+
+@media (max-width: 620px) {
+  .wi-row { grid-template-columns: 92px minmax(0, 1fr) 46px; }
+  .wi-hint { grid-column: 2 / -1; }
+  .wi-hint:empty { display: none; }
+}
+
+/* Six tabs no longer fit one line on a phone; let the row wrap rather than
    scroll the header sideways. */
 .controls { flex-wrap: wrap; }
 #view-seg { flex-wrap: wrap; }

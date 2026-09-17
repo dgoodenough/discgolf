@@ -177,13 +177,14 @@
   see are just how often each outcome happened. Full methodology and source:
   <a href="https://github.com/dgoodenough/discgolf">github.com/dgoodenough/discgolf</a>.</p>
 
-  <div class="band" id="experimental">7 · The two experimental tabs: 2027 and the EuroTour</div>
+  <div class="band" id="experimental">7 · The experimental tabs: 2027, What if, and the EuroTour</div>
   <p>Everything above describes a season being played. The <b>2027</b> and
   <b>EuroTour</b> tabs describe two that have not started, and they are a
   different kind of thing — a projection built out of a schedule announcement
-  rather than a forecast built out of results. They are labelled experimental
-  on the page for a reason, and it is worth knowing exactly which parts are
-  facts and which are ours.</p>
+  rather than a forecast built out of results. The <b>What if</b> tab is a
+  third thing again: it drops a player who does not exist into the 2027 field.
+  All three are labelled experimental on the page for a reason, and it is worth
+  knowing exactly which parts are facts and which are ours.</p>
 
   <p><b>What is real.</b> The calendar. The DGPT published the 2027 schedule:
   every event, its designation, its host city and its dates. Round counts are
@@ -263,13 +264,40 @@
   <i>further down</i>, so for a player sitting just outside a band the odds here
   are a floor.</p>
 
-  <p>Both tabs are rebuilt once a day off the current standings, at 20,000
-  simulated seasons rather than 100,000 — the assumptions above are worth far
-  more uncertainty than the extra runs would buy back.</p>
+  <p><b>The What-if tab is the 2027 projection asked backwards.</b> Instead of
+  "where does this player finish", it asks "what would it take" — set a rating
+  and a number of DGPT, DGPT+, major and JomezPro starts, and it reports every
+  column the 2027 table carries for a player who does not exist. It runs in
+  your browser, 8,000 simulated seasons every time you move a slider, against a
+  summary of the projection the daily refresh ships alongside it: the season
+  totals sitting at each standings position, the two playoff qualification
+  lines, the odds a given finish at a playoff event wins a Cup place, and the
+  ratings you would meet at each Cup seed.</p>
+
+  <p><b>What it adds to the assumptions above.</b> Four things, and the tab
+  lists all four. The field is <i>frozen</i>: you are added to the standings
+  rather than swapped into them, so every point you win is a point nobody else
+  loses — which flatters you most where the race is tightest, and at the very
+  top means you are racing a player the model still has winning the season.
+  Which events you play is a fresh random draw from each class every simulated
+  season, so a player who only entered the stops that suit them would do better
+  than this. The doubles championship is left off entirely, because it needs a
+  partner and 2027 pairings cannot be known. And the Cup is played out against
+  the mean rating at each seed rather than against a distribution of who holds
+  it. The two playoff events are deliberately <i>not</i> sliders: you qualify
+  for those on points or you do not, and watching that happen as you drag the
+  others is most of the point.</p>
+
+  <p>The 2027 and EuroTour tables are rebuilt once a day off the current
+  standings, at 20,000 simulated seasons rather than 100,000 — the assumptions
+  above are worth far more uncertainty than the extra runs would buy back. The
+  What-if tab reads the same daily bundle and does its own arithmetic as you
+  move the controls.</p>
 
   <div class="band">Changelog</div>
   <table class="table-ledger">
     <tbody>
+      <tr><td class="changelog-date">Sep 17</td><td><b>New tab: What if.</b> The 2027 tab answers "who makes the Cup". This one answers the question people actually ask at a tournament — <i>what would it take?</i> Set a rating and how many DGPT, DGPT+, major and JomezPro events you would enter, and every column the 2027 table carries is recomputed for a player who does not exist: projected points and finishing position, the odds of an automatic bid, a Kansas City Wide Open bid, either playoff field, winning the standings, reaching the Powerball Cup and winning it, plus the distribution of where you finish and what you would start the Cup on. It runs in the browser — 8,000 simulated seasons per slider move — against a summary of the daily projection: the season total sitting at each standings position, both playoff qualification lines, and the field you would meet at each Cup seed. Two things it cannot do and says so: the field is frozen, so the points you win are not taken off anybody, and <i>which</i> events you play is a random draw rather than a plan. The playoffs are not sliders on purpose — you earn those on points, which is half of what is being computed. Nothing about the 2026 forecast or the 2027 table changed.</td></tr>
       <tr><td class="changelog-date">Sep 9</td><td><b>Two experimental tabs: 2027 and the EuroTour.</b> The DGPT published its 2027 schedule, so the whole of next season is now projected — every announced event, round counts read off the dates, this year's ratings and this year's attendance rates, and the 2026 points structure, playoff ladder and Cup seed table assumed to carry over. The new postseason cadence is in it: the USDGC enters the MPO points race as a fourth major, and the Playoffs follow it at Ivy Hill and the Kansas City Wide Open before the Cup in Austin. A second tab does the same for the announced <b>EuroTour</b>, whose 2028 Tour Cards it races for, using its published points structure: three categories paying 250 / 200 / 150 for a win, your best six results, 1,100 for a perfect season. Its weakness there is the field rather than the rules — the table can only hold European players who appear in the 2026 DGPT World Standings. Both tabs open with what they are missing and carry the model's own assumption list; <a href="#experimental">section 7 above</a> spells out which parts are facts. Nothing about the 2026 forecast changed.</td></tr>
       <tr><td class="changelog-date">Sep 4</td><td><b>Every explanation on the site now works on a phone.</b> The definitions behind each column, the exact odds under a sparkline, the standings board on the event-odds chart — all of it was a mouse hover, which meant that on a touchscreen none of it existed, and several panels cheerfully instructed you to "hover any cell". Charts and sparklines now read out on a tap or a drag (the page still scrolls vertically underneath, so nothing is trapped), inline marks like the 🥇 open their note when tapped, and a new <b>What do these columns mean?</b> panel above the table carries every column definition plus the names they lean on — MPO, GMC, MVP Open — for anyone who did not arrive already knowing them. Nothing changed for a mouse.</td></tr>
       <tr><td class="changelog-date">Sep 4</td><td><b>Percentages are quoted to the whole percent above 10%.</b> The site used to print 41.3%, which claimed a precision it does not have: the score model's spread is a single pooled number for every player, and the what-if replay moves about half a point run to run. Below 10% a tenth still tells you something real and stays. The exact figures did not go anywhere — open any row and they are the first line, carried to two decimals. Nothing about the model changed, only what it admits to knowing.</td></tr>
