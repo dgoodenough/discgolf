@@ -32,6 +32,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A scheduled run checks out the SHA main carried when it was QUEUED,
+      # and during a tournament this workflow queues behind the live loop for
+      # as long as that loop holds the shared concurrency slot — 91 minutes on
+      # 2026-09-17, by which time the loop had pushed newer state. Computing
+      # from that tree and then pushing over the newer one is a guaranteed
+      # non-fast-forward, and that is exactly how the run died:
+      #
+      #     ! [rejected]  main -> main (fetch first)
+      #
+      # The rebase fallback below would not have saved it either: both sides
+      # append to data/live_odds.csv, so the rebase conflicts at EOF. Landing
+      # on the live head FIRST is what makes the push an ordinary
+      # fast-forward — the refresh then appends to current state rather than
+      # to a snapshot of it. `data/cache/` is gitignored, so the results cache
+      # restored below survives the reset.
+      - name: Start from the live head of ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin "$GITHUB_REF_NAME"
+          git reset --hard FETCH_HEAD
+          echo "starting from: $(git log --oneline -1)"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -75,7 +97,23 @@ jobs:
             echo "No state changes."
           else
             git commit -m "Refresh pipeline state ($(date -u +%F))"
-            git push
+            # The live loop can still land a commit during the ~90s the
+            # refresh above takes, so retry once onto whatever it pushed —
+            # the same fallback live-refresh.yml uses for the same race.
+            #
+            # It rescues the case where the two runs touched different files,
+            # and it does NOT rescue the case where both appended to
+            # data/live_odds.csv: that conflicts at EOF and fails the run,
+            # which is the right answer, because resolving it by picking a
+            # side would drop one refresh's odds series out of the record.
+            # The cost of that failure is bounded and deliberate — the site
+            # published two steps ago, the Pages build below still fires, and
+            # the only thing lost is one sample of a series the live loop
+            # goes on recording every few minutes.
+            git push || {
+              echo "push rejected — main moved under us; rebasing onto it"
+              git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push
+            }
           fi
 
       # Deploy BEFORE validating: a validate failure must mark the run red
@@ -88,7 +126,16 @@ jobs:
       # there is no "nothing changed" case to skip, and a Pages build stuck in
       # "building" past the retry budget (observed 2026-08-06, ~10 min of
       # queueing) is re-kicked by the next run rather than needing a dispatch.
+      #
+      # Runs even when an earlier step failed, which is the same argument the
+      # paragraph above makes about validate, one step earlier in the chain: on
+      # 2026-09-17 the rejected push above skipped this step and left `site`
+      # moved with no Pages build kicked. Not `always()` — this workflow's
+      # characteristic ending is being CANCELLED out of the shared concurrency
+      # group, and a cancelled run should hand the slot back to the live loop
+      # rather than spend its grace period polling for a build.
       - name: Trigger Pages build (retry on transient deploy failure)
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
