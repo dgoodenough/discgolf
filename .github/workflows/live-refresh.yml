@@ -10,10 +10,16 @@ name: Live refresh
 # scores actually moved. It keeps looping until no points event is live or it
 # nears the 6h per-job ceiling, then yields.
 #
-# Continuation across that ceiling needs no PAT: the shared concurrency group
-# keeps exactly one run active and one queued, and the coarse cron reliably
-# leaves a queued successor during any 5.5h window, so it starts the instant
-# the active run yields. Between rounds / overnight the loop idles on the cheap
+# Continuation across that ceiling needs no PAT: the concurrency group keeps
+# exactly one run active and one queued, and the coarse cron reliably leaves a
+# queued successor during any 5.5h window, so it starts the instant the active
+# run yields. That holds only while this workflow is the group's sole author —
+# a run of ANY workflow in a group evicts whatever is pending there, and a
+# successor that is not a live-refresh run does not continue the loop. It is
+# sole author as of 2026-09-17 (see the concurrency block), and the yield now
+# verifies a successor exists rather than trusting that it does.
+#
+# Between rounds / overnight the loop idles on the cheap
 # check (no pip, no sim) and, when nothing is live, exits in seconds. Public
 # repo => Actions minutes are free, so holding a runner during an event is fine.
 on:
@@ -24,9 +30,19 @@ on:
 permissions:
   contents: write
   pages: write
+  actions: read     # the yield guard below lists this workflow's queued runs
 
 concurrency:
-  group: refresh-forecast-v2   # share with the weekly full refresh; never overlap
+  group: refresh-forecast-v2   # sole author since 2026-09-17 — see below
+  # refresh.yml and publish-docs.yml were moved OUT of this group on
+  # 2026-09-17. Sharing it was meant to stop them racing this loop's publish,
+  # and it did, but it also put them in line for the group's single pending
+  # slot. The daily refresh's 11:00 cron fired late at 15:29Z, evicted the
+  # queued live-refresh successor, and took the slot this loop yielded into at
+  # 17:00Z — so live scoring went 68 minutes without an update during round 1
+  # of the Green Mountain Championship, and no run was red. Those two now gate
+  # themselves on live_events() instead: a weaker mutual exclusion, but one
+  # whose failure mode is a superseded force-push rather than a dead loop.
   # Renamed from `refresh-forecast` on 2026-08-26. GitHub's Actions
   # incident that day left a dispatch stuck reporting `queued` but never
   # actually enqueued — uncancellable (the API refuses with "cannot cancel
@@ -205,7 +221,21 @@ jobs:
             fi
 
             if [ "$(date +%s)" -ge "$BUDGET" ]; then
-              echo "Near job time limit — yielding; the queued successor takes over."
+              # Never yield into nothing. The handoff assumes the cron left a
+              # successor queued; on 2026-09-17 it had not (the daily refresh
+              # had evicted it) and this loop exited quietly into an empty
+              # slot. Stopping is the correct move either way at this point —
+              # the job cannot outlast the ceiling — but stopping with no
+              # successor is an outage, so make it red and let the cron
+              # restart be something the owner is told about. `gh` failing is
+              # not evidence of anything: fall through to the normal yield.
+              queued=$(gh run list --workflow live-refresh.yml --status queued \
+                         --json databaseId --jq 'length' 2>/dev/null) || queued=unknown
+              if [ "$queued" = "0" ]; then
+                echo "::error::Budget reached with no queued successor — the live loop stops here and only the (best-effort) cron will restart it."
+                exit 1
+              fi
+              echo "Near job time limit — yielding; queued successors: $queued."
               exit_reason=yield
               break
             fi
