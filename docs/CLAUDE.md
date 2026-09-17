@@ -17,19 +17,25 @@ tab wiring. Everything else lives in `js/`:
 | `core.js` | `state`, the `$` helper, every display formatter, `loadDiv` |
 | `tooltip.js` | the scrub `probe()` and the `data-tip` marks |
 | `cells.js` | the shared render layer: sparklines, links, counting caps, the live-event window |
-| `sim.js` | the client-side Monte Carlo (cutline replay, per-event points draws) |
+| `sim.js` | the client-side Monte Carlo: the cutline replay, the per-event points draws, and the 2027 drop-in |
 | `movers.js` | the biggest-movers panel |
 | `forecast.js` | the standings table, column guide, expanded row, what-if |
 | `possible.js` | the five "what's left" panels |
 | `race.js` | the event-odds chart and table |
-| `projection.js` | the two experimental tabs (2027, EuroTour) |
+| `projection.js` | the two experimental tables (2027, EuroTour) |
+| `whatif.js` | the What-if tab: sliders for an invented player, dropped into the 2027 field |
 
 **The import graph is layered and must stay acyclic.** `core` imports nothing;
 each layer only reaches downward:
 
 ```
 core <- tooltip <- cells <- sim <- movers <- {forecast, possible, race, projection} <- app
+                                                                   ^-- whatif <-'
 ```
+
+`whatif` sits one layer above `projection` because it reuses `loadProj` — the
+two tabs read the same 2027 bundle, and fetching it twice would be a second
+copy of the caching rule as well as a second request.
 
 A helper earns a place in `core` or `cells` once a *second* module needs it.
 One with a single caller stays next to that caller — that is why `monthDay`

@@ -1,9 +1,10 @@
 /* DGPT Standings Forecast — the shell.
 
-   Five tabs over two rendering paths: three views of the live 2026 bundle and
-   two of the projection bundles, with exactly one section visible at a time.
-   This module owns the page header, the freshness flag and the tab wiring; the
-   views themselves live in js/.
+   Six tabs over three rendering paths: three views of the live 2026 bundle,
+   two tables off the projection bundles, and the what-if, which reads the 2027
+   bundle but renders one invented player rather than the field. Exactly one
+   section is visible at a time. This module owns the page header, the
+   freshness flag and the tab wiring; the views themselves live in js/.
 
    Loaded as `<script type="module">`, so the imports below are the whole
    dependency graph and nothing here is global. */
@@ -15,14 +16,16 @@ import { renderForecast, toggleDetail } from "./js/forecast.js";
 import { renderPossible } from "./js/possible.js";
 import { renderRace } from "./js/race.js";
 import { PROJ_VIEWS, renderProjection } from "./js/projection.js";
+import { renderWhatIf } from "./js/whatif.js";
 
 /* ---------- shell ---------- */
 
-/* Every top-level view and the section it owns, in one list: five tabs across
-   two rendering paths, and exactly one of them visible at a time. */
+/* Every top-level view and the section it owns, in one list: six tabs across
+   three rendering paths, and exactly one of them visible at a time. */
 const VIEW_SECTIONS = [
   ["forecast", "#view-forecast"], ["possible", "#view-possible"],
-  ["race", "#view-race"], ["next", "#view-next"], ["euro", "#view-euro"],
+  ["race", "#view-race"], ["next", "#view-next"], ["whatif", "#view-whatif"],
+  ["euro", "#view-euro"],
 ];
 
 /* What counts as late is set by the pipeline's own cadence, not a fixed
@@ -50,6 +53,15 @@ async function render() {
   if (proj && !state.permalink) {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== proj.view;
     await renderProjection(proj);
+    return;
+  }
+  // The what-if reads the same 2027 bundle and writes its own header for the
+  // same reason, but it is not a table of the field — it is one invented
+  // player against it — so it renders itself rather than going through
+  // PROJ_VIEWS' shared table path.
+  if (state.view === "whatif" && !state.permalink) {
+    for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "whatif";
+    await renderWhatIf();
     return;
   }
   const d = await loadDiv(state.div);

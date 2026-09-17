@@ -17,9 +17,17 @@ standings.compute()     per division, from banked results
      -> snapshot.record()   predictions/history_*.csv <- the scorecard
      -> liveodds.record()   the live win-probability series
   -> project.run()      the experimental 2027 / EuroTour tabs
+     -> whatif.Kit         the drop-in summary the What-if tab reads
 movers / feed / liveodds.write_json()
 invariants.run_checks()
 ```
+
+`whatif.py` is a summary of a projection rather than a stage of one: it rides
+along with `project.run` and reduces the 2027 DGPT standings ladder, both
+playoff gates and the Cup seed profile to a ~25 KB block in `meta.whatif`, so
+the browser can rank an invented player against the field without re-simulating
+it. Its docstring is the argument for why quantiles are enough. It is emitted
+only for a tour with a postseason — the EuroTour bundle carries none.
 
 Supporting modules: `pdga_api` (authenticated REST, needs `.env`), `live_api`
 (public live scoring, no auth), `ratings`, `fields` (who plays what),
@@ -72,7 +80,7 @@ Supporting modules: `pdga_api` (authenticated REST, needs `.env`), `live_api`
 
 ## Tests
 
-`python -m pytest tests -q` — 231 tests, ~3s, gates every PR. `tests/fixtures/`
+`python -m pytest tests -q` — 243 tests, ~4s, gates every PR. `tests/fixtures/`
 holds captured PDGA payloads (the regression corpus from
 `notes/HARDENING.md` item 1); `tests/fixtures/capture.py` adds new ones. When a
 live-API shape change bites, the fix is a fixture plus a test, not just a

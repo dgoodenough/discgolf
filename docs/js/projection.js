@@ -407,4 +407,4 @@ async function renderProjection(view) {
   wireSparkTips(el, m);
 }
 
-export { PROJ_VIEWS, renderProjection };
+export { loadProj, PROJ_VIEWS, renderProjection };
