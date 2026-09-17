@@ -20,8 +20,19 @@ permissions:
   contents: write
   pages: write
 
+# Own group since 2026-09-17. This sat in `refresh-forecast-v2` to avoid
+# racing the live loop's publish, but a group holds only one PENDING run, so
+# dispatching this during play evicted the live loop's queued successor — the
+# mechanism that stalled live scoring for 68 minutes that day (the daily
+# refresh did it on a cron; a human dispatching this would do the same thing
+# on purpose). Run #3 on 2026-09-05 shows the other side of it: queued 90
+# minutes behind the live loop, then cancelled by the next arrival.
+#
+# The race this used to prevent is real but cheap: both force-push `site` to a
+# single parentless commit, so the loser is simply superseded, and the live
+# loop republishes within ~5 minutes anyway. A warning is enough.
 concurrency:
-  group: refresh-forecast-v2   # never race the live loop's own publish
+  group: publish-docs
   cancel-in-progress: false
 
 jobs:
@@ -30,6 +41,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Warn if a points event is live
+        run: |
+          rc=0
+          # python3, not python: this job has no setup-python step. A missing
+          # interpreter gives rc=127, which simply skips the warning.
+          python3 -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)' || rc=$?
+          if [ "$rc" = 0 ]; then
+            echo "::warning::A points event is live. This publish and the live loop's next one (within ~5 min) both force-push \`site\`; whichever lands second wins. Re-dispatch if your pages do not appear."
+          fi
 
       - name: Carry the published data bundle across
         run: |

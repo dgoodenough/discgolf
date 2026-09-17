@@ -103,6 +103,32 @@ pattern across them, not any single bug, is what this backlog addresses.
     UTC-rollover bug waiting for a US Sunday finish, and the second one
     (permanent caching keyed on date) was sitting behind the first.
 
+11. **The live loop yielded into an empty slot; nobody was told.** The
+    68-minute gap on 2026-09-17 (round 1, Green Mountain Championship) was
+    not a crash — every guard in `live-refresh.yml` worked, and the run
+    that stopped updating the site finished green. The loop survives
+    GitHub's 6h job ceiling by yielding at 5.5h to a successor the coarse
+    cron leaves queued, and it never checked that one was there. A
+    concurrency group holds exactly one *pending* run, so any arrival
+    evicts whatever is queued: the daily `refresh.yml`, which shared the
+    group, fired late at 15:29Z, displaced the queued live-refresh run,
+    and inherited the slot the loop yielded at 17:00Z. It was not a
+    workflow that continues the loop, so live scoring simply stopped, and
+    the cron — best-effort, 1.5-3h in practice — had not minted a
+    replacement 68 minutes later. Two smaller bugs rode along: that daily
+    run checked out the SHA pinned when it was *created* (no `ref:`), 95
+    minutes stale by the time the slot freed, so its `git push` was
+    rejected non-fast-forward with no rebase fallback — it lost its state
+    commit and went red for a reason that had nothing to do with why it
+    mattered. Fixed 2026-09-17 by giving `refresh.yml` and
+    `publish-docs.yml` their own groups (they gate on `live_events()`
+    instead, which can only cost a superseded force-push), and by making
+    the yield verify a queued successor exists and fail the run when it
+    does not. The residual gap is that failing is all it can do: without a
+    PAT the loop cannot dispatch its own successor, so a missing successor
+    is still a stall — just a loud one, ~20 minutes earlier than the hard
+    timeout would have made it.
+
 ## The plan
 
 Ordered by expected payoff. "In-season safe" = additive, can't change a

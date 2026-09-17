@@ -21,16 +21,67 @@ permissions:
   contents: write
   pages: write
 
+# Its own group as of 2026-09-17. This used to share `refresh-forecast-v2`
+# with live-refresh.yml so the two could never overlap, but GitHub allows only
+# ONE pending run per group: a run arriving while another holds the group
+# evicts whatever was queued behind it. This workflow's 11:00 cron fired late
+# at 15:29Z on 2026-09-17, evicted the live loop's queued successor, and then
+# inherited the slot when that loop yielded at its 5.5h budget — so the live
+# refresh simply stopped, mid-round-1 of the Green Mountain Championship, with
+# nothing red to show for it. Overlap is now prevented by the live gate below
+# instead, which is the weaker guarantee but cannot strand the live loop.
 concurrency:
-  group: refresh-forecast-v2
+  group: daily-refresh
   cancel-in-progress: false
 
 jobs:
+  # Stand down entirely while a points event is on. The live loop refreshes
+  # every ~5 minutes during play and already covers everything this workflow
+  # does except `project.run()` — the experimental 2027 / EuroTour tabs, whose
+  # inputs move on the scale of weeks and whose last published bundle the live
+  # loop carries across on every republish. Racing it for the same two branches
+  # to regenerate those is a bad trade; stale-by-a-weekend is the right answer.
+  #
+  # stdlib only (schedule.live_events reads data/schedule_2026.csv off disk),
+  # so this costs a checkout and no pip. Fails closed: a crashed check stops
+  # the run rather than being read as "nothing live".
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      live: ${{ steps.check.outputs.live }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: check
+        run: |
+          rc=0
+          python -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)' || rc=$?
+          case "$rc" in
+            0) echo "A points event is live — deferring to live-refresh.yml."
+               echo "live=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "live=false" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::live_events() check crashed (rc=$rc)"; exit 1 ;;
+          esac
+
   refresh:
+    needs: gate
+    if: needs.gate.outputs.live != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # `ref: main` matters: with no ref, checkout takes the SHA pinned when
+      # the run was CREATED, which for a run that sat queued is not main's tip.
+      # On 2026-09-17 that was a 95-minute-old SHA and the push below was
+      # rejected non-fast-forward, losing the state commit and reddening a run
+      # that had otherwise done its job.
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-python@v5
         with:
@@ -75,7 +126,9 @@ jobs:
             echo "No state changes."
           else
             git commit -m "Refresh pipeline state ($(date -u +%F))"
-            git push
+            # Same fallback the live loop uses: the live refresh can land a
+            # commit between this checkout and this push.
+            git push || { git pull --rebase --autostash && git push; }
           fi
 
       # Deploy BEFORE validating: a validate failure must mark the run red
