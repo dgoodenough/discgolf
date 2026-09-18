@@ -414,6 +414,38 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .ledger-light .rc-c10 { color: #4a4d52; }
 .ledger-light .rc-c11 { color: #7a4a20; }
 
+/* ------------------------------------------------------------------ fork line
+
+   A ladder of cuts, not a dozen identities, so the colour here is an ORDINAL
+   ramp rather than the categorical palette above: one hue, monotone lightness,
+   deepest at the cut that matters most. Green because these are degrees of
+   still-alive; the one band that means eliminated takes --neg, which is the
+   only place on this chart the palette's negative colour belongs.
+
+   Both ramps are stepped against their own --paper (light end >= 2:1, adjacent
+   steps >= 0.06 OKLCH L) so the faintest cut still reads as a line rather than
+   as a smudge, and the order is legible as order. */
+.fk-line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round;
+           stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.fk-band { fill: currentColor; opacity: .12; }
+.fk-dead { fill: var(--neg); opacity: .09; }
+/* the leaderboard's own best score: a reference the cuts are read against
+   rather than a cut itself, so greyscale, dashed, and out of the ramp */
+.fk-best { fill: none; stroke: var(--ink-2); stroke-width: 1.25; stroke-dasharray: 4 3;
+           opacity: .7; vector-effect: non-scaling-stroke; }
+.fk-best-end { color: var(--ink-2); }
+.fk-sw { background: currentColor; }
+.fk-deadsw { background: var(--neg); opacity: .5; }
+
+.fk-c0 { color: #2a6344; }
+.fk-c1 { color: #398c5f; }
+.fk-c2 { color: #47b47a; }
+.fk-c3 { color: #5fdc9b; }
+.ledger-light .fk-c0 { color: #6fac8e; }
+.ledger-light .fk-c1 { color: #438d69; }
+.ledger-light .fk-c2 { color: #1d6845; }
+.ledger-light .fk-c3 { color: #054526; }
+
 /* ==========================================================================
    THE EXPERIMENTAL TABS — 2027 and the EuroTour
 
