@@ -61,6 +61,22 @@ PEAK_MIN = 0.15     # "was alive": actually led the race at some point
 MAX_FALLEN = 3
 MAX_LINES = 12
 
+# The fork line, from the Upshot podcast's question: at what score can you stick
+# a fork in them, because they are done? It is the complement of the race chart
+# above — not who is winning, but how far back the tournament is still live. One
+# cut is one line, and a line is a SCORE: the worst number on the board still
+# holding better than those odds of winning it.
+#
+# The cuts nest by construction: a player above 10% is above 1%, so each line's
+# field is a subset of the one below it and the lines can never cross. That is
+# what lets the app fill the gaps between them as bands.
+#
+# 0.0 is the honest floor of a 10,000-sim model rather than "impossible" — it
+# means the player took none of the ten thousand. It is also the one cut the
+# history answers exactly: `_block` records every player carrying win equity
+# whatever their place, so nobody above this line is ever missing from a block.
+FORK_CUTS = (0.0, 0.001, 0.01, 0.10)
+
 
 def _now() -> str:
     """UTC, offset-stamped — the app parses these as absolute instants.
@@ -173,6 +189,46 @@ def record(res, division: str) -> str:
 
 # ------------------------------------------------------------------ export
 
+def _fork(blocks: dict[int, list[dict]], n: int) -> dict:
+    """Per observation, the worst score still alive at each of FORK_CUTS."""
+    lines, who, names = [], [], {}
+    for cut in FORK_CUTS:
+        ys: list[float | None] = []
+        holders: list[int | None] = []
+        for i in range(n):
+            live = [r for r in blocks[i] if float(r["win"]) > cut]
+            # A cut with nobody above it is a real state, not missing data: at
+            # the first observation of a wide-open major nobody is at 10% yet,
+            # and that line has to begin where somebody first gets a grip on
+            # the tournament rather than being faked from the field average.
+            if not live:
+                ys.append(None)
+                holders.append(None)
+                continue
+            worst = max(float(r["cur"]) for r in live)
+            # Of the players tied on that score, name the one closest to the
+            # cut. The fork line is about who goes next, not about everyone
+            # who happens to be sitting on the same number.
+            edge = min((r for r in live if float(r["cur"]) == worst),
+                       key=lambda r: float(r["win"]))
+            names[str(int(edge["pdga_number"]))] = edge["name"]
+            ys.append(worst)
+            holders.append(int(edge["pdga_number"]))
+        lines.append(ys)
+        who.append(holders)
+    return {
+        "cuts": list(FORK_CUTS),
+        "lines": lines,
+        "who": who,
+        # names for the players on a line only, which is a few dozen over an
+        # event rather than the whole recorded field
+        "names": names,
+        # the best score on the board, so the chart has a top edge and the
+        # reader can see the gap the fork line is being measured back from
+        "lead": [min(float(r["cur"]) for r in blocks[i]) for i in range(n)],
+    }
+
+
 def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dict | None:
     """One division's chart payload from its rows for a single event."""
     if not rows:
@@ -199,12 +255,13 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
     # Still forced non-decreasing: the recorded set shrinks as players fall
     # out of contention, and a change in who is in it must not walk the
     # tournament backwards.
-    x = [0] * n
-    seen: dict[int, list[int]] = {}
+    blocks: dict[int, list[dict]] = {}
     for r in rows:
-        seen.setdefault(at[r["taken_at"]], []).append(int(r["thru"]))
-    for i, thrus in seen.items():
-        x[i] = round(sum(thrus) / len(thrus))
+        blocks.setdefault(at[r["taken_at"]], []).append(r)
+
+    x = [0] * n
+    for i, blk in blocks.items():
+        x[i] = round(sum(int(r["thru"]) for r in blk) / len(blk))
     for i in range(1, n):
         x[i] = max(x[i], x[i - 1])
 
@@ -268,6 +325,7 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
         "prev": {str(p): round(v.get(n - 2, 0.0), 5) for p, v in by_player.items()}
                 if n > 1 else {},
         "tracked_from": x[0],
+        "fork": _fork(blocks, n),
     }
 
 
