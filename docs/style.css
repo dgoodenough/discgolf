@@ -437,14 +437,14 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .fk-sw { background: currentColor; }
 .fk-deadsw { background: var(--neg); opacity: .5; }
 
+/* Three steps, deepest at the tightest call: the ramp tracks how alive a score
+   still is, which runs the same way down the chart as it did before. */
 .fk-c0 { color: #2a6344; }
-.fk-c1 { color: #398c5f; }
-.fk-c2 { color: #47b47a; }
-.fk-c3 { color: #5fdc9b; }
+.fk-c1 { color: #47b47a; }
+.fk-c2 { color: #5fdc9b; }
 .ledger-light .fk-c0 { color: #6fac8e; }
-.ledger-light .fk-c1 { color: #438d69; }
-.ledger-light .fk-c2 { color: #1d6845; }
-.ledger-light .fk-c3 { color: #054526; }
+.ledger-light .fk-c1 { color: #1d6845; }
+.ledger-light .fk-c2 { color: #054526; }
 
 /* ==========================================================================
    THE EXPERIMENTAL TABS — 2027 and the EuroTour

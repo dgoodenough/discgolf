@@ -61,21 +61,35 @@ PEAK_MIN = 0.15     # "was alive": actually led the race at some point
 MAX_FALLEN = 3
 MAX_LINES = 12
 
-# The fork line, from the Upshot podcast's question: at what score can you stick
-# a fork in them, because they are done? It is the complement of the race chart
-# above — not who is winning, but how far back the tournament is still live. One
-# cut is one line, and a line is a SCORE: the worst number on the board still
-# holding better than those odds of winning it.
+# The fork line, from the Upshot podcast's question: at what score can you
+# stick a fork in them, because they are done? It is the complement of the race
+# chart above — not who is winning, but how far back the tournament is still
+# live.
 #
-# The cuts nest by construction: a player above 10% is above 1%, so each line's
-# field is a subset of the one below it and the lines can never cross. That is
-# what lets the app fill the gaps between them as bands.
+# A line is a SCORE, and which score depends on how wrong you are willing to
+# be. Walk the board from the leader down, adding up the win probability
+# sitting on each score, and stop once you have covered this much of it.
+# Everything below is the rest of the distribution, and that rest IS the chance
+# the call is wrong — so each line's label is its own error rate. Over a
+# 25-event season, 1-in-20 is being wrong about once a year, 1-in-200 about
+# once a decade.
 #
-# 0.0 is the honest floor of a 10,000-sim model rather than "impossible" — it
-# means the player took none of the ten thousand. It is also the one cut the
-# history answers exactly: `_block` records every player carrying win equity
-# whatever their place, so nobody above this line is ever missing from a block.
-FORK_CUTS = (0.0, 0.001, 0.01, 0.10)
+# That calibration is the whole reason for cutting this way. The first version
+# cut on each player's own win probability — "the worst score still above 1%" —
+# which reads the same and is not: how much of the field sits below such a line
+# depends on how many players clear the bar, so measured over this season's
+# recorded blocks the ">10%" line carried a median 13% chance of being wrong
+# and 47% at its worst. A label that swings four-fold behind a fixed number is
+# not telling the reader anything.
+#
+# Accumulated over SCORES, best first, so the covered set is downward-closed.
+# Taking the top players by win probability until they summed to 95% instead
+# would let a -8 on 1.2% be skipped while a -6 on 1.5% was kept, which leaves
+# mass above the line uncounted and makes the label a lie.
+#
+# Outermost first: lines[0] is the most conservative cut, which is the BOTTOM
+# of the chart, so the app's bands and its colour ramp both run with the index.
+FORK_COVER = (0.995, 0.95, 0.80)
 
 
 def _now() -> str:
@@ -190,36 +204,60 @@ def record(res, division: str) -> str:
 # ------------------------------------------------------------------ export
 
 def _fork(blocks: dict[int, list[dict]], n: int) -> dict:
-    """Per observation, the worst score still alive at each of FORK_CUTS."""
-    lines, who, names = [], [], {}
-    for cut in FORK_CUTS:
+    """Per observation, the winner's-score quantile at each of FORK_COVER."""
+    # One pass per block: the win probability sitting on each score, and the
+    # strongest player on it — the one to name if that score becomes a line.
+    # A quantile cut lands on a score, not on a player, so the whole tied group
+    # is in or out together and "who is on the line" has to be chosen.
+    boards = []
+    for i in range(n):
+        mass: dict[float, float] = {}
+        face: dict[float, dict] = {}
+        for r in blocks[i]:
+            score, win = float(r["cur"]), float(r["win"])
+            mass[score] = mass.get(score, 0.0) + win
+            if score not in face or win > float(face[score]["win"]):
+                face[score] = r
+        boards.append((mass, face, sorted(mass), sum(mass.values())))
+
+    lines, who, alive, names = [], [], [], {}
+    for cover in FORK_COVER:
         ys: list[float | None] = []
         holders: list[int | None] = []
-        for i in range(n):
-            live = [r for r in blocks[i] if float(r["win"]) > cut]
-            # A cut with nobody above it is a real state, not missing data: at
-            # the first observation of a wide-open major nobody is at 10% yet,
-            # and that line has to begin where somebody first gets a grip on
-            # the tournament rather than being faked from the field average.
-            if not live:
+        counts: list[int] = []
+        for i, (mass, face, scores, total) in enumerate(boards):
+            # No equity anywhere in the block is not a state the live feed
+            # produces — somebody wins every simulated tournament — but a
+            # quantile of nothing has no answer, so say so rather than divide.
+            if total <= 0:
                 ys.append(None)
                 holders.append(None)
+                counts.append(0)
                 continue
-            worst = max(float(r["cur"]) for r in live)
-            # Of the players tied on that score, name the one closest to the
-            # cut. The fork line is about who goes next, not about everyone
-            # who happens to be sitting on the same number.
-            edge = min((r for r in live if float(r["cur"]) == worst),
-                       key=lambda r: float(r["win"]))
-            names[str(int(edge["pdga_number"]))] = edge["name"]
-            ys.append(worst)
-            holders.append(int(edge["pdga_number"]))
+            run, line = 0.0, scores[-1]
+            for score in scores:
+                # Normalised by the block's own total: `win` is rounded to four
+                # places per player, so a block lands within ~0.001 of 1 rather
+                # than on it, and at 0.995 that rounding alone is worth a stroke.
+                run += mass[score] / total
+                if run >= cover - 1e-9:
+                    line = score
+                    break
+            p = int(face[line]["pdga_number"])
+            names[str(p)] = face[line]["name"]
+            ys.append(line)
+            holders.append(p)
+            counts.append(sum(1 for r in blocks[i] if float(r["cur"]) <= line))
         lines.append(ys)
         who.append(holders)
+        alive.append(counts)
     return {
-        "cuts": list(FORK_CUTS),
+        "cover": list(FORK_COVER),
         "lines": lines,
         "who": who,
+        # how many players are at or better than the line — the count is what
+        # makes a risk level concrete ("thirty-four are still in it at 1-in-20")
+        "alive": alive,
         # names for the players on a line only, which is a few dozen over an
         # event rather than the whole recorded field
         "names": names,
