@@ -224,63 +224,117 @@ def fork_for(division: str) -> dict:
     return series_for(division)["fork"]
 
 
-def test_the_fork_line_is_the_worst_score_still_above_each_cut():
-    """The example the feature was asked for: -6 at 1%, -11 at 10%."""
+def line_at(f: dict, cover: float, i: int = 0):
+    return f["lines"][f["cover"].index(cover)][i]
+
+
+def test_the_fork_line_is_the_winners_score_quantile():
+    """Walk the board down from the leader until `cover` of the win
+    probability is behind you; the score you stop on is the line."""
     liveodds.record(res({
-        1: stat(0.36, cur=-11.0, place=7),     # the 10% line
-        2: stat(0.18, cur=-12.0, place=1),     # leading, so never the worst
-        3: stat(0.0146, cur=-6.0, place=51),   # the 1% and 0.1% line
-        4: stat(0.0004, cur=-3.0, place=70),   # only the >0 line
-        5: stat(0.0, cur=2.0, place=80),       # done
+        1: stat(0.60, cur=-12.0, place=1),     # 60% cumulative at -12
+        2: stat(0.25, cur=-10.0, place=2),     # 85% by -10
+        3: stat(0.12, cur=-8.0, place=3),      # 97% by -8
+        4: stat(0.02, cur=-4.0, place=9),      # 99% by -4
+        5: stat(0.01, cur=1.0, place=20),      # 100% by +1
     }), "MPO")
     f = fork_for("mpo")
-    assert f["cuts"] == [0.0, 0.001, 0.01, 0.10]
-    assert [line[0] for line in f["lines"]] == [-3.0, -6.0, -6.0, -11.0]
+    assert f["cover"] == [0.995, 0.95, 0.80]
+    assert line_at(f, 0.80) == -10.0          # 60% is short, 85% clears
+    assert line_at(f, 0.95) == -8.0           # 97% is the first past 95%
+    assert line_at(f, 0.995) == 1.0           # only the whole board clears 99.5%
     assert f["lead"] == [-12.0]
 
 
-def test_the_fork_lines_cannot_cross():
-    """Each cut's field is a subset of the one below it, so the lines nest.
+def test_the_covered_set_is_downward_closed():
+    """The quantile runs over SCORES, not over players ranked by odds.
 
-    The app fills the gaps between them as bands and would draw an inverted
-    band as a fold, so this is a property of the payload, not of the drawing.
+    Taking the best players until they sum to `cover` and reading off the worst
+    score among them would skip player 3 here — better score, less equity —
+    and leave its mass above the line uncounted, which is exactly the amount
+    the label claims is below it.
     """
+    liveodds.record(res({
+        1: stat(0.70, cur=-12.0, place=1),
+        2: stat(0.20, cur=-6.0, place=8),      # more equity, worse score
+        3: stat(0.10, cur=-9.0, place=4),      # less equity, better score
+    }), "MPO")
+    f = fork_for("mpo")
+    # by score: -12 (70%), -9 (80%), -6 (100%). 80% is reached AT -9.
+    assert line_at(f, 0.80) == -9.0
+    assert line_at(f, 0.95) == -6.0
+
+
+def test_players_tied_on_a_score_are_covered_together():
+    """A cut lands on a score, so a tied group is in or out as a block."""
+    liveodds.record(res({
+        1: stat(0.50, cur=-10.0, place=1),
+        2: stat(0.16, cur=-7.0, place=2),      # three players tied on -7,
+        3: stat(0.16, cur=-7.0, place=2),      # 48% between them: only the
+        4: stat(0.16, cur=-7.0, place=2),      # whole group clears 95%
+        5: stat(0.02, cur=0.0, place=30),
+    }), "MPO")
+    f = fork_for("mpo")
+    assert line_at(f, 0.80) == -7.0
+    assert line_at(f, 0.95) == -7.0
+    assert line_at(f, 0.995) == 0.0
+
+
+def test_the_lines_cannot_cross():
+    """A more cautious call always sits further down the board, and the app
+    fills the gaps between the lines as bands — an inverted one would fold."""
     liveodds.record(res({p: stat(round(0.5 / p, 4), cur=float(p - 12), place=p)
                          for p in range(1, 26)}), "MPO")
     liveodds.record(res({p: stat(round(0.9 / p ** 2, 4), cur=float(p - 20), place=p)
                          for p in range(1, 26)}), "MPO")
     f = fork_for("mpo")
     for i in range(len(f["lines"][0])):
-        col = [line[i] for line in f["lines"]]
-        assert col == sorted(col, reverse=True), f"cuts crossed at {i}: {col}"
+        col = [line[i] for line in f["lines"]]      # outermost first
+        assert col == sorted(col, reverse=True), f"lines crossed at {i}: {col}"
         assert f["lead"][i] <= col[-1]
 
 
-def test_a_cut_nobody_has_reached_yet_is_a_gap_not_a_zero():
-    """Thursday morning at a wide-open major: nobody is at 10% yet."""
-    liveodds.record(res({1: stat(0.05, cur=-2.0), 2: stat(0.04, cur=-1.0)}), "MPO")
-    liveodds.record(res({1: stat(0.40, cur=-9.0), 2: stat(0.04, cur=-1.0)}), "MPO")
-    ten = fork_for("mpo")["lines"][-1]
-    assert ten == [None, -9.0]
+def test_rounding_in_the_recorded_odds_does_not_move_a_line():
+    """`win` is rounded to 4dp per player, so a block's mass misses 1.0.
+
+    Unnormalised, a block summing to 0.9993 can never reach 0.995 and every
+    deep line would be dragged to the bottom of the board.
+    """
+    stats = {1: stat(0.9970, cur=-9.0, place=1), 2: stat(0.0023, cur=-2.0, place=6)}
+    assert sum(s["win"] for s in stats.values()) < 1.0
+    liveodds.record(res(stats), "MPO")
+    assert line_at(fork_for("mpo"), 0.995) == -9.0
 
 
-def test_the_named_holder_is_the_player_on_the_bubble():
-    """Tied on the worst score, the one nearest the cut goes out next."""
+def test_the_fork_counts_the_players_still_in_it():
     liveodds.record(res({
-        1: stat(0.5, cur=-9.0, place=1),
-        2: stat(0.2, cur=-4.0, place=12),      # same score, comfortably above
-        3: stat(0.011, cur=-4.0, place=13),    # same score, on the edge of 1%
+        1: stat(0.80, cur=-9.0, place=1),
+        2: stat(0.15, cur=-5.0, place=4),
+        3: stat(0.05, cur=3.0, place=22),
     }), "MPO")
     f = fork_for("mpo")
-    one_pct = f["cuts"].index(0.01)
-    assert f["lines"][one_pct] == [-4.0]
-    assert f["names"][str(f["who"][one_pct][0])] == "P3"
+    at = f["cover"].index(0.95)
+    assert f["lines"][at][0] == -5.0
+    assert f["alive"][at][0] == 2          # the -9 and the -5, not the +3
+
+
+def test_the_named_holder_is_the_strongest_player_on_the_line():
+    """The whole tied group is covered, so the name is the one worth printing."""
+    liveodds.record(res({
+        1: stat(0.70, cur=-9.0, place=1),
+        2: stat(0.05, cur=-4.0, place=12),     # same score, the weaker of the two
+        3: stat(0.25, cur=-4.0, place=11),     # same score, the one to name
+    }), "MPO")
+    f = fork_for("mpo")
+    at = f["cover"].index(0.95)
+    assert f["lines"][at][0] == -4.0
+    assert f["names"][str(f["who"][at][0])] == "P3"
 
 
 def test_the_fork_names_only_the_players_who_held_a_line():
     liveodds.record(res({
-        1: stat(0.5, cur=-9.0, place=1),
-        2: stat(0.02, cur=-4.0, place=12),
+        1: stat(0.90, cur=-9.0, place=1),
+        2: stat(0.10, cur=-4.0, place=12),
         3: stat(0.0, cur=3.0, place=20),       # recorded, but never on a line
     }), "MPO")
     assert set(fork_for("mpo")["names"].values()) == {"P1", "P2"}

@@ -37,9 +37,10 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   tournament" every time it runs; those answers are now recorded, so the
   **Event odds** tab draws every contender's win probability through the event
   on a holes-played axis — including the players who led it and lost it — over
-  a table of everyone still above 0.1%. Under it, the **fork line**: the worst
-  score on the board still holding better than 10%, 1%, 0.1% and better than
-  nothing, so you can read how far back the tournament is still live.
+  a table of everyone still above 0.1%. Under it, the **fork line**: how far
+  back the tournament is still live, drawn at three tolerances. Each line is
+  the score the eventual winner beats 4 times in 5, 19 in 20, or 199 in 200,
+  so the label on a line is how often calling everyone below it done is wrong.
 - **The seed, not just the spot.** The Cup starts every qualifier on a score
   set by their World Standings position — -7 for the MPO No. 1, -6 for FPO,
   down to even for the bottom seeds. The **Starting strokes** column runs every

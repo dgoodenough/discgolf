@@ -216,19 +216,24 @@ function raceChartHtml(r) {
    The Upshot podcast's question — at what line can you stick a fork in them,
    because they're done? — and the exact complement of the race above. That
    chart asks who is winning. This one asks how far back the tournament is
-   still live, which is the question everyone outside the lead card is actually
-   asking.
+   still live, which is the question everyone outside the lead card is asking.
 
-   Each line is a SCORE, not a probability: the worst number on the board still
-   holding better than those odds of winning (dgpt/liveodds.py builds them).
-   Which makes the reading DOWNWARD from a line the strong one, and it is worth
-   being precise about why. Below the 1% line there is nobody above 1% — if
-   there were, the line would be down there with them. Above it, nothing is
-   promised: a player can sit on the leaders' score and still be a longshot.
-   So every band is a ceiling, and the labels say so.
+   Each line is a SCORE, and which score depends on how wrong the reader is
+   willing to be: walk the board down from the leader adding up the win
+   probability on each score, and stop once this much of it is covered. What is
+   left below is the chance the call is wrong, so a line's label is its own
+   error rate — 1 in 20 is once a year over a 25-event season, 1 in 200 about
+   once a decade. dgpt/liveodds.py builds them and carries the argument for why
+   they are cut this way rather than on each player's own odds.
 
-   The cuts nest — everyone above 10% is above 1% — so the lines cannot cross
-   and the bands between them are always the right way up. */
+   Higher coverage is a more conservative call, so it sits further down the
+   board and the lines cannot cross. `cover` arrives outermost first, which
+   means index 0 is the bottom line here and the ramp runs with the index.
+
+   The one thing to keep straight in the copy: the guarantee runs DOWNWARD.
+   Below a line, that is how often the winner comes from down there. Above it
+   nothing is promised — a player can sit on the leaders' score and still be a
+   longshot — so the bands are ceilings on a score, not a floor under it. */
 
 const FK = { W: 900, H: 250, L: 42, R: 142, T: 16, B: 34 };
 const FK_PAD = 0.25;   // a quarter stroke, so no line ends up riding the frame
@@ -236,10 +241,21 @@ const FK_PAD = 0.25;   // a quarter stroke, so no line ends up riding the frame
 /* Golf's own notation, and the same form the table below uses. */
 const toPar = (s) => (s === 0 ? "E" : (s > 0 ? "+" : "") + s);
 
-/* Not fmtPct: these are the round numbers the cuts were chosen as — "1%", not
-   the formatter's data-precision "1.0%" — and the bottom cut is not really a
-   percentage at all. It is "won at least one of the ten thousand". */
-const cutLabel = (c) => (c <= 0 ? "any" : +(c * 100).toFixed(1) + "%");
+/* A line is labelled by how often it is WRONG, not by the coverage it is built
+   from: "1 in 20" cannot be misread, where a bare "95%" on a chart whose sister
+   panel plots win probability certainly could be. */
+const riskLabel = (cover) => `1 in ${Math.round(1 / (1 - cover))}`;
+
+/* "1 in 20" over a 25-event season is once a year — the frequency is the way
+   the reader actually holds a risk, so the copy quotes it. Derived from the
+   bundle's own schedule rather than a hardcoded season length. */
+function riskEvery(cover, events) {
+  const per = (1 - cover) * events;                // misses per season
+  if (per >= 1.6) return `about ${Math.round(per)} times a season`;
+  if (per >= 0.8) return "about once a season";
+  const years = Math.round(1 / per);
+  return years >= 8 ? "about once a decade" : `about once every ${years} years`;
+}
 
 const lastAt = (ys) => {
   for (let i = ys.length - 1; i >= 0; i--) if (ys[i] != null) return i;
@@ -268,7 +284,7 @@ function forkGeom(r) {
 
 function forkChartHtml(r) {
   const { W, H, L, R, T } = FK;
-  const f = r.fork, g = forkGeom(r), n = r.x.length, k = f.cuts.length;
+  const f = r.fork, g = forkGeom(r), n = r.x.length, k = f.cover.length;
 
   // A cut nobody has reached yet is a gap, not a zero (dgpt/liveodds.py), so
   // the pen lifts rather than dropping the line to the floor.
@@ -308,9 +324,10 @@ function forkChartHtml(r) {
       <text class="pc-tick" x="${L - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${toPar(v)}</text>`;
   }
 
-  // Below the bottom cut is the only band that is not a ceiling but a verdict:
-  // nobody down here won a single simulated tournament. It gets the palette's
-  // one negative colour; the cuts above it are degrees of alive.
+  // Below the most conservative line is the one band that reads as a verdict
+  // rather than a ceiling, so it takes the palette's one negative colour. Not
+  // that nobody down there can win — the outermost line still gives that away
+  // at its stated rate — but that this is as done as the reader asked for.
   let fills = `<path class="fk-dead" d="${bandPath(f.lines[0], new Array(n).fill(g.hi))}"/>`;
   for (let i = 1; i < k; i++)
     fills += `<path class="fk-band fk-c${i}" d="${bandPath(f.lines[i], f.lines[i - 1])}"/>`;
@@ -322,7 +339,7 @@ function forkChartHtml(r) {
   // Same gutter treatment as the race chart: the lines converge as the field
   // thins, so the ends are pushed apart and a dotted leader keeps the link.
   const tips = [{ v: f.lead, cls: "fk-best-end", label: "lead" }]
-    .concat(f.cuts.map((c, i) => ({ v: f.lines[i], cls: `fk-c${i}`, label: cutLabel(c) })))
+    .concat(f.cover.map((c, i) => ({ v: f.lines[i], cls: `fk-c${i}`, label: riskLabel(c) })))
     .map((e) => ({ ...e, i: lastAt(e.v) }))
     .filter((e) => e.i >= 0);
   const ty = raceStack(tips.map((e) => g.Y(e.v[e.i])), 12.5, T + 4, T + g.ph - 2);
@@ -360,11 +377,13 @@ function wireForkTips(root, r) {
     guide.setAttribute("x1", gx.toFixed(1));
     guide.setAttribute("x2", gx.toFixed(1));
     guide.setAttribute("visibility", "visible");
-    const ladder = f.cuts.map((c, i) => {
+    const ladder = f.cover.map((c, i) => {
       const v = f.lines[i][best];
-      if (v == null) return `${cutLabel(c)} — nobody there yet`;
+      if (v == null) return `${riskLabel(c)} — no call to make yet`;
       const who = f.names[String(f.who[i][best])];
-      return `${cutLabel(c)} ${toPar(v)}${who ? ` · ${who}` : ""}`;
+      const n = f.alive && f.alive[i] ? f.alive[i][best] : null;
+      return `${riskLabel(c)} ${toPar(v)}${who ? ` · ${who}` : ""}${
+        n ? ` · ${n} still in it` : ""}`;
     }).reverse();
     const when = new Date(Date.parse(r.t[best]))
       .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
@@ -466,15 +485,26 @@ function renderRace(d) {
         series.x.length < 2 ? `<p class="hint">Tracking started at hole
       ${series.tracked_from} of ${series.holes}; the lines fill in from here as play continues.</p>` : ""}`;
 
-  // The fork panel only exists once the bundle carries the cuts. The site is
-  // served from the last published bundle, which can predate this field by a
-  // refresh, so its absence is a normal state and not an error.
-  const fork = series && series.fork && series.fork.lines && series.fork.lead
+  // The fork panel only exists once the bundle carries the coverage levels.
+  // The site is served from the last published bundle, which can predate this
+  // field by a refresh, so its absence is a normal state and not an error.
+  // `cover` is also what tells an older bundle's cuts apart from these, which
+  // is why it is a new key rather than the old one with new numbers in it.
+  const fork = series && series.fork && series.fork.cover && series.fork.lead
     ? series.fork : null;
-  const forkNow = fork && fork.cuts.map((c, i) => {
+  const forkNow = fork ? fork.cover.map((c, i) => {
     const at = lastAt(fork.lines[i]);
-    return at < 0 ? null : { cut: c, v: fork.lines[i][at], who: fork.names[String(fork.who[i][at])] };
-  });
+    return at < 0 ? null : {
+      cover: c, v: fork.lines[i][at],
+      who: fork.names[String(fork.who[i][at])],
+      alive: fork.alive && fork.alive[i] ? fork.alive[i][at] : null,
+    };
+  }).filter(Boolean) : [];
+  // Positional, so the copy survives a change to the levels: [0] is the most
+  // conservative line and the one the lede leads on is the next rung in, which
+  // is cautious enough to mean something without being most of the board.
+  const forkOut = forkNow[0], forkHead = forkNow[Math.min(1, forkNow.length - 1)];
+  const season = (d.schedule || []).length;
   const forkSw = (cls, text) => `<span class="sw fk-sw ${cls}"></span>${text}`;
 
   el.innerHTML = `
@@ -504,26 +534,27 @@ function renderRace(d) {
        Tap or drag the chart for the standings at any point in the event.` : "")}
 
     ${fork ? panel("Where is the fork line?", "worst score still alive",
-      `<b>“At what line can you stick a fork in them, cause they're done?”</b> Each line here
-       is a score rather than a probability — the worst number on the board still holding
-       better than those odds of winning. ${forkNow && forkNow[0] ? `Right now the fork is in
-       at <b>${toPar(forkNow[0].v)}</b>: ${forkNow[0].who
-         ? `<b>${forkNow[0].who}</b> is the worst score that has won a single simulated
-            ${name}` : `no worse score has won a single simulated ${name}`}${
-       forkNow[forkNow.length - 1] ? `, and it takes <b>${toPar(forkNow[forkNow.length - 1].v)}</b>
-       to be better than a one-in-ten shot` : ""}. ` : ""}Read it downward: below a line there is
-       nobody above those odds, because if there were, the line would be down there with them.`,
-      `${axisTools(`<span>worst score still above:</span>${
-        fork.cuts.map((c, i) => forkSw(`fk-c${i}`, cutLabel(c))).reverse().join("")} ·${
-        forkSw("fk-deadsw", "nobody left")}`)}<div id="fork-holder">${forkChartHtml(series)}</div>`,
-      `Above a line nothing is promised — a player can sit on the leaders' score and still be
-       a longshot — so each band is a <b>ceiling</b>, not a guarantee, and the clear ground at
-       the top is simply where the tournament still is. A line is also only ever a score
-       somebody is actually standing on, which is why they start bunched at even par: on
-       Thursday morning that is where the whole field is. They cannot cross, since everyone
-       above 10% is above 1%. <b>any</b> is the honest floor of a ten-thousand-season
-       simulation and so the jumpiest line here — it turns on a single one of those ten
-       thousand going someone's way. Tap or drag for the whole ladder at any point.`)
+      `<b>“At what line can you stick a fork in them, cause they're done?”</b> Each line is a
+       score rather than a probability, and which score depends on how wrong you are willing
+       to be.${forkHead ? ` Right now the <b>${riskLabel(forkHead.cover)}</b> line is at
+       <b>${toPar(forkHead.v)}</b>${forkHead.alive ? `, with <b>${forkHead.alive}</b> player${
+         forkHead.alive === 1 ? "" : "s"} still in it` : ""} — call everyone worse than that
+       done and you would be wrong ${season ? riskEvery(forkHead.cover, season) : "about once a season"}.${
+       forkOut && forkOut !== forkHead ? ` Want to be wrong only ${
+         season ? riskEvery(forkOut.cover, season) : "about once a decade"}? The line falls back
+       to <b>${toPar(forkOut.v)}</b>${forkOut.alive ? `, keeping <b>${forkOut.alive}</b>` : ""}.` : ""}` : ""}`,
+      `${axisTools(`<span>how often the call is wrong:</span>${
+        fork.cover.map((c, i) => forkSw(`fk-c${i}`, riskLabel(c))).reverse().join("")} ·${
+        forkSw("fk-deadsw", "done")}`)}<div id="fork-holder">${forkChartHtml(series)}</div>`,
+      `The guarantee runs <b>downward</b>: below a line, that is how often the winner comes
+       from down there${season ? ` — over a ${season}-event season, ${riskLabel(fork.cover[1] ?? 0.95)}
+       is ${riskEvery(fork.cover[1] ?? 0.95, season)} if you look once an event` : ""}. Above a
+       line nothing is promised, since a player can sit on the leaders' score and still be a
+       longshot, so the bands are <b>ceilings</b> on a score rather than a floor under it and
+       the clear ground at the top is where the tournament still is. They cannot cross, because
+       a more cautious call always sits further down the board — and a line is only ever a
+       score somebody is actually standing on, which is why they start bunched at even par,
+       when the whole field is there. Tap or drag for the whole ladder at any point.`)
       : ""}
 
     ${panel(onNow ? "Everyone still alive" : "The final list", "&gt;0.1% to win",
