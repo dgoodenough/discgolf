@@ -140,6 +140,18 @@ td.sparkcell { width: 130px; padding-top: 3px; padding-bottom: 3px; }
    scrolls and no readout is ever reachable on a phone. */
 .probe { touch-action: pan-y; }
 
+/* ...with one exception, and it is the event-odds charts. Those are pinned to
+   a 620px floor (see .rc-svg below) because a dozen labelled lines cannot be
+   squeezed into a phone's width and stay readable, so on a 390px screen a
+   little over half the chart is off the side of its own scroll box. With
+   `pan-y` alone there is no gesture left to reach the rest: the probe has
+   taken the horizontal drag and the browser will not pan. Handing the
+   horizontal axis back means a drag scrolls the chart and a stationary tap
+   still reads it out, which is the pair a reader actually needs at that width.
+   A mouse is untouched — touch-action governs touch only, so hover-scrubbing
+   on a desktop works exactly as before. */
+.rc-svg.probe { touch-action: pan-x pan-y; }
+
 /* One affordance for everything carrying an explanation, so the pattern is
    learned once. Table *cells* opt out — underlining a whole cell reads as an
    error rather than an invitation — as does the doors bar, which is a drawing. */
@@ -380,12 +392,23 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .rc-future { fill: var(--ink); opacity: .05; }
 .rc-flabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .4px; }
 .rc-endnum { fill: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; }
-/* Eliminations: the palette's "never" colour, in their own lane under the plot.
-   Strokes rather than an emoji skull — that is a different colour and a
-   different shape on every platform, and this has to work in both themes. */
-.rc-x { stroke: var(--neg); stroke-width: 1.6; stroke-linecap: round; fill: none;
-        vector-effect: non-scaling-stroke; }
-.rc-xmore { fill: var(--neg); font-size: 8.5px; font-variant-numeric: tabular-nums; }
+/* Dead and back again, in their own lane under the plot. Red is the palette's
+   "never" and green its "happened", which is exactly what the pair means.
+   Drawn rather than set as emoji: a skull glyph is a different colour and a
+   different shape on every platform, takes no palette, and renders at a size
+   of the font's choosing inside an SVG. */
+.rc-skull { fill: var(--neg); }
+.rc-phoenix { fill: var(--pos); }
+/* A ring of the panel's own background on every mark. Neighbouring updates are
+   about three pixels apart and a glyph is nine wide, so without it a run of
+   skulls fuses into one red smear and the bird disappears into it. Not on the
+   eye sockets, which are already that colour. */
+.rc-skull > :not(.rc-hollow), .rc-phoenix > path {
+  stroke: var(--paper); stroke-width: 1.5; paint-order: stroke;
+}
+/* the eye sockets and teeth are knocked out with the panel's own background */
+.rc-hollow { fill: var(--paper); }
+.rc-xmore { fill: var(--ink-3); font-size: 8.5px; font-variant-numeric: tabular-nums; }
 /* a row for someone already out: still readable, no longer competing for the eye */
 .rc-gone td { opacity: .62; }
 

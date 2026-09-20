@@ -15,7 +15,7 @@ import { liveEvents, liveThru, nameCell, probClass, shortName } from "./cells.js
    a table (straight off this bundle, so it is right even before any history
    has been recorded). */
 
-const RC = { W: 900, H: 386, L: 42, R: 142, T: 14, B: 60, lane: 26 };
+const RC = { W: 900, H: 398, L: 42, R: 142, T: 14, B: 72, lane: 38 };
 const RC_LINES = 12;   // palette size in style.css (.rc-c0 … .rc-c11)
 
 /* Surname is enough to label a line until two contenders share one, which at
@@ -161,11 +161,11 @@ function raceWindow(r) {
   const { from, to } = ss[i];
   const cut = (a) => a.slice(from, to + 1);
   const f = r.fork;
-  const out = {};
-  for (const [pdga, v] of Object.entries(r.out || {}))
-    if (v[0] >= from && v[0] <= to) out[pdga] = [v[0] - from, v[1]];
+  const marks = (r.marks || [])
+    .filter((m) => m[0] >= from && m[0] <= to)
+    .map((m) => [m[0] - from, m[1], m[2]]);
   return {
-    ...r, clipped: true, x: cut(r.x), t: cut(r.t), out,
+    ...r, clipped: true, x: cut(r.x), t: cut(r.t), marks,
     series: r.series.map((v) => ({ ...v, y: cut(v.y) })),
     fork: f && { ...f, lead: cut(f.lead), lines: f.lines.map(cut),
                  who: f.who.map(cut), alive: f.alive ? f.alive.map(cut) : f.alive },
@@ -238,46 +238,71 @@ function futureHtml(r, g, box, caption) {
       y="${box.T + 12}" text-anchor="middle">${g.x1 - r.x[n - 1]} holes still to play</text>` : ""}`;
 }
 
-/* Eliminations, grouped onto the observation they happened at. */
-function raceFallen(r) {
+/* The two marks, drawn small enough to stack and still be told apart.
+
+   A skull is a round cranium; the phoenix is a bird in side profile with a
+   swept wing. The silhouettes matter more than the species at this size — a
+   flame was the other candidate and reads beautifully on its own, but it is a
+   teardrop, and next to a skull's blob at 11px the two would be a guessing
+   game. A bird is unmistakable from the shape alone.
+
+   Drawn rather than set as emoji: 💀 is a different colour and a different
+   shape on every platform, would not take the palette, and renders at a size
+   of the font's choosing inside an SVG. */
+const GLYPH = {
+  0: `<circle cx="0" cy="-1.5" r="4.5"/><rect x="-3" y="1.7" width="6" height="3.4" rx="1.2"/>
+      <circle class="rc-hollow" cx="-1.9" cy="-1.6" r="1.6"/>
+      <circle class="rc-hollow" cx="1.9" cy="-1.6" r="1.6"/>
+      <path class="rc-hollow" d="M0 0.5l1.1 2.1h-2.2z"/>
+      <rect class="rc-hollow" x="-1.7" y="3.1" width="0.8" height="2" rx="0.3"/>
+      <rect class="rc-hollow" x="0.9" y="3.1" width="0.8" height="2" rx="0.3"/>`,
+  1: `<path d="M3.4 -5.6l2.4 .7-2.2 .9c.4 .9 .3 1.9-.4 2.7L1.5 -.2
+      c1 .6 1.9 1.6 2.4 2.9-1.8-.7-3.6-.7-5.2 0l-3.9 2.9 1.6-3.6c-1.4-.6-2.5-1.8-3-3.3
+      1.6 1 3.4 1.2 5 .5l.8-1.8c-1.4-.9-2.4-2.4-2.6-4.1 1.2 1.5 2.9 2.4 4.6 2.5
+      .4-.9 1.3-1.5 2.2-1.4z"/>`,
+};
+
+/* Deaths and comebacks, grouped onto the observation they happened at. */
+function raceMarks(r) {
   const by = new Map();
-  for (const [pdga, v] of Object.entries(r.out || {})) {
-    if (!by.has(v[0])) by.set(v[0], []);
-    by.get(v[0]).push({ pdga: +pdga, name: v[1] });
+  for (const m of r.marks || []) {
+    if (!by.has(m[0])) by.set(m[0], []);
+    by.get(m[0]).push({ kind: m[1], name: m[2] });
   }
+  // a comeback on top of the skulls, so a stack reads bottom-up as it happened
+  for (const v of by.values()) v.sort((a, b) => a.kind - b.kind);
   return by;
 }
 
-/* A tally in its own lane under the plot: one x for each player whose odds
-   crossed the floor here for the last time, stacked upward.
+/* The tally in its own lane under the plot.
 
-   The lane is deliberately outside the plot rather than sitting at y=0 inside
-   it. Most of these players never had a line — the chart draws a dozen and a
-   race records eighty — so marks at zero would read as belonging to whichever
-   of the drawn lines happens to be flat down there. Out here they are what
-   they are: a count on the shared x axis.
-
-   Drawn as strokes rather than as skulls because an emoji is a different
-   colour and a different shape on every platform, and this one has to sit in
-   a lane 26px tall in two themes. Red is the palette's own "never". */
-function fallenHtml(r, g, box) {
+   The lane is outside the plot rather than at y=0 inside it: most of these
+   players never had a line — the chart draws a dozen and a race records
+   eighty — so marks at zero would read as belonging to whichever drawn line
+   happens to be flat down there. Out here they are a count on the shared x. */
+function marksHtml(r, g, box) {
   const lane = box.lane || 0;
   if (!lane) return "";
-  const top = box.T + g.ph + 4, step = 7.5, cap = Math.floor(lane / step);
-  let out = "";
-  for (const [i, who] of raceFallen(r)) {
+  const top = box.T + g.ph + 3, step = 11.5, cap = Math.floor(lane / step);
+  // Two passes, skulls then birds. At 239 observations across 800px the marks
+  // of neighbouring updates overlap, and drawn in time order the one phoenix
+  // of an event ends up buried under whichever skull came next. It is the
+  // rarest thing on the chart; it goes on top.
+  const pass = ["", ""];
+  let more = "";
+  for (const [i, who] of raceMarks(r)) {
     if (i < 0 || i >= g.v.length) continue;
     const x = g.X(g.v[i]);
-    who.slice(0, cap).forEach((_, k) => {
-      const y = top + k * step + 2.6;
-      out += `<path class="rc-x" d="M${(x - 2.6).toFixed(1)} ${(y - 2.6).toFixed(1)}l5.2 5.2M${
-        (x + 2.6).toFixed(1)} ${(y - 2.6).toFixed(1)}l-5.2 5.2"/>`;
+    who.slice(0, cap).forEach((m, k) => {
+      pass[m.kind] += `<g class="${m.kind ? "rc-phoenix" : "rc-skull"}" transform="translate(${
+        x.toFixed(1)} ${(top + k * step + step / 2).toFixed(1)}) scale(${
+        m.kind ? 1 : 0.92})">${GLYPH[m.kind]}</g>`;
     });
     if (who.length > cap)
-      out += `<text class="rc-xmore" x="${x.toFixed(1)}" y="${
-        (top + cap * step + 5).toFixed(1)}" text-anchor="middle">+${who.length - cap}</text>`;
+      more += `<text class="rc-xmore" x="${x.toFixed(1)}" y="${
+        (top + cap * step + 7).toFixed(1)}" text-anchor="middle">+${who.length - cap}</text>`;
   }
-  return out;
+  return pass[0] + pass[1] + more;
 }
 
 function raceChartHtml(r) {
@@ -322,7 +347,7 @@ function raceChartHtml(r) {
     ${grid}${future}${rounds}
     <line class="rc-guide" id="race-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
     <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
-    ${lines}${cutsHtml(r, g, RC)}${fallenHtml(r, g, RC)}${ends}</svg></div>`;
+    ${lines}${cutsHtml(r, g, RC)}${marksHtml(r, g, RC)}${ends}</svg></div>`;
 }
 
 /* ==========================================================================
@@ -509,24 +534,29 @@ function wireForkTips(root, r) {
 
 /* The >0.1% list, read off this bundle rather than the history — the table has
    to be right on the very first refresh of an event, before any series exists. */
+// never-in-it sorts below everyone who has a moment to point to
+const outAt = (v) => (v.out && v.out[0] != null ? v.out[0] : -1);
+
 function raceRows(d, tid, out) {
   const key = String(tid);
   return d.players
     .filter((p) => p.live && p.live[key])
     .map((p) => {
       const l = p.live[key], gone = out ? out[p.pdga] : null;
-      // Three states, and the table has to tell them apart: still above the
-      // floor, fell through it at a knowable moment, or never cleared it —
-      // which is not the same thing and must not read as an elimination.
-      return { p, l, alive: l.win > 0.001, out: l.win > 0.001 ? null : gone || null };
+      // Alive comes from the chart's own state machine rather than a fresh
+      // test on the current number: a player between the two bars has not
+      // crossed the lower one, so they are not dead yet and the marks above
+      // do not say they are. Three states, and the table keeps them apart —
+      // in it, out at a moment the reader can point to, or never in it.
+      const alive = out ? !gone : l.win > 0.001;
+      return { p, l, alive, out: alive ? null : gone || null };
     })
     .sort((a, b) =>
       b.alive - a.alive ||
       // the living by their odds; the dead by how recently, since the last one
       // out is the one the reader just watched go
       (a.alive ? b.l.win - a.l.win || (a.l.place || 999) - (b.l.place || 999)
-               : (b.out ? b.out[0] : -1) - (a.out ? a.out[0] : -1)
-                 || (a.l.place || 999) - (b.l.place || 999)));
+               : outAt(b) - outAt(a) || (a.l.place || 999) - (b.l.place || 999)));
 }
 
 function raceTableHtml(d, tid, prev, onNow, series) {
@@ -567,7 +597,7 @@ function raceTableHtml(d, tid, prev, onNow, series) {
       <td class="num dim t2">${l.mean_place}</td>
       <td class="num dim t3">${fmtPts(l.mean_pts)}</td>
       <td class="num dim t2">${
-        alive ? "" : !known ? "—" : out ? stamp(out[0]) : "never"}</td>
+        alive ? "" : !known ? "—" : out && out[0] != null ? stamp(out[0]) : "never"}</td>
       <td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td></tr>`;
   }).join("");
   return `<div class="pv-scroll pv-tall"><table class="table-ledger detail-tbl pv-tbl"><thead><tr>
@@ -576,9 +606,9 @@ function raceTableHtml(d, tid, prev, onNow, series) {
     <th class="num" ${tipAttrs(`Change since the previous recorded update`)}>Δ</th>
     <th class="num t2" ${tipAttrs(`Mean simulated finishing position`)}>Proj</th>
     <th class="num t3" ${tipAttrs(`Mean DGPT points from this event`)}>Pts</th>
-    <th class="num t2" ${tipAttrs(`When this player's own odds last fell below 0.1% and stayed there. `
-      + `"never" means they were never above it — recorded for their place on the board, `
-      + `not for a chance at winning.`)}>Out</th>
+    <th class="num t2" ${tipAttrs(`When this player's odds last hit zero — none of the ten thousand. `
+      + `"never" means they were never above it at all — recorded for their place on the `
+      + `board, not for a chance at winning.`)}>Out</th>
     <th class="num" ${tipAttrs(`Powerball Cup odds`)}>Cup</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
@@ -695,11 +725,15 @@ function renderRace(d) {
        plus up to three who once held ${fmtPct(series.peak_min || 0.15)} and have since fallen off it${
        series.others ? `; ${series.others} more sit above ${fmtPct(series.chart_min || 0.001)}
        but below the chart's cap` : ""}.
-       The ${"\u00d7"} marks under the axis are eliminations — one for each player whose own
-       odds crossed 0.1% for the last time at that moment, which is the same instant the
-       table below gives as their <b>Out</b>. Most of them never had a line up here: the
-       chart draws a dozen and the race records eighty.
-       Tap or drag the chart for the standings at any point in the event.` : "")}
+       A <b>skull</b> under the axis is a player taking none of the ten thousand simulated
+       tournaments at that moment — the strongest thing this model can say about anyone.
+       Coming back takes ten times that, 0.1%, which is what the rest of this tab means by
+       alive; do it and you get a <b>phoenix</b>. The gap between the two is what stops a
+       player sitting on the floor from flickering, and it makes the bird rare — about one
+       an event. Most of these players never had a line up here: the chart draws a dozen
+       and the race records eighty.
+       Tap the chart for the standings at that point, or drag across it with a mouse. Where
+       it is wider than the screen, swipe it sideways to reach the rest.` : "")}
 
     ${fork ? panel("Where is the fork line?", "worst score still alive",
       `<b>“At what line can you stick a fork in them, cause they're done?”</b> Each line is a
@@ -722,7 +756,8 @@ function renderRace(d) {
        the clear ground at the top is where the tournament still is. They cannot cross, because
        a more cautious call always sits further down the board — and a line is only ever a
        score somebody is actually standing on, which is why they start bunched at even par,
-       when the whole field is there. Tap or drag for the whole ladder at any point.`)
+       when the whole field is there. Tap for the whole ladder at that point, and swipe the
+       chart sideways if it runs off the screen.`)
       : ""}
 
     ${panel(onNow ? "Who is left, and who is out" : "How it finished",
@@ -734,8 +769,9 @@ function renderRace(d) {
       raceTableHtml(d, tid, prev, onNow, series),
       `Score is to par; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
        points this event pays them. <b>Δ</b> is the move since the previous recorded update, and
-       <b>Out</b> is when a player's own odds last fell below 0.1% for good — the ${"\u00d7"}
-       marks under the chart above are the same moments.`)}`;
+       <b>Out</b> is the last time a player's odds hit zero — the same moment as their final
+       skull on the chart above. A player who climbed back out and stayed out is not listed
+       as gone at all.`)}`;
 
   wireRaceTips(el, view);
   wireForkTips(el, fork ? view : null);
@@ -777,10 +813,14 @@ function wireRaceTips(root, r) {
       .map((s) => `${s.name} ${fmtPct(s.v)}`);
     const when = new Date(Date.parse(r.t[best]))
       .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
-    const gone = raceFallen(r).get(best) || [];
+    const here = raceMarks(r).get(best) || [];
+    const say = (kind, lead) => {
+      const nm = here.filter((v) => v.kind === kind).map((v) => v.name);
+      return nm.length ? `\n${lead} ${nm.join(", ")}` : "";
+    };
     return `${when} · hole ${r.x[best]} of ${r.holes}\n${
       board.length ? board.join("\n") : "nobody above 0.1%"}${
-      gone.length ? `\n\u00d7 out here: ${gone.map((v) => v.name).join(", ")}` : ""}`;
+      say(0, "out here:")}${say(1, "back from the dead:")}`;
   // the vertical guide is this chart's own cursor, so it retracts with the
   // readout — including when a tap elsewhere or a scroll dismisses it
   }, () => guide.setAttribute("visibility", "hidden"));

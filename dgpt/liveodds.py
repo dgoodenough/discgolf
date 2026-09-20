@@ -57,6 +57,11 @@ RECORD_PLACE = 25
 # slots go to real leads rather than to the flat 1/N band every player sits in
 # on Thursday morning.
 CHART_MIN = 0.001   # "still alive": 0.1%, the app's own floor for a real number
+# "dead": took none of the 10,000 simulated tournaments. Not a round number
+# chosen for looks — with `win` rounded to four places it is exactly this
+# model's resolution floor, so under it is the strongest thing the simulation
+# can say about a player. Climbing back out takes CHART_MIN, ten times more.
+DEAD_MIN = 0.0001
 PEAK_MIN = 0.15     # "was alive": actually led the race at some point
 MAX_FALLEN = 3
 MAX_LINES = 12
@@ -267,35 +272,50 @@ def _fork(blocks: dict[int, list[dict]], n: int) -> dict:
     }
 
 
-def _fallen(by_player: dict[int, dict[int, float]], names: dict[int, str],
-            n: int) -> dict[str, list]:
-    """When each player's own odds last dropped under CHART_MIN for good.
+def _marks(by_player: dict[int, dict[int, float]], names: dict[int, str],
+           n: int) -> tuple[list, dict]:
+    """Deaths and comebacks: the chart's tally, and each player's verdict.
 
-    The LAST crossing, not the first, and the difference is not academic: over
-    the four races on file 23 to 35 players of about 80 dipped under the floor
-    and climbed back out, one of them thirteen separate times. Marking the
-    first crossing would bury players who went on to lead the thing.
+    A player dies when their own odds fall under DEAD_MIN and is alive again
+    only once they climb back to CHART_MIN. The ten-fold gap is the whole
+    mechanism — on a single threshold anyone sitting on it flickers between
+    marks every few minutes. Measured over the four recorded races it holds
+    the worst case to two deaths for one player, and keeps the comeback rare:
+    three across four races, against 27 of them and three-deaths-per-player
+    flapping if the rise were set at 0.02%.
 
-    CHART_MIN rather than any of the fork chart's cuts, because those are
-    scores. A player can fall under the 1-in-200 line without playing a bad
-    hole — the line moves up when everyone ahead of them birdies — so it
-    answers "is this score still live", not "is this player". Their own odds
-    crossing the floor is about them, and 0.1% is already what the rest of the
-    tab means by alive: the table's cut, the chart's, and the point below which
-    `fmtPct` stops quoting a number at all.
+    The thresholds are the tab's own numbers rather than new ones. DEAD_MIN is
+    the model's resolution floor, so falling under it is not "unlikely" but
+    "took none of the ten thousand". CHART_MIN is what every other panel here
+    means by alive, so a comeback means the player is listed again.
 
-    A gap in the record reads as zero, which is what it means — `_block` drops
-    a player only once they hold no win equity and no top-25 place.
+    Not the fork chart's cuts, which the same question could have been asked
+    of: those are scores. A player slips under one of them without playing a
+    bad hole whenever the field ahead birdies, so they answer "is this score
+    still live", not "is this player".
     """
+    marks: list[list] = []
     out: dict[str, list] = {}
     for pdga, seen in by_player.items():
         start = min(seen)
-        alive = [i for i in range(start, n) if seen.get(i, 0.0) >= CHART_MIN]
-        # nothing to say about a player who was never in it, or still is
-        if not alive or alive[-1] == n - 1:
-            continue
-        out[str(pdga)] = [alive[-1] + 1, names.get(pdga, str(pdga))]
-    return out
+        name = names.get(pdga, str(pdga))
+        alive = seen.get(start, 0.0) >= DEAD_MIN
+        death = None
+        for i in range(start, n):
+            v = seen.get(i, 0.0)
+            if alive and v < DEAD_MIN:
+                alive, death = False, i
+                marks.append([i, 0, name])
+            elif not alive and v >= CHART_MIN:
+                alive = True
+                marks.append([i, 1, name])
+        # Anyone the run ends on is out, and `death` separates the two ways of
+        # being so: a moment the reader watched, or never having been in it —
+        # recorded for a top-25 place and never once above the floor.
+        if not alive:
+            out[str(pdga)] = [death, name]
+    marks.sort(key=lambda m: (m[0], m[1]))
+    return marks, out
 
 
 def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dict | None:
@@ -370,6 +390,8 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
             "cur": float(last["cur"]) if last else None,
         })
 
+    marks, out = _marks(by_player, names, n)
+
     tid = int(rows[0]["tid"])
     # Total holes from the feed's own remaining-rounds count rather than the
     # model's per-class round constant, which is a class default and lands a
@@ -395,10 +417,11 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
                 if n > 1 else {},
         "tracked_from": x[0],
         "fork": _fork(blocks, n),
-        # {pdga: [observation index, name]} — carries its own names because the
-        # chart marks these without the bundle of players to hand, the same way
-        # the fork lines do
-        "out": _fallen(by_player, names, n),
+        # The chart tally, and the table's verdict. Both carry their own names
+        # because neither is drawn with the bundle of players to hand, the same
+        # way the fork lines do.
+        "marks": marks,
+        "out": out,
     }
 
 

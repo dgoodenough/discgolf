@@ -27,6 +27,12 @@ import { $ } from "./core.js";
      drags, which is the axis every chart here is read along. A stationary tap
      resolves its own point, which is all the two-dimensional grids need.
 
+     The event-odds charts are the exception and take `pan-x pan-y` instead
+     (style.css, `.rc-svg.probe`): they are pinned to a 620px floor to stay
+     readable, so on a phone half the chart sits off the side of its scroll
+     box and claiming the horizontal drag would leave no gesture able to reach
+     it. There, a swipe scrolls and the tap alone reads out.
+
    - `data-tip` for inline explanations, via `tipAttrs()`. One delegated
      handler shows the text that used to live only in a `title`. The `title` is
      kept alongside it rather than replaced, so desktop hover and the

@@ -43,9 +43,9 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   how often calling everyone below it done is wrong. Both charts run on a clock
   with the hours nobody was playing cut out of it, or on the field's own
   progress through the holes, and either crops to one day's play. Under the
-  axis, a tally of eliminations — one mark per player whose own odds crossed
-  0.1% for the last time — and the table lists the whole field with the moment
-  each of them fell through it.
+  axis, a tally of skulls — one per player who, at that moment, took none of
+  the ten thousand simulated tournaments — and a phoenix for anyone who climbs
+  back out. The table lists the whole field with the moment each one went.
 - **The seed, not just the spot.** The Cup starts every qualifier on a score
   set by their World Standings position — -7 for the MPO No. 1, -6 for FPO,
   down to even for the bottom seeds. The **Starting strokes** column runs every
