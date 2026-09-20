@@ -42,7 +42,10 @@ rebuild: PDGA API data, exact points rules, and a site that maintains itself.
   winner beats 4 times in 5, 19 in 20, or 199 in 200, so the label on a line is
   how often calling everyone below it done is wrong. Both charts run on a clock
   with the hours nobody was playing cut out of it, or on the field's own
-  progress through the holes, and either crops to one day's play.
+  progress through the holes, and either crops to one day's play. Under the
+  axis, a tally of skulls — one per player who, at that moment, took none of
+  the ten thousand simulated tournaments — and a phoenix for anyone who climbs
+  back out. The table lists the whole field with the moment each one went.
 - **The seed, not just the spot.** The Cup starts every qualifier on a score
   set by their World Standings position — -7 for the MPO No. 1, -6 for FPO,
   down to even for the bottom seeds. The **Starting strokes** column runs every

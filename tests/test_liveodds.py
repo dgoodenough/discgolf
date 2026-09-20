@@ -338,3 +338,76 @@ def test_the_fork_names_only_the_players_who_held_a_line():
         3: stat(0.0, cur=3.0, place=20),       # recorded, but never on a line
     }), "MPO")
     assert set(fork_for("mpo")["names"].values()) == {"P1", "P2"}
+
+
+# --------------------------------------------------- skulls and phoenixes
+
+def marks_for(division: str) -> list:
+    return series_for(division)["marks"]
+
+
+def out_for(division: str) -> dict:
+    return series_for(division)["out"]
+
+
+DEAD, BACK = liveodds.DEAD_MIN, liveodds.CHART_MIN
+
+
+def test_a_skull_is_taking_none_of_the_ten_thousand():
+    """DEAD_MIN is the model's resolution floor, not a tidy round number:
+    `win` is hits/10,000 rounded to four places, so under it means zero."""
+    assert DEAD == 0.0001 and BACK == 0.001
+    liveodds.record(res({1: stat(0.9), 2: stat(DEAD, place=2)}), "MPO")
+    liveodds.record(res({1: stat(1.0), 2: stat(0.0, place=2)}), "MPO")
+    assert marks_for("mpo") == [[1, 0, "P2"]]          # exactly at the floor is alive
+
+
+def test_a_phoenix_needs_ten_times_what_killed_them():
+    """The gap is the mechanism. Clearing DEAD_MIN is not coming back."""
+    liveodds.record(res({1: stat(0.5), 2: stat(0.30, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0, place=2)}), "MPO")      # skull
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0005, place=2)}), "MPO")   # not yet
+    liveodds.record(res({1: stat(0.7), 2: stat(0.20, place=2)}), "MPO")     # phoenix
+    assert marks_for("mpo") == [[1, 0, "P2"], [3, 1, "P2"]]
+
+
+def test_the_gap_stops_a_player_on_the_floor_flickering():
+    """Hovering between the two bars must produce one skull, not a stream."""
+    liveodds.record(res({1: stat(0.5), 2: stat(0.30, place=2)}), "MPO")
+    for w in (0.0, 0.0006, 0.0, 0.0009, 0.0):
+        liveodds.record(res({1: stat(0.9), 2: stat(w, place=2)}), "MPO")
+    assert marks_for("mpo") == [[1, 0, "P2"]]
+
+
+def test_a_player_can_die_twice():
+    liveodds.record(res({1: stat(0.5), 2: stat(0.30, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.7), 2: stat(0.20, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0, place=2)}), "MPO")
+    assert marks_for("mpo") == [[1, 0, "P2"], [2, 1, "P2"], [3, 0, "P2"]]
+    assert out_for("mpo")["2"] == [3, "P2"], "the table takes the last death"
+
+
+def test_a_player_who_came_back_and_stayed_is_not_out():
+    liveodds.record(res({1: stat(0.5), 2: stat(0.30, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.7), 2: stat(0.20, place=2)}), "MPO")
+    assert "2" not in out_for("mpo")
+
+
+def test_never_above_the_floor_is_not_an_elimination():
+    """Recorded for a top-25 place, never once in it — no skull, and the
+    table has to say "never" rather than name a moment."""
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0, place=3)}), "MPO")
+    liveodds.record(res({1: stat(1.0), 2: stat(0.0, place=3)}), "MPO")
+    assert marks_for("mpo") == []
+    assert out_for("mpo")["2"] == [None, "P2"]
+
+
+def test_falling_out_of_the_recorded_set_is_a_death():
+    """`_block` stops recording a player with no equity and no top-25 place;
+    the gap is the elimination, not missing data."""
+    liveodds.record(res({1: stat(0.5), 2: stat(0.5, place=2)}), "MPO")
+    liveodds.record(res({1: stat(1.0)}), "MPO")
+    assert marks_for("mpo") == [[1, 0, "P2"]]
+    assert out_for("mpo")["2"] == [1, "P2"]
