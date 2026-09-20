@@ -380,6 +380,15 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .rc-future { fill: var(--ink); opacity: .05; }
 .rc-flabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .4px; }
 .rc-endnum { fill: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* Eliminations: the palette's "never" colour, in their own lane under the plot.
+   Strokes rather than an emoji skull — that is a different colour and a
+   different shape on every platform, and this has to work in both themes. */
+.rc-x { stroke: var(--neg); stroke-width: 1.6; stroke-linecap: round; fill: none;
+        vector-effect: non-scaling-stroke; }
+.rc-xmore { fill: var(--neg); font-size: 8.5px; font-variant-numeric: tabular-nums; }
+/* a row for someone already out: still readable, no longer competing for the eye */
+.rc-gone td { opacity: .62; }
+
 /* An axis break: the hours nobody was playing, cut out of the clock. The slug
    carries the panel's own background so a series cannot appear to run through
    time that was removed, and the two slashes are the convention saying why. */

@@ -267,6 +267,37 @@ def _fork(blocks: dict[int, list[dict]], n: int) -> dict:
     }
 
 
+def _fallen(by_player: dict[int, dict[int, float]], names: dict[int, str],
+            n: int) -> dict[str, list]:
+    """When each player's own odds last dropped under CHART_MIN for good.
+
+    The LAST crossing, not the first, and the difference is not academic: over
+    the four races on file 23 to 35 players of about 80 dipped under the floor
+    and climbed back out, one of them thirteen separate times. Marking the
+    first crossing would bury players who went on to lead the thing.
+
+    CHART_MIN rather than any of the fork chart's cuts, because those are
+    scores. A player can fall under the 1-in-200 line without playing a bad
+    hole — the line moves up when everyone ahead of them birdies — so it
+    answers "is this score still live", not "is this player". Their own odds
+    crossing the floor is about them, and 0.1% is already what the rest of the
+    tab means by alive: the table's cut, the chart's, and the point below which
+    `fmtPct` stops quoting a number at all.
+
+    A gap in the record reads as zero, which is what it means — `_block` drops
+    a player only once they hold no win equity and no top-25 place.
+    """
+    out: dict[str, list] = {}
+    for pdga, seen in by_player.items():
+        start = min(seen)
+        alive = [i for i in range(start, n) if seen.get(i, 0.0) >= CHART_MIN]
+        # nothing to say about a player who was never in it, or still is
+        if not alive or alive[-1] == n - 1:
+            continue
+        out[str(pdga)] = [alive[-1] + 1, names.get(pdga, str(pdga))]
+    return out
+
+
 def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dict | None:
     """One division's chart payload from its rows for a single event."""
     if not rows:
@@ -364,6 +395,10 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
                 if n > 1 else {},
         "tracked_from": x[0],
         "fork": _fork(blocks, n),
+        # {pdga: [observation index, name]} — carries its own names because the
+        # chart marks these without the bundle of players to hand, the same way
+        # the fork lines do
+        "out": _fallen(by_player, names, n),
     }
 
 

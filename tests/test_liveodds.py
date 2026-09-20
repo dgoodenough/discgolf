@@ -338,3 +338,49 @@ def test_the_fork_names_only_the_players_who_held_a_line():
         3: stat(0.0, cur=3.0, place=20),       # recorded, but never on a line
     }), "MPO")
     assert set(fork_for("mpo")["names"].values()) == {"P1", "P2"}
+
+
+# ------------------------------------------------------------ who fell out
+
+def out_for(division: str) -> dict:
+    return series_for(division)["out"]
+
+
+def test_the_drop_off_is_the_last_crossing_not_the_first():
+    """Players bounce across the floor — 23 to 35 of ~80 do it in a real race,
+    one of them thirteen times — so the first dip is not the elimination."""
+    for w in (0.40, 0.0005, 0.30, 0.0004, 0.0002):     # under, back, under for good
+        liveodds.record(res({1: stat(w), 2: stat(0.5, place=2)}), "MPO")
+    out = out_for("mpo")
+    assert out["1"][0] == 3, "marked the first dip rather than the last"
+    assert out["1"][1] == "P1"
+
+
+def test_a_player_still_in_it_has_no_drop_off():
+    liveodds.record(res({1: stat(0.40), 2: stat(0.30, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.60), 2: stat(0.20, place=2)}), "MPO")
+    assert out_for("mpo") == {}
+
+
+def test_a_player_who_was_never_in_it_has_no_drop_off():
+    """Recorded for their place on the board, never above the floor."""
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0002, place=3)}), "MPO")
+    liveodds.record(res({1: stat(1.0), 2: stat(0.0, place=3)}), "MPO")
+    assert "2" not in out_for("mpo")
+    assert out_for("mpo") == {}
+
+
+def test_falling_out_of_the_recorded_set_counts_as_dropping_off():
+    """`_block` stops recording a player with no equity and no top-25 place;
+    the gap is the elimination, not missing data."""
+    liveodds.record(res({1: stat(0.5), 2: stat(0.5, place=2)}), "MPO")
+    liveodds.record(res({1: stat(1.0)}), "MPO")        # 2 vanishes entirely
+    assert out_for("mpo")["2"] == [1, "P2"]
+
+
+def test_the_floor_is_the_tabs_own_one():
+    assert liveodds.CHART_MIN == 0.001
+    liveodds.record(res({1: stat(0.9), 2: stat(liveodds.CHART_MIN, place=2)}), "MPO")
+    liveodds.record(res({1: stat(1.0), 2: stat(liveodds.CHART_MIN / 2, place=2)}), "MPO")
+    # exactly at the floor still counts as alive; below it does not
+    assert out_for("mpo")["2"] == [1, "P2"]
