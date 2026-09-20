@@ -725,13 +725,14 @@ function renderRace(d) {
        plus up to three who once held ${fmtPct(series.peak_min || 0.15)} and have since fallen off it${
        series.others ? `; ${series.others} more sit above ${fmtPct(series.chart_min || 0.001)}
        but below the chart's cap` : ""}.
+${(series.marks || []).length ? `
        A <b>skull</b> under the axis is a player taking none of the ten thousand simulated
        tournaments at that moment — the strongest thing this model can say about anyone.
        Coming back takes ten times that, 0.1%, which is what the rest of this tab means by
        alive; do it and you get a <b>phoenix</b>. The gap between the two is what stops a
        player sitting on the floor from flickering, and it makes the bird rare — about one
        an event. Most of these players never had a line up here: the chart draws a dozen
-       and the race records eighty.
+       and the race records eighty.` : ""}
        Tap the chart for the standings at that point, or drag across it with a mouse. Where
        it is wider than the screen, swipe it sideways to reach the rest.` : "")}
 
