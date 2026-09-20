@@ -8,7 +8,7 @@
 
 const state = { div: "mpo", view: "forecast", data: {}, sort: { key: "p_champ", dir: "desc" },
                 colsMode: "auto", permalink: null, moverWin: "week", moversOpen: false,
-                cloudMode: "chart", lev: {}, raceAxis: "time",
+                cloudMode: "chart", lev: {}, raceAxis: "time", raceWin: null,
                 // the experimental tabs load their own bundles and keep their
                 // own sort, so switching tabs never disturbs the forecast table
                 proj: {}, projSort: {},
