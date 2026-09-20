@@ -380,6 +380,13 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
 .rc-future { fill: var(--ink); opacity: .05; }
 .rc-flabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .4px; }
 .rc-endnum { fill: var(--ink-2); font-weight: 400; font-variant-numeric: tabular-nums; }
+/* An axis break: the hours nobody was playing, cut out of the clock. The slug
+   carries the panel's own background so a series cannot appear to run through
+   time that was removed, and the two slashes are the convention saying why. */
+.rc-cut { fill: var(--paper); }
+.rc-cutmark { fill: none; stroke: var(--grid-strong); stroke-width: 1.25;
+              vector-effect: non-scaling-stroke; }
+
 /* round boundaries: structure, so greyscale — the colour here is all data */
 .rc-round { stroke: var(--grid); stroke-width: 1; stroke-dasharray: 3 3; }
 .rc-rlabel { fill: var(--ink-3); font-size: 10px; letter-spacing: .5px; }

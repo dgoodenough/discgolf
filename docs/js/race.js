@@ -66,19 +66,108 @@ function raceScale(r) {
 /* The two axes, and why there are two.
 
    HOLES is the field's mean progress (see dgpt/liveodds.py): rounds come out
-   as equal slices and the overnight gaps close to nothing, which is the right
-   shape for reading a tournament back.
+   as equal slices, which is the right shape for reading a tournament back.
 
-   TIME is the honest one: it shows the real pace, a frantic last hour is wide,
-   and the gaps between rounds are visible as gaps. It costs the dead ground
-   overnight — at a three-day event that is a third of the axis — which is
-   exactly the trade the toggle exists to let the reader make.
+   TIME is the clock with the hours nobody was playing taken out of it. The
+   pipeline records a block about every six minutes while a round is on and
+   then nothing at all until the next morning, so drawn literally the axis
+   spends most of its width on dead ground — measured over the four races on
+   file, 69% to 81% of it. A gap longer than GAP_CAP is therefore drawn as
+   GAP_CAP and marked with a break. Inside a session the spacing is untouched
+   and real: a frantic last hour is wide, a slow one is narrow.
+
+   Nothing is hidden by that, which is what makes it honest rather than just
+   tidier. A block is only recorded when the scoring moved, so a collapsed gap
+   is a stretch with no observations in it — every line crossed it as a single
+   straight segment either way — and the break marks say where the cut is.
 
    Both plot the same observations. Neither changes a probability: each column
    is one simulation run at one instant, so a vertical slice sums to ~100%
    whichever axis is showing. Only the spacing differs. */
-const raceAxisVals = (r) =>
-  state.raceAxis === "time" ? r.t.map((s) => Date.parse(s)) : r.x;
+
+// Both measured off this season's four recorded races rather than guessed. The
+// 95th-percentile gap between observations is 6-12 minutes and every genuine
+// break is 10-20 hours, with nothing at all between 1.6h and 10h — so the cap
+// cannot bite during live play, and SESSION_GAP clears the longest mid-round
+// lull on file (1.6h, MPO at Idlewild) by a wide margin.
+const GAP_CAP = 25 * 60e3;
+const SESSION_GAP = 4 * 36e5;
+
+/* Elapsed wall-clock with the dead stretches clamped. */
+function playClock(t) {
+  const ms = t.map((s) => Date.parse(s));
+  const out = [0];
+  for (let i = 1; i < ms.length; i++)
+    out.push(out[i - 1] + Math.min(Math.max(0, ms[i] - ms[i - 1]), GAP_CAP));
+  return out;
+}
+
+/* The runs of play between the real breaks — what a reader calls a day of the
+   tournament. The bands and the window picker are both built from this, so
+   neither has to know how long a round is or assume that it is 18 holes. */
+function raceSessions(r) {
+  const ms = r.t.map((s) => Date.parse(s));
+  const out = [{ from: 0, to: 0 }];
+  for (let i = 1; i < ms.length; i++) {
+    if (ms[i] - ms[i - 1] > SESSION_GAP) out.push({ from: i, to: i });
+    else out[out.length - 1].to = i;
+  }
+  return out.map((v) => ({
+    ...v,
+    label: new Date(ms[v.from]).toLocaleDateString(undefined, { weekday: "short" }),
+  }));
+}
+
+/* Where the clock was cut. Only on the time axis — the holes axis never had
+   the dead ground to begin with, because nobody plays a hole overnight. */
+function raceCuts(r, g) {
+  if (state.raceAxis !== "time") return [];
+  const ms = r.t.map((s) => Date.parse(s)), out = [];
+  for (let i = 1; i < ms.length; i++)
+    if (ms[i] - ms[i - 1] > GAP_CAP)
+      out.push({ at: (g.v[i] + g.v[i - 1]) / 2, ms: ms[i] - ms[i - 1] });
+  return out;
+}
+
+/* The break glyph: the lines are cut by a slug of the panel's own background
+   so a series cannot appear to run continuously through hours it did not, and
+   the two slashes on the axis are the convention that says why. */
+function cutsHtml(r, g, box) {
+  return raceCuts(r, g).map(({ at }) => {
+    const x = g.X(at), w = 3.5, base = box.T + g.ph;
+    return `<rect class="rc-cut" x="${(x - w).toFixed(1)}" y="${box.T}"
+        width="${(w * 2).toFixed(1)}" height="${g.ph}"/>
+      <path class="rc-cutmark" d="M${(x - w - 1).toFixed(1)} ${base + 3}l5 -8M${
+        (x - 1).toFixed(1)} ${base + 3}l5 -8"/>`;
+  }).join("");
+}
+
+const raceAxisVals = (r) => (state.raceAxis === "time" ? playClock(r.t) : r.x);
+
+/* Zoom: one session at a time, or the lot. Slicing the series and re-rendering
+   is the whole mechanism — every scale on both charts already fits itself to
+   what it is handed, so the win-probability ceiling and the fork's stroke range
+   re-fit to the window for free and nothing downstream needs to know a window
+   exists. `clipped` only suppresses the runway to the finish, which is a claim
+   about the event rather than about the view.
+
+   A drag-to-zoom brush is the obvious alternative and the wrong one here:
+   horizontal drag is already the scrub gesture on these charts (tooltip.js
+   takes the horizontal axis and leaves the vertical to the page), so a brush
+   would be fighting the readout for the same finger on every phone. */
+function raceWindow(r) {
+  const ss = raceSessions(r), i = state.raceWin;
+  if (i == null || !ss[i] || ss.length < 2) return r;
+  const { from, to } = ss[i];
+  const cut = (a) => a.slice(from, to + 1);
+  const f = r.fork;
+  return {
+    ...r, clipped: true, x: cut(r.x), t: cut(r.t),
+    series: r.series.map((v) => ({ ...v, y: cut(v.y) })),
+    fork: f && { ...f, lead: cut(f.lead), lines: f.lines.map(cut),
+                 who: f.who.map(cut), alive: f.alive ? f.alive.map(cut) : f.alive },
+  };
+}
 
 /* The x mapping, shared by both charts on this tab. They are given the same
    W, L and R so their plot areas line up to the pixel: the fork chart sits
@@ -93,7 +182,7 @@ function axisGeom(r, box) {
   const x0 = v[0];
   const x1 = state.raceAxis === "time"
     ? Math.max(last, x0 + 36e5)                       // at least an hour wide
-    : Math.max(r.holes, last, x0 + 18);
+    : Math.max(r.clipped ? 0 : r.holes, last, x0 + 18);
   return {
     v, x0, x1, pw: W - L - R, ph: H - T - B,
     X: (h) => L + ((h - x0) / (x1 - x0)) * (W - L - R),
@@ -105,31 +194,12 @@ function raceGeom(r) {
   return { ...g, ymax, Y: (p) => RC.T + (1 - Math.min(1, p / ymax)) * g.ph };
 }
 
-/* Day bands on the time axis, the counterpart of the round bands on holes:
-   a rule at each local midnight, the weekday centred in its own day. */
-function raceDayBands(g) {
-  const out = [];
-  const d = new Date(g.x0);
-  const cur = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  for (let guard = 0; guard < 40 && cur.getTime() <= g.x1; guard++) {
-    const next = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1);
-    out.push({
-      boundary: cur.getTime(),
-      from: Math.max(cur.getTime(), g.x0),
-      to: Math.min(next.getTime(), g.x1),
-      label: cur.toLocaleDateString(undefined, { weekday: "short" }),
-    });
-    cur.setTime(next.getTime());
-  }
-  return out;
-}
-
-/* Bands along the bottom: rounds on the holes axis, days on the time axis.
-   Same treatment either way — a rule at the boundary, the name centred in its
-   own span, and nothing drawn where there is no room for it. */
-function bandsHtml(g, box) {
+/* Bands along the bottom: rounds on the holes axis, sessions on the time one.
+   A session carries no rule of its own — the break mark between two sessions
+   already divides them, and drawing both put two dividers a few pixels apart. */
+function bandsHtml(r, g, box) {
   const bands = state.raceAxis === "time"
-    ? raceDayBands(g)
+    ? raceSessions(r).map((v) => ({ from: g.v[v.from], to: g.v[v.to], label: v.label }))
     : Array.from({ length: Math.ceil(g.x1 / 18) }, (_, k) => ({
         boundary: k * 18,
         from: Math.max(k * 18, g.x0),
@@ -158,7 +228,7 @@ function bandsHtml(g, box) {
    finishes. The caption goes on the upper chart only; both are the same holes. */
 function futureHtml(r, g, box, caption) {
   const n = r.x.length, lastX = g.X(g.v[n - 1]), fw = box.W - box.R - lastX;
-  if (state.raceAxis === "time" || fw <= 3) return "";
+  if (state.raceAxis === "time" || r.clipped || fw <= 3) return "";
   return `<rect class="rc-future" x="${lastX.toFixed(1)}" y="${box.T}"
       width="${fw.toFixed(1)}" height="${g.ph}"/>${
     caption && fw > 90 ? `<text class="rc-flabel" x="${(lastX + fw / 2).toFixed(1)}"
@@ -178,7 +248,7 @@ function raceChartHtml(r) {
       <text class="pc-tick" x="${L - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${
         +(p * 100).toFixed(1)}%</text>`;
   }
-  const rounds = bandsHtml(g, RC), future = futureHtml(r, g, RC, true);
+  const rounds = bandsHtml(r, g, RC), future = futureHtml(r, g, RC, true);
 
   let lines = "", ends = "";
   const endY = raceStack(r.series.map((s) => g.Y(s.y[n - 1])), 12.5, T + 4, T + g.ph - 2);
@@ -197,7 +267,7 @@ function raceChartHtml(r) {
         (lx - 26).toFixed(1)}L${(lx - 4).toFixed(1)} ${endY[si].toFixed(1)}"/>
       <circle class="rc-dot ${c}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6"/>
       <text class="rc-end ${c}" x="${lx}" y="${(endY[si] + 3.5).toFixed(1)}">${
-        labels[si]} <tspan class="rc-endnum">${fmtPct(s.win)}</tspan></text>`;
+        labels[si]} <tspan class="rc-endnum">${fmtPct(s.y[n - 1])}</tspan></text>`;
   });
 
   return `<div class="pv-scroll"><svg class="pv-svg rc-svg" id="race-chart" width="${W}" height="${H}"
@@ -207,7 +277,7 @@ function raceChartHtml(r) {
     ${grid}${future}${rounds}
     <line class="rc-guide" id="race-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
     <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
-    ${lines}${ends}</svg></div>`;
+    ${lines}${cutsHtml(r, g, RC)}${ends}</svg></div>`;
 }
 
 /* ==========================================================================
@@ -356,10 +426,10 @@ function forkChartHtml(r) {
     viewBox="0 0 ${W} ${H}" role="img"
     aria-label="The worst score still holding each chance of winning the event, over ${
       state.raceAxis === "time" ? "time" : "the holes played"}">
-    ${fills}${grid}${bandsHtml(g, FK)}${futureHtml(r, g, FK, false)}
+    ${fills}${grid}${bandsHtml(r, g, FK)}${futureHtml(r, g, FK, false)}
     <line class="rc-guide" id="fork-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
     <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
-    ${lines}${ends}</svg></div>`;
+    ${lines}${cutsHtml(r, g, FK)}${ends}</svg></div>`;
 }
 
 /* The same scrub as the race chart, reporting the whole ladder at one instant:
@@ -467,21 +537,32 @@ function renderRace(d) {
   // deltas for the table come from the previous recorded observation, which the
   // bundle carries for every recorded player rather than only the charted ones
   const prev = series && Object.keys(series.prev || {}).length ? series.prev : null;
+  const view = series ? raceWindow(series) : null;
 
   // One setting drives both charts — they are meant to be read as one picture,
   // so a slice has to mean the same instant in each — but the control is drawn
   // on both: a reader down at the fork chart should not have to scroll back up
   // to switch axes.
+  // Sessions of a single observation get no button: an event is staged for
+  // live scoring days before it tees off, so the first block of a race is
+  // often one lonely all-zeros row half a day ahead of the first tee time.
+  const picks = (series ? raceSessions(series) : [])
+    .map((v, i) => ({ ...v, i })).filter((v) => v.to > v.from);
+  const winSeg = picks.length < 2 ? "" : `<div class="seg pv-seg">
+      <button data-win="all" class="${state.raceWin == null ? "active" : ""}">All</button>
+      ${picks.map((v) => `<button data-win="${v.i}" class="${
+        state.raceWin === v.i ? "active" : ""}">${v.label}</button>`).join("")}
+     </div>`;
   const axisTools = (legend) => `<div class="pv-tools"><div class="seg pv-seg">
       <button data-axis="time" class="${state.raceAxis === "time" ? "active" : ""}">Time</button>
       <button data-axis="holes" class="${state.raceAxis === "holes" ? "active" : ""}">Holes</button>
-     </div><span class="pv-legend">${legend}</span></div>`;
+     </div>${winSeg}<span class="pv-legend">${legend}</span></div>`;
   const axisNote = state.raceAxis === "time"
-    ? "real pace — the gaps between rounds are real gaps"
+    ? "the clock, with the hours nobody was playing cut out"
     : "the field's mean progress — every round an equal slice";
   const chart = !series ? `<p class="hint">No updates recorded yet — the chart starts with the
       next scoring change.</p>`
-    : `${axisTools(axisNote)}<div id="race-holder">${raceChartHtml(series)}</div>${
+    : `${axisTools(axisNote)}<div id="race-holder">${raceChartHtml(view)}</div>${
         series.x.length < 2 ? `<p class="hint">Tracking started at hole
       ${series.tracked_from} of ${series.holes}; the lines fill in from here as play continues.</p>` : ""}`;
 
@@ -520,11 +601,12 @@ function renderRace(d) {
     ${panel(`Who wins ${name}?`,
       series ? `${series.x.length} update${series.x.length === 1 ? "" : "s"} recorded` : "no history yet",
       `Win probability through the event, one line per contender, ${state.raceAxis === "time"
-        ? `against the clock — the pace is real, so a frantic last hour is wide and the
-           hours between rounds are visible as the gaps they are`
-        : `against how far through the event the field is, which closes the gaps between
-           rounds and makes each one an equal slice`}. Neither view moves a number:
-       every column is one simulation at one instant.`,
+        ? `against the clock with the hours nobody was playing cut out — inside a round the
+           pace is real, so a frantic finish is wide and a slow stretch is narrow, and a
+           break mark shows each place the clock was cut`
+        : `against how far through the event the field is, which makes every round an equal
+           slice`}. Neither view moves a number: every column is one simulation at one
+       instant${picks.length > 1 ? ", and picking a day just crops the axis to it" : ""}.`,
       chart,
       series ? `Lines are drawn for the ${series.series.length} biggest contender${
        series.series.length === 1 ? "" : "s"} — anyone above ${fmtPct(series.chart_min || 0.001)} now,
@@ -545,7 +627,7 @@ function renderRace(d) {
        to <b>${toPar(forkOut.v)}</b>${forkOut.alive ? `, keeping <b>${forkOut.alive}</b>` : ""}.` : ""}` : ""}`,
       `${axisTools(`<span>how often the call is wrong:</span>${
         fork.cover.map((c, i) => forkSw(`fk-c${i}`, riskLabel(c))).reverse().join("")} ·${
-        forkSw("fk-deadsw", "done")}`)}<div id="fork-holder">${forkChartHtml(series)}</div>`,
+        forkSw("fk-deadsw", "done")}`)}<div id="fork-holder">${forkChartHtml(view)}</div>`,
       `The guarantee runs <b>downward</b>: below a line, that is how often the winner comes
        from down there${season ? ` — over a ${season}-event season, ${riskLabel(fork.cover[1] ?? 0.95)}
        is ${riskEvery(fork.cover[1] ?? 0.95, season)} if you look once an event` : ""}. Above a
@@ -564,12 +646,18 @@ function renderRace(d) {
       `Score is to par; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
        points this event pays them. <b>Δ</b> is the move since the previous recorded update.`)}`;
 
-  wireRaceTips(el, series);
-  wireForkTips(el, fork ? series : null);
+  wireRaceTips(el, view);
+  wireForkTips(el, fork ? view : null);
   el.querySelectorAll("[data-axis]").forEach((b) =>
     b.addEventListener("click", () => {
       state.raceAxis = b.dataset.axis;
       renderRace(d);   // the lede and the legend move with the axis, not just the plot
+    })
+  );
+  el.querySelectorAll("[data-win]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.raceWin = b.dataset.win === "all" ? null : +b.dataset.win;
+      renderRace(d);
     })
   );
 }
