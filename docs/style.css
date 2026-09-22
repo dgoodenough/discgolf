@@ -350,6 +350,37 @@ td.msparkcell { width: 84px; padding-top: 3px; padding-bottom: 3px; }
 .pv-gapdot { fill: var(--pend); }
 .pv-gaplabel { fill: var(--ink-2); font-size: 10.5px; }
 .pv-gapnum { fill: var(--ink); font-weight: 700; }
+/* the cutline's low and high marks. Dashed and in the structural grey, so the
+   median keeps the chart's one solid reference and these read as the band
+   around it rather than as three equal lines. */
+.pc-band { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; opacity: .8; }
+.pc-bandlabel { fill: var(--ink-2); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+
+/* "what it costs" columns: the points value sits under its column name, so the
+   head carries the threshold and the cells stay one word wide */
+.need-tbl th .need-pts { display: block; font-weight: 400; color: var(--ink-3);
+                         font-variant-numeric: tabular-nums; }
+
+/* head to head: two pickers side by side, one per line once a phone can no
+   longer show a name and a points total in half a row */
+.h2h-tools { gap: 6px 8px; }
+.h2h-sel { flex: 0 1 auto; min-width: 0; max-width: 330px; font: inherit; font-size: var(--fs-small);
+           color: var(--ink); background: var(--paper-2);
+           border: 1px solid var(--grid-strong); border-radius: var(--radius); padding: 3px 6px; }
+.h2h-vs { font-size: var(--fs-caption); color: var(--ink-3); }
+@media (max-width: 640px) {
+  .h2h-sel { flex: 1 1 100%; max-width: none; }
+  .h2h-vs { flex: 1 1 100%; }
+}
+/* four columns have no business spanning a desktop: capped so the scenario and
+   its answer stay next to each other, and scrolling below the floor as usual */
+.h2h-tbl { min-width: 420px; max-width: 760px; }
+/* four equal columns: the scenario is no more important than the answer to it,
+   and an even split keeps the payload on screen when the panel scrolls */
+.h2h-tbl th, .h2h-tbl td { width: 25%; }
+.h2h-tbl td:first-child { font-weight: 700; }
+/* the priced columns are one word wide; the slack belongs to the name */
+.need-tbl th:nth-child(n+3), .need-tbl td:nth-child(n+3) { width: 80px; }
 
 /* ways in — two semantic hues plus a structural grey for the invite, which is
    an entitlement rather than a competitive route */
