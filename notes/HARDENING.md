@@ -290,3 +290,19 @@ broken.
 - `validate.py`'s HTML parsing is regex over `<tr>`; if item 7 lands,
   a parse failure downgrades from "blind spot" to "lost redundancy,"
   which is the right severity for it.
+- **Tests that read the wall clock are time bombs.**
+  `test_a_staged_mvp_roster_still_admits_gmc_performers` let
+  `fields._waves_all_open` reach the real `now()`, so it asserted something
+  true only between Sep 1 and Sep 21 and turned CI red on 2026-09-21 with
+  nothing in the code having changed. Fixed by pinning the date the phase
+  table is read at, which is what the two roster-staging tests beside it
+  already did. Running the suite with the clock shifted (+7d, +30d, +120d)
+  finds these in seconds and would be cheap to add as a scheduled job.
+- **The MVP's last phase is dated rather than gated.** `REG_PHASES["mvp"]`
+  carries "GMC performance qualifiers" as `2026-09-21T00:00:00Z`, "the day
+  after GMC ends" — a proxy for the thing it actually means, which is that
+  GMC has been *played*. The two agree whenever GMC runs to schedule and
+  came apart never in 2026, but a rain-delayed GMC would open the phase
+  early and let a staged MVP roster read as final while the spots it awards
+  are still unknown: exactly the bug the phase was added to prevent.
+  Keying it off the schedule row's `completed` would close that.

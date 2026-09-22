@@ -41,6 +41,25 @@ def waves_open(monkeypatch):
     monkeypatch.setattr(fields, "_waves_all_open", lambda tid, now=None: True)
 
 
+@pytest.fixture
+def waves_before_gmc(monkeypatch):
+    """The stretch production actually sat in: both MVP invite waves open, the
+    GMC-performance phase still to come.
+
+    Pinned rather than read off the clock. `_waves_all_open` compares
+    config.REG_PHASES against `now`, so a test that lets it reach the real one
+    is asserting something true only between Sep 1 and Sep 21 — it passed all
+    September and began failing the day that phase opened, with nothing about
+    the code having changed. The phase table is still what is under test; only
+    the date it is read at is fixed, the same way the two roster-staging tests
+    below freeze theirs.
+    """
+    real = fields._waves_all_open
+    pinned = dt.datetime(2026, 9, 2, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(fields, "_waves_all_open",
+                        lambda tid, now=None: real(tid, now or pinned))
+
+
 # ------------------------------------------------------------ signup lists
 
 def test_page_registrants_reads_the_public_signup_list(fake_pages):
@@ -123,8 +142,14 @@ def test_a_signed_up_player_is_in_the_gmc_field_whatever_their_rank(
 
 def test_an_unsigned_contender_still_qualifies_through_the_gate(
         tiny_world, fake_pages, tight_qual):
-    """The waves reaching top 100 MPO / 50 FPO have not all opened, so an
-    absence from today's list is not an absence from the field."""
+    """An event-page list is a floor, never the field, so an absence from it is
+    not an absence from the field — the standings gate runs alongside it.
+
+    It is `staged` that decides that, not the calendar: only a PDGA Live roster
+    ever closes a field. Worth saying because the reason used to be written
+    down as "the top 100 / 50 wave has not opened yet", which stopped being
+    true on Sep 1 while the behaviour it explained did not change at all.
+    """
     standings.write_csv("MPO", standings.compute("MPO"))
     fake_pages.signups(config.TID_GMC, [p for p, _, _ in tiny_world.players[-LISTED:]])
 
@@ -264,7 +289,8 @@ def test_a_final_mvp_field_needs_no_performance_spots(tiny_world, fake_api, tigh
     assert res.p_mvp_field.sum() == pytest.approx(len(field))
 
 
-def test_a_staged_mvp_roster_still_admits_gmc_performers(tiny_world, fake_api, tight_qual):
+def test_a_staged_mvp_roster_still_admits_gmc_performers(
+        tiny_world, fake_api, tight_qual, waves_before_gmc):
     """Production's exact situation, and the bug it hid for three weeks.
 
     PDGA Live stages the MVP Open well before it is played, and by Sep 1 both
