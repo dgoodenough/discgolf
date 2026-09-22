@@ -380,7 +380,7 @@ td.msparkcell { width: 84px; padding-top: 3px; padding-bottom: 3px; }
 .h2h-tbl th, .h2h-tbl td { width: 25%; }
 .h2h-tbl td:first-child { font-weight: 700; }
 /* the priced columns are one word wide; the slack belongs to the name */
-.need-tbl th:nth-child(n+3), .need-tbl td:nth-child(n+3) { width: 80px; }
+.need-tbl th:nth-child(n+3), .need-tbl td:nth-child(n+3) { width: 74px; }
 
 /* ways in — two semantic hues plus a structural grey for the invite, which is
    an entitlement rather than a competitive route */
