@@ -379,6 +379,9 @@ td.msparkcell { width: 84px; padding-top: 3px; padding-bottom: 3px; }
    and an even split keeps the payload on screen when the panel scrolls */
 .h2h-tbl th, .h2h-tbl td { width: 25%; }
 .h2h-tbl td:first-child { font-weight: 700; }
+/* the DNF row is an outcome rather than a place, so it is ruled off from the
+   ladder above it rather than left to read as an 82nd finishing position */
+.h2h-tbl tr.h2h-dnf td { border-top: 1px solid var(--grid-strong); }
 /* the priced columns are one word wide; the slack belongs to the name */
 .need-tbl th:nth-child(n+3), .need-tbl td:nth-child(n+3) { width: 74px; }
 

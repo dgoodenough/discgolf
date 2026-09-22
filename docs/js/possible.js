@@ -536,33 +536,50 @@ function h2hBodyHtml(d, pa, pb) {
      26th. */
   const size = fieldDepth(ev);
   const best = low.points + priceLow(1);
+
+  /* Nothing to price when the lead is bigger than the event can pay: a ladder
+     of dashes is a worse answer than the sentence that explains it.
+
+     The floor this tests against is a DNF, not last place. Every finishing
+     position pays something, so "they cannot be caught even at their worst
+     finish" and "they cannot be caught at all" are different claims, and only
+     the second is grounds for printing nothing. Testing the first — which is
+     what this did while last place was the bottom of the ladder — bailed out
+     of a table whose DNF row would have shown a real answer. */
+  if (high.points >= best) {
+    return `<p class="pv-lede">${lead} — more than ${evName} can pay. ${low.name} cannot pass
+      them there however the weekend goes, even if ${lastName(high)} does not finish.</p>`;
+  }
   let shut = 0;
   for (let k = 1; k <= size; k++) if (high.points + priceHigh(k) >= best) shut = k;
-
-  // nothing to price when the lead is bigger than the event can pay: a ladder
-  // of eleven dashes is a worse answer than the sentence that explains it
-  if (shut >= size) {
-    return `<p class="pv-lede">${lead} — more than ${evName} can pay. ${low.name} cannot pass
-      them there however the weekend goes.</p>`;
-  }
-  const settles = shut ? ` ${shut === 1 ? "A win" : `${ordinal(shut)} or better`} from
-    ${lastName(high)} puts it out of reach altogether.` : "";
+  const settles = !shut ? ""
+    : shut >= size ? ` Any finish at all from ${lastName(high)} settles it — a DNF is the only
+      thing that leaves ${lastName(low)} a route.`
+    : ` ${shut === 1 ? "A win" : `${ordinal(shut)} or better`} from
+      ${lastName(high)} puts it out of reach altogether.`;
   const scen = h2hScenarios(ev).map((k) => {
     const ends = high.points + priceHigh(k);
     return { k, ends, n: needAt(d, ev, low, ends, priceLow) };
   });
-  const body = scen.map((r) => `<tr><td class="num">${ordinal(r.k)}</td>
+  /* The row no finishing place can express: the leader tees off and does not
+     finish, banking nothing. It is the real bottom of the ladder — last place
+     still pays, a DNF does not — and the one row where the margin column has
+     nothing to say, because there is no place to be ahead of. */
+  scen.push({ dnf: true, ends: high.points, n: needAt(d, ev, low, high.points, priceLow) });
+  const body = scen.map((r) => `<tr${r.dnf ? ` class="h2h-dnf"` : ""}>
+    <td class="num">${r.dnf ? "DNF" : ordinal(r.k)}</td>
     <td class="num dim">${fmtPts(r.ends)}</td>
     ${needCell(r.n)}
-    <td class="num ${r.n.kind === "never" ? "dim" : ""}">${h2hMargin(r.k, r.n) || "—"}</td></tr>`).join("");
+    <td class="num ${r.dnf || r.n.kind === "never" ? "dim" : ""}">${
+      r.dnf ? "—" : h2hMargin(r.k, r.n) || "—"}</td></tr>`).join("");
   return `<p class="pv-lede">${lead}. The margin is not a fixed number of places — the curve
     is top-heavy, so a podium from ${lastName(high)} costs ${lastName(low)} far more than a
     30th does.${settles}</p>
     <div class="pv-scroll pv-tall"><table class="table-ledger detail-tbl pv-tbl h2h-tbl"><thead><tr>
-      <th class="num">${lastName(high)} finishes</th>
+      <th class="num" ${tipAttrs(`Every finishing place, plus the one outcome that is not a place: a DNF banks nothing at all, where even the back of the field pays ${fmtPts(priceHigh(size))}`)}>${lastName(high)} finishes</th>
       <th class="num" ${tipAttrs(`Their season total after that finish, once the counting caps take their cut`)}>Ends on</th>
       <th class="num" ${tipAttrs(`The worst finish that still puts ${low.name} ahead. "any" means last place would do it; "—" means a win would not.`)}>${lastName(low)} needs</th>
-      <th class="num" ${tipAttrs(`How far clear of ${lastName(high)} that is. They are in the same field and cannot share a place, so one ahead is as tight as it gets — and "behind is fine" means the caps have eaten ${lastName(high)}'s result.`)}>Margin</th>
+      <th class="num" ${tipAttrs(`How far clear of ${lastName(high)} that is. They are in the same field and cannot share a place, so one ahead is as tight as it gets — and "behind is fine" means the caps have eaten ${lastName(high)}'s result. A DNF has no place to be ahead of.`)}>Margin</th>
     </tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
@@ -858,8 +875,10 @@ function renderPossible(d) {
        the same field and cannot share a place, so "1 ahead" is as tight as a margin gets.
        Every place is listed rather than a sample of them, down to the back of the
        ${closer ? `${Math.round(closer.field_size)}-player field plus ${FIELD_SLACK}` : "field"},
-       because entries move right up to the first tee. The list of players is everyone whose
-       standing is still live, ordered by points.`)}
+       because entries move right up to the first tee — and then a <b>DNF</b> row under them,
+       which is the real floor: every finishing place pays something, not finishing pays
+       nothing. The list of players is everyone whose standing is still live, ordered by
+       points.`)}
 
     ${panel("doors", "The ways in", "three routes, one number",
       `The Cup number is a sum over three unrelated routes — finish inside the
