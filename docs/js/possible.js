@@ -1,9 +1,10 @@
-/* The "what's left" tab: five reads of the remaining possibility space.
+/* The "what's left" tab: six reads of the remaining possibility space.
 
-   Panels 1-4 are pure re-reads of fields the bundle already ships. Panel 5
-   re-runs the cutline replay under a fixed result at one event, which is why
-   it is computed lazily, chunked one player per tick, and cached per
-   division. */
+   Panels 1-5 are pure re-reads of fields the bundle already ships; 3 and 4
+   also price a gap as a finishing place, which is arithmetic on the closing
+   event's own curve rather than a simulation. Panel 6 re-runs the cutline
+   replay under a fixed result at one event, which is why it is computed
+   lazily, chunked one player per tick, and cached per division. */
 
 import { $, fmtPct, fmtPts, ordinal, state } from "./core.js";
 import { probe, tipAttrs } from "./tooltip.js";
@@ -11,15 +12,17 @@ import { CLS_LABEL, liveTidSet, nameCell, playerLink, playoffNote, POOL_BY_CLS, 
 import { samplePoints } from "./sim.js";
 
 /* ==========================================================================
-   "What's left" view — five reads of the remaining possibility space.
+   "What's left" view — six reads of the remaining possibility space.
 
    The forecast table answers "will this player get in" one row at a time.
    These answer the shape questions it can't: how wide is everyone's range,
    which positions are actually still contested, how far the chasers are from
-   the line, which door they walk through, and where their season gets decided.
+   the line and what closing that gap costs, what it takes to pass the player
+   one row up, which door they walk through, and where their season gets
+   decided.
 
-   Panels 1-4 are pure re-reads of fields the bundle already ships (hist,
-   cutline, p_cut, p_mvp_qual, att) — no pipeline change. Panel 5 re-runs the
+   Panels 1-5 are pure re-reads of fields the bundle already ships (hist,
+   cutline, p_cut, p_mvp_qual, att) — no pipeline change. Panel 6 re-runs the
    cutline replay under a fixed result at one event, which is why it is
    computed lazily, chunked, and cached per division.
    ========================================================================== */
@@ -32,6 +35,40 @@ function contenders(d, max = 26) {
     .filter((p) => p.p_cut > 0.004 && p.p_cut < 0.996)
     .sort((a, b) => b.points - a.points || a.rank - b.rank)
     .slice(0, max);
+}
+
+// the rug labels, the gap annotations and the head-to-head summary all want a
+// name short enough to sit next to a number
+const lastName = (p) => p.name.split(/\s+/).pop();
+
+/* ---------- counting pools ---------- */
+
+/* Exact top-`cap` sum for one counting pool after adding `adds`.
+
+   The single-add case — every pool but the playoffs today — is the whole point
+   of this view: a new result only counts for what it beats, so it is worth
+   `value − the pool's current floor`, which is why the same event is worth 300
+   to one player and 90 to the next. */
+function poolSum(pl, adds) {
+  if (!adds.length) return pl.sum;
+  if (adds.length === 1) return pl.sum + Math.max(0, adds[0] - pl.floor);
+  const all = pl.kept.concat(adds).sort((a, b) => b - a);
+  let s = 0;
+  for (let i = 0; i < pl.cap && i < all.length; i++) s += all[i];
+  return s;
+}
+
+function countingPools(d, p) {
+  const m = d.meta;
+  const banked = { dgpt: [], playoff: [], major: [], jomez: [] };
+  for (const b of p.banked) banked[POOL_BY_CLS[b.cls] || "dgpt"].push(b.pts);
+  const pools = { jomez: banked.jomez.reduce((s, x) => s + x, 0) };
+  for (const [k, cap] of [["dgpt", m.count_dgpt], ["playoff", m.count_playoff], ["major", m.majors_counted]]) {
+    const kept = banked[k].sort((a, b) => b - a).slice(0, cap);
+    pools[k] = { kept, cap, sum: kept.reduce((s, x) => s + x, 0),
+                 floor: kept.length >= cap ? kept[cap - 1] : 0 };
+  }
+  return pools;
 }
 
 /* ---------- 1 · possibility cloud ---------- */
@@ -180,14 +217,106 @@ function contestedHtml(d) {
 /* Points only ever go up, so a player's current total is a hard floor and the
    distance to the cutline is a real, closeable number. The axis has to reach
    down to the chasers rather than just covering the cutline — the horizontal
-   distance between the two IS the chart. */
-function cutlineHtml(d) {
-  const m = d.meta, cl = d.cutline;
+   distance between the two IS the chart.
+
+   A distance in points is only half of what a chaser is asking, though: the
+   other half is what it costs. So every gap here is also priced as a finishing
+   place at the closing event — the worst finish that still carries them over
+   the line. */
+
+/* The event a chaser's season comes down to: the MVP Open while it is still
+   unplayed, and otherwise whatever is last on the calendar. */
+function closingEvent(d) {
+  return d.events.find((e) => e.tid === d.meta.mvp_tid) || d.events[d.events.length - 1] || null;
+}
+
+/* The three lines worth pricing against. "Low" and "high" are the cutline's
+   10th and 90th percentiles — the same season in its kind and its cruel
+   version — and the median between them is the headline. Named rather than
+   numbered because a table column headed "10th pct" full of ordinals ("10th
+   pct: 12th") is two different kinds of place in four words. */
+const CUT_BANDS = [
+  { f: 0.1, label: "low", head: "Low", pct: "10th percentile", blurb: "a season where the line lands low" },
+  { f: 0.5, label: "median", head: "Median", pct: "median", blurb: "where the line usually lands" },
+  { f: 0.9, label: "high", head: "High", pct: "90th percentile", blurb: "a season where the line lands high" },
+];
+const cutBands = (q) => CUT_BANDS.map((b) => ({ ...b, pts: q(b.f) }));
+
+/* What a finish at `ev` is worth to `p`, place by place, after the per-class
+   counting caps — a result only counts for what it beats. The Jomez bonus is
+   the one uncapped pool and pays face value.
+
+   Null when they are not in that field: an event that cannot move their season
+   is a different answer from one worth zero, and the callers say so. */
+function pricer(d, ev, p) {
+  const ei = ev ? d.events.indexOf(ev) : -1;
+  if (ei < 0 || !((p.live && p.live[ev.tid]) || p.att[ei] > 0.02)) return null;
+  const key = POOL_BY_CLS[ev.cls] || "dgpt";
+  const pool = key === "jomez" ? null : countingPools(d, p)[key];
+  return (place) => {
+    const v = place <= ev.curve.length ? ev.curve[place - 1] : 0;
+    return pool ? poolSum(pool, [v]) - pool.sum : v;
+  };
+}
+
+/* The worst finish at `ev` that still carries `p` past `target` season points.
+
+   Walks the event's own curve to the back of its field, so "any finish does
+   it" and "a win is not enough" are real answers rather than a place number
+   clipped at either end.
+
+   Two things are held still. The rest of the season stays where it stands,
+   which is exact with one event left and a ceiling before that — anything
+   banked elsewhere only lowers the bar. And the line itself is the one the
+   base simulation drew, when a player who wins here takes points off the
+   people it is made of: the same frozen-cutline approximation the row
+   expander runs on, and for the same reason. */
+function needAt(d, ev, p, target, price = pricer(d, ev, p)) {
+  if (p.points > target) return { kind: "clear" };
+  if (!price) return { kind: "out" };
+  const size = Math.max(1, Math.round(ev.field_size));
+  const need = target - p.points;
+  let worst = 0;
+  for (let k = 1; k <= size; k++) if (price(k) > need) worst = k;
+  if (!worst) return { kind: "never" };
+  return { kind: worst >= size ? "any" : "place", place: worst };
+}
+
+/* How a needed finish reads in prose — the gap annotations and the tick
+   readout — and in a table cell, where the column head carries the sentence. */
+function needText(n) {
+  switch (n.kind) {
+    case "clear": return "already clear";
+    case "any": return "any finish does it";
+    case "never": return "a win is not enough";
+    case "out": return "not in the field";
+    default: return `needs ${n.place === 1 ? "the win" : ordinal(n.place)}`;
+  }
+}
+function needShort(n) {
+  switch (n.kind) {
+    case "clear": return "clear";
+    case "any": return "any";
+    case "never": return "—";
+    case "out": return "n/a";
+    default: return ordinal(n.place);
+  }
+}
+function needCell(n) {
+  if (n.kind === "out") {
+    return `<td class="num dim" ${tipAttrs("Not in this field — this event cannot move their season")}>n/a</td>`;
+  }
+  if (n.kind === "never") return `<td class="num dim">—</td>`;
+  if (n.kind === "clear" || n.kind === "any") return `<td class="num"><span class="pos">${needShort(n)}</span></td>`;
+  return `<td class="num">${needShort(n)}</td>`;
+}
+
+function cutlineHtml(d, q) {
+  const cl = d.cutline;
   if (!cl || cl.length < 100) return "";
   const rug = contenders(d);
-  const sorted = [...cl].sort((a, b) => a - b);
-  const q = (f) => sorted[Math.min(sorted.length - 1, Math.floor(f * sorted.length))];
-  const p50 = q(0.5), blo = q(0.005), bhi = q(0.995);
+  const bands = cutBands(q), ev = closingEvent(d);
+  const p50 = bands[1].pts, blo = q(0.005), bhi = q(0.995);
   const NB = 44, bwPts = (bhi - blo) / NB;
   const bins = new Array(NB).fill(0);
   for (const x of cl) if (x >= blo && x <= bhi) bins[Math.min(NB - 1, Math.floor((x - blo) / bwPts))]++;
@@ -218,26 +347,216 @@ function cutlineHtml(d) {
     .filter((p, i, a) => p && a.indexOf(p) === i)
     .forEach((p, i) => {
       const x = X(p.points), y = T + ph + 50 + i * 17, wide = med - x > 120;
+      // the gap and its price, on one line: the distance is the chart, the
+      // finish it takes is what the reader came for
+      const n = ev ? needAt(d, ev, p, p50) : { kind: "out" };
+      const cost = n.kind === "out" || n.kind === "clear" ? "" : ` · ${needText(n)}`;
       ticks += `<line class="pv-gap" x1="${x.toFixed(1)}" y1="${y}" x2="${med.toFixed(1)}" y2="${y}"/>
         <circle class="pv-gapdot" cx="${x.toFixed(1)}" cy="${y}" r="2.5"/>
         <text x="${(wide ? x + 5 : x - 5).toFixed(1)}" y="${y - 5}" text-anchor="${wide ? "start" : "end"}"
-          class="pv-gaplabel">${p.name.split(/\s+/).pop()} · <tspan class="pv-gapnum">${Math.round(p50 - p.points)}</tspan> short</text>`;
+          class="pv-gaplabel">${lastName(p)} · <tspan class="pv-gapnum">${Math.round(p50 - p.points)}</tspan> short${cost}</text>`;
     });
   let axis = "";
   for (let t = Math.ceil(xlo / 50) * 50; t <= bhi; t += 50) {
     axis += `<text x="${X(t).toFixed(1)}" y="${T + ph + 33}" text-anchor="middle" class="pc-tick">${t}</text>`;
   }
+  /* The low and high marks, dashed so the median keeps the chart's one solid
+     anchor. Each gets a label only where there is room for one: on a narrow
+     distribution all three land within a few pixels and the labels would stack
+     on top of each other, and three unreadable numbers are worse than one. */
+  let guides = "";
+  bands.forEach((b, i) => {
+    if (i === 1) return;
+    const x = X(b.pts), right = i > 1;
+    guides += `<line class="pc-band" x1="${x.toFixed(1)}" y1="${T - 4}" x2="${x.toFixed(1)}" y2="${(T + ph).toFixed(1)}"/>`;
+    if (Math.abs(x - med) < 62) return;
+    guides += `<text x="${(x + (right ? 4 : -4)).toFixed(1)}" y="${T + 7}"
+      text-anchor="${right ? "start" : "end"}" class="pc-bandlabel">${b.label} ${Math.round(b.pts)}</text>`;
+  });
   return `<div class="pv-scroll"><svg class="pv-svg" id="pcutline" width="${W}" height="${H}"
     viewBox="0 0 ${W} ${H}" role="img"
     aria-label="Where the last automatic bid lands across the simulations, against each contender's current points">
-    ${bars}
+    ${bars}${guides}
     <line class="pc-cut" x1="${med.toFixed(1)}" y1="${T - 4}" x2="${med.toFixed(1)}" y2="${T + ph + 70}"/>
-    <text x="${(med + 5).toFixed(1)}" y="${T + 7}" class="pc-cutlabel">median cutline ${Math.round(p50)}</text>
+    <text x="${(med + 5).toFixed(1)}" y="${T + 7}" class="pc-cutlabel">median ${Math.round(p50)}</text>
     <line class="pv-axis" x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}"/>
     ${ticks}${axis}</svg></div>`;
 }
 
-/* ---------- 4 · the ways in ---------- */
+/* The chart's table twin: the same three lines, priced. A gap in points is
+   abstract until it is a finishing place, which is the unit the weekend is
+   actually played in.
+
+   Everyone the rug draws who is not already past the high line — a player
+   clear of all three has nothing to read here, and a row of three "clear"s
+   would be the only thing most of the table said in September. */
+function needsTableHtml(d, q) {
+  const ev = closingEvent(d);
+  if (!ev) return "";
+  const bands = cutBands(q), evName = shortName(ev.name);
+  const rows = contenders(d).filter((p) => p.points <= bands[2].pts);
+  if (!rows.length) {
+    return `<p class="hint">Every contender still in play is already clear of the cutline's high end.</p>`;
+  }
+  const head = bands.map((b) =>
+    `<th class="num" ${tipAttrs(`The worst finish at ${evName} that still carries them past `
+      + `${Math.round(b.pts)} points — the cutline in ${b.blurb} (${b.pct} of the simulations). `
+      + `"clear" means they are already past it, "any" that last place would do it, `
+      + `"—" that a win would not.`)}>${b.head}`
+    + `<span class="need-pts">${Math.round(b.pts)}</span></th>`).join("");
+  const body = rows.map((p) => {
+    const gap = Math.round(bands[1].pts - p.points);
+    return `<tr><td class="num dim">${p.rank}</td><td>${nameCell(p)}</td>
+      <td class="num">${fmtPts(p.points)}</td>
+      <td class="num">${gap > 0 ? gap : `<span class="pos">+${-gap}</span>`}</td>
+      ${bands.map((b) => needCell(needAt(d, ev, p, b.pts))).join("")}</tr>`;
+  }).join("");
+  return `<div class="pv-scroll"><table class="table-ledger detail-tbl pv-tbl need-tbl"><thead><tr>
+    <th class="num">#</th><th>Player</th><th class="num">Points</th>
+    <th class="num" ${tipAttrs(`Points short of the median cutline. A + is points already clear of it.`)}>Short</th>
+    ${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+/* ---------- 4 · head to head ---------- */
+
+/* The cutline is one opponent; the player one row up is the other. What it
+   takes to pass someone is not a property of either player alone — it depends
+   on what THEY do that weekend, and on the counting caps, which can make the
+   identical finish worth 250 points to one of them and 40 to the other.
+
+   Deliberately a pair rather than a matrix. Every combination of 52 players is
+   1,326 answers nobody reads; two dropdowns over the same curated list the
+   possibility cloud draws is the one answer someone actually came for. */
+
+/* The pair the panel opens on: the two players either side of the automatic-bid
+   cut, which is the argument the rest of the page is about. */
+function defaultPair(d) {
+  const rows = cloudRows(d);
+  const i = rows.findIndex((p) => p.rank > d.meta.cut);
+  if (i > 0) return [rows[i].pdga, rows[i - 1].pdga];
+  return rows.length > 1 ? [rows[1].pdga, rows[0].pdga] : [];
+}
+
+/* The reader's pick, or the default — validated against THIS division, since
+   the selection survives a division switch and a PDGA number does not. */
+function h2hPick(d) {
+  const rows = cloudRows(d), saved = state.h2h[state.div] || {};
+  const has = (n) => rows.some((p) => p.pdga === n);
+  const [da, db] = defaultPair(d);
+  const a = has(saved.a) ? saved.a : da, b = has(saved.b) ? saved.b : db;
+  return a === b ? [da, db] : [a, b];
+}
+
+/* The leader's finishes to price the chase against. A points curve is brutally
+   top-heavy — the first three places are worth more than places 20 through 45
+   put together — so an even ladder would spend most of its rows on the flat
+   part where nothing moves. Last place is always included: the bottom of the
+   curve is the scenario a chaser is hoping for. */
+const H2H_PLACES = [1, 2, 3, 5, 8, 12, 20, 30, 45, 60];
+function h2hScenarios(ev) {
+  const size = Math.max(1, Math.round(ev.field_size));
+  return H2H_PLACES.filter((k) => k < size).concat(size);
+}
+
+/* How many places clear of the leader the chaser has to finish.
+
+   `k − needed` is the arithmetic, but the two are in the same field and cannot
+   share a place, so a margin of zero — "you need the place they just took" —
+   is really one place ahead. Negative means the caps have eaten the leader's
+   result and the chaser can finish behind them and still pass. */
+function h2hMargin(k, n) {
+  if (n.kind !== "place" && n.kind !== "any") return null;
+  const m = k - n.place;
+  return m >= 0 ? `${Math.max(1, m)} ahead` : `${-m} behind is fine`;
+}
+
+const byPdga = (rows, n) => rows.find((p) => p.pdga === n);
+
+function h2hHtml(d) {
+  const rows = cloudRows(d);
+  if (rows.length < 2 || !closingEvent(d)) return "";
+  const [aN, bN] = h2hPick(d);
+  const sel = (id, picked) => `<select class="h2h-sel" id="${id}" aria-label="player">${
+    rows.map((p) => `<option value="${p.pdga}"${p.pdga === picked ? " selected" : ""}>${
+      p.rank}. ${p.name} — ${fmtPts(p.points)}</option>`).join("")}</select>`;
+  return `<div class="pv-tools h2h-tools">${sel("h2h-a", aN)}
+    <span class="h2h-vs">vs</span>${sel("h2h-b", bN)}</div>
+    <div id="h2h-body">${h2hBodyHtml(d, byPdga(rows, aN), byPdga(rows, bN))}</div>`;
+}
+
+function h2hBodyHtml(d, pa, pb) {
+  const ev = closingEvent(d);
+  if (!pa || !pb || !ev) return "";
+  if (pa.pdga === pb.pdga) return `<p class="hint">Pick two different players.</p>`;
+  // who chases whom is the standings' answer, not the dropdowns'
+  const [low, high] = pa.points <= pb.points ? [pa, pb] : [pb, pa];
+  const evName = shortName(ev.name), gap = high.points - low.points;
+  const priceLow = pricer(d, ev, low), priceHigh = pricer(d, ev, high);
+  // PDGA attribution: an <option> cannot carry a link, so both names are
+  // linked here, where the panel says them in prose
+  const lead = `<b>${playerLink(high)}</b> leads <b>${playerLink(low)}</b> by <b>${fmtPts(gap)}</b> points`;
+
+  if (!priceLow) {
+    return `<p class="pv-lede">${lead}, and ${low.name} is not in the ${evName} field —
+      their season is over at ${fmtPts(low.points)} points.</p>`;
+  }
+  if (!priceHigh) {
+    const n = needAt(d, ev, low, high.points, priceLow);
+    return `<p class="pv-lede">${lead}. ${high.name} is not in the ${evName} field, so that
+      total is final: ${low.name} ${needText(n)}.</p>`;
+  }
+
+  /* The finish that settles it, read off the whole curve rather than off the
+     ladder: both prices are monotone in place, so the finishes the chaser
+     cannot answer are a prefix, and the last of them is the threshold. Taking
+     it from the sparse ladder instead would quote 20th when the real line is
+     26th. */
+  const size = Math.max(1, Math.round(ev.field_size));
+  const best = low.points + priceLow(1);
+  let shut = 0;
+  for (let k = 1; k <= size; k++) if (high.points + priceHigh(k) >= best) shut = k;
+
+  // nothing to price when the lead is bigger than the event can pay: a ladder
+  // of eleven dashes is a worse answer than the sentence that explains it
+  if (shut >= size) {
+    return `<p class="pv-lede">${lead} — more than ${evName} can pay. ${low.name} cannot pass
+      them there however the weekend goes.</p>`;
+  }
+  const settles = shut ? ` ${shut === 1 ? "A win" : `${ordinal(shut)} or better`} from
+    ${lastName(high)} puts it out of reach altogether.` : "";
+  const scen = h2hScenarios(ev).map((k) => {
+    const ends = high.points + priceHigh(k);
+    return { k, ends, n: needAt(d, ev, low, ends, priceLow) };
+  });
+  const body = scen.map((r) => `<tr><td class="num">${ordinal(r.k)}</td>
+    <td class="num dim">${fmtPts(r.ends)}</td>
+    ${needCell(r.n)}
+    <td class="num ${r.n.kind === "never" ? "dim" : ""}">${h2hMargin(r.k, r.n) || "—"}</td></tr>`).join("");
+  return `<p class="pv-lede">${lead}. The margin is not a fixed number of places — the curve
+    is top-heavy, so a podium from ${lastName(high)} costs ${lastName(low)} far more than a
+    30th does.${settles}</p>
+    <div class="pv-scroll"><table class="table-ledger detail-tbl pv-tbl h2h-tbl"><thead><tr>
+      <th class="num">${lastName(high)} finishes</th>
+      <th class="num" ${tipAttrs(`Their season total after that finish, once the counting caps take their cut`)}>Ends on</th>
+      <th class="num" ${tipAttrs(`The worst finish that still puts ${low.name} ahead. "any" means last place would do it; "—" means a win would not.`)}>${lastName(low)} needs</th>
+      <th class="num" ${tipAttrs(`How far clear of ${lastName(high)} that is. They are in the same field and cannot share a place, so one ahead is as tight as it gets — and "behind is fine" means the caps have eaten ${lastName(high)}'s result.`)}>Margin</th>
+    </tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function wireH2h(root, d) {
+  const a = root.querySelector("#h2h-a"), b = root.querySelector("#h2h-b");
+  if (!a || !b) return;
+  const rows = cloudRows(d);
+  const redraw = () => {
+    state.h2h[state.div] = { a: +a.value, b: +b.value };
+    const holder = root.querySelector("#h2h-body");
+    if (holder) holder.innerHTML = h2hBodyHtml(d, byPdga(rows, +a.value), byPdga(rows, +b.value));
+  };
+  a.addEventListener("change", redraw);
+  b.addEventListener("change", redraw);
+}
+
+/* ---------- 5 · the ways in ---------- */
 
 /* p_champ is a sum over three unrelated routes, and the headline number hides
    which one a player is actually on. The invite share is the residual: the sim
@@ -273,38 +592,10 @@ function doorsHtml(d) {
     <th class="num">Cup</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
-/* ---------- 5 · where the season actually gets decided ---------- */
+/* ---------- 6 · where the season actually gets decided ---------- */
 
 const LEV_SAMPLES = 1200;   // per-event points draws, reused across conditions
 const LEV_SIMS = 8000;      // cutline samples per conditional run
-
-/* Exact top-`cap` sum for one counting pool after adding `adds`.
-
-   The single-add case — every pool but the playoffs today — is the whole point
-   of this view: a new result only counts for what it beats, so it is worth
-   `value − the pool's current floor`, which is why the same event is worth 300
-   to one player and 90 to the next. */
-function poolSum(pl, adds) {
-  if (!adds.length) return pl.sum;
-  if (adds.length === 1) return pl.sum + Math.max(0, adds[0] - pl.floor);
-  const all = pl.kept.concat(adds).sort((a, b) => b - a);
-  let s = 0;
-  for (let i = 0; i < pl.cap && i < all.length; i++) s += all[i];
-  return s;
-}
-
-function countingPools(d, p) {
-  const m = d.meta;
-  const banked = { dgpt: [], playoff: [], major: [], jomez: [] };
-  for (const b of p.banked) banked[POOL_BY_CLS[b.cls] || "dgpt"].push(b.pts);
-  const pools = { jomez: banked.jomez.reduce((s, x) => s + x, 0) };
-  for (const [k, cap] of [["dgpt", m.count_dgpt], ["playoff", m.count_playoff], ["major", m.majors_counted]]) {
-    const kept = banked[k].sort((a, b) => b - a).slice(0, cap);
-    pools[k] = { kept, cap, sum: kept.reduce((s, x) => s + x, 0),
-                 floor: kept.length >= cap ? kept[cap - 1] : 0 };
-  }
-  return pools;
-}
 
 /* Per remaining event, the swing in automatic-bid odds between a
    90th-percentile week there and a 10th-percentile one — the cutline replay
@@ -464,10 +755,13 @@ function renderPossible(d) {
   const eff = effectiveCandidates(d);
   const effCut = eff[m.cut - 1], effOne = eff[0];
   const locked = d.players.filter((p) => p.p_champ >= 0.99).length;
+  // one sort of the 25,000-entry cutline, read by the chart, its table, the
+  // tick probe and the note below it
   const sortedCl = [...d.cutline].sort((a, b) => a - b);
-  const clq = (f) => sortedCl[Math.floor(f * sortedCl.length)];
+  const clq = (f) => sortedCl[Math.min(sortedCl.length - 1, Math.floor(f * sortedCl.length))];
   const rug = contenders(d);
   const behind = rug.filter((p) => p.points < clq(0.5));
+  const closer = closingEvent(d);
   const sideDoor = d.players.filter((p) => p.p_mvp_qual > p.p_cut && p.p_mvp_qual > 0.1).length;
 
   const panel = (id, title, form, lede, chart, note) =>
@@ -478,7 +772,7 @@ function renderPossible(d) {
   el.innerHTML = `
     <p class="pv-intro"><b>${d.events.length} event${d.events.length === 1 ? "" : "s"} left
       to award points</b> — ${evs.join(", ")}. The Powerball Cup itself pays none.
-      These five panels read the same simulation the table does, sideways: not
+      These six panels read the same simulation the table does, sideways: not
       "will this player get in" but how much of the season is still open, and where.</p>
 
     ${panel("cloud", "The possibility cloud", "one row per contender",
@@ -507,12 +801,30 @@ function renderPossible(d) {
 
     ${panel("cutline", "The cutline, and how far away you are", "25,000 simulated seasons",
       `Points only ever go up, so a player's total today is a hard floor and the
-       distance to the cutline is a real, closeable number.`,
-      cutlineHtml(d),
-      `The ${ordinal(m.cut)} spot lands between <b>${Math.round(clq(0.05))}</b> and
-       <b>${Math.round(clq(0.95))}</b> points in 90% of seasons.
+       distance to the cutline is a real, closeable number${closer
+         ? ` — and one with a price on it: a finishing place at ${shortName(closer.name)}` : ""}.`,
+      cutlineHtml(d, clq) + needsTableHtml(d, clq),
+      `The ${ordinal(m.cut)} spot lands between <b>${Math.round(clq(0.1))}</b> and
+       <b>${Math.round(clq(0.9))}</b> points in 80% of seasons — the two dashed marks.
        ${behind.length ? `${behind.length} contender${behind.length === 1 ? " is" : "s are"} still
-       short of the median.` : ""} Ticks are coloured by auto-bid odds; tap or hover one for its gap.`)}
+       short of the median.` : ""} Ticks are coloured by auto-bid odds; tap or hover one for its gap.
+       ${closer ? `Those are the line in a kind season and in a cruel one, and the table prices
+       them and the median alike as a finish at
+       ${shortName(closer.name)}: the worst place that still clears it once the counting caps
+       have taken their cut. It holds the rest of the season where it stands${d.events.length > 1
+         ? `, so with ${d.events.length} events left those places are a ceiling — anything banked
+       elsewhere lowers the bar` : ""}.` : ""}`)}
+
+    ${panel("h2h", "Head to head", "two players, one field",
+      `The cutline is one opponent; the player one row up is the other. What it takes to pass
+       someone depends on what they do that weekend — and on the counting caps, which can make
+       the identical finish worth ${closer ? fmtPts(closer.curve[0]) : "250"} points to one of
+       them and a tenth of that to the other.`,
+      h2hHtml(d),
+      `Exact arithmetic on the ${closer ? shortName(closer.name) : "closing event"} points curve,
+       not a simulation: it says what has to happen, not how likely it is. Both players are in
+       the same field and cannot share a place, so "1 ahead" is as tight as a margin gets. The
+       list is everyone whose standing is still live, ordered by points.`)}
 
     ${panel("doors", "The ways in", "three routes, one number",
       `The Cup number is a sum over three unrelated routes — finish inside the
@@ -544,7 +856,8 @@ function renderPossible(d) {
       wireCloudTips(el);
     })
   );
-  wireCutlineTips(el, d);
+  wireCutlineTips(el, d, clq);
+  wireH2h(el, d);
   wireLevTips(el, d);
   computeLeverage(d, state.div);
 }
@@ -567,12 +880,15 @@ function wireCloudTips(root) {
   });
 }
 
-function wireCutlineTips(root, d) {
+function wireCutlineTips(root, d, q) {
   const svg = root.querySelector("#pcutline");
   if (!svg) return;
   const rug = contenders(d);
-  const sorted = [...d.cutline].sort((a, b) => a - b);
-  const p50 = sorted[Math.floor(0.5 * sorted.length)];
+  const bands = cutBands(q), p50 = bands[1].pts, ev = closingEvent(d);
+  const evName = ev ? shortName(ev.name) : "";
+  // priced once per contender rather than three times per pointer move: this
+  // resolver runs on every mousemove across the chart
+  const price = new Map(rug.map((p) => [p.pdga, ev ? pricer(d, ev, p) : null]));
   probe(svg, (cx, _cy, touch) => {
     const r = svg.getBoundingClientRect(), sc = svg.viewBox.baseVal.width / r.width;
     const x = (cx - r.left) * sc;
@@ -586,8 +902,14 @@ function wireCutlineTips(root, d) {
     const p = rug[best];
     if (!p || bd > (touch ? 26 : 10)) return null;
     const gap = Math.round(p50 - p.points);
-    return `${p.name} · ${fmtPts(p.points)} pts · ` +
+    const line = `${p.name} · ${fmtPts(p.points)} pts · ` +
       `${gap > 0 ? `${gap} short of` : `${Math.abs(gap)} clear of`} the median cutline · auto bid ${fmtPct(p.p_cut)}`;
+    if (!ev) return line;
+    const at = bands.map((b) => needAt(d, ev, p, b.pts, price.get(p.pdga)));
+    if (at[1].kind === "out") return `${line}\nNot in the ${evName} field`;
+    // second line, because #spark-tip is `pre-line` and the three prices are a
+    // row of numbers rather than a sentence
+    return `${line}\n${evName}: ${bands.map((b, i) => `${b.label} ${needShort(at[i])}`).join(" · ")}`;
   });
 }
 

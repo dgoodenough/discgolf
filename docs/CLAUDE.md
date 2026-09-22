@@ -20,7 +20,7 @@ tab wiring. Everything else lives in `js/`:
 | `sim.js` | the client-side Monte Carlo: the cutline replay, the per-event points draws, and the 2027 drop-in |
 | `movers.js` | the biggest-movers panel |
 | `forecast.js` | the standings table, column guide, expanded row, what-if |
-| `possible.js` | the five "what's left" panels |
+| `possible.js` | the six "what's left" panels |
 | `race.js` | the event-odds chart and table |
 | `projection.js` | the two experimental tables (2027, EuroTour) |
 | `whatif.js` | the What-if tab: sliders for an invented player, dropped into the 2027 field |

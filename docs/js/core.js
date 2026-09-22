@@ -9,6 +9,10 @@
 const state = { div: "mpo", view: "forecast", data: {}, sort: { key: "p_champ", dir: "desc" },
                 colsMode: "auto", permalink: null, moverWin: "week", moversOpen: false,
                 cloudMode: "chart", lev: {}, raceAxis: "time", raceWin: null,
+                // the head-to-head pair, per division: a PDGA number picked in
+                // MPO means nothing in the FPO list, so the panel validates
+                // what it restores against the division it is drawing
+                h2h: {},
                 // the experimental tabs load their own bundles and keep their
                 // own sort, so switching tabs never disturbs the forecast table
                 proj: {}, projSort: {},
