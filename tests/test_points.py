@@ -85,3 +85,27 @@ def test_the_curve_floor_is_paid_past_the_published_table():
     assert exported[149] == pytest.approx(banked)   # place 150
     assert exported[-1] == pytest.approx(banked)
     assert len(exported) >= 200    # deeper than the Pro Worlds field
+
+
+def test_published_points_table_matches_the_engine():
+    """docs/how-it-works.html publishes the per-place table by hand; it has to
+    say what the engine pays, place for place, or the explainer is wrong."""
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "docs" / "how-it-works.html").read_text()
+    table = re.search(r'<table[^>]*id="points-by-place".*?<tbody>(.*?)</tbody>', html, re.S)
+    assert table, "points-by-place table missing from how-it-works.html"
+    cols = [(d, c) for d in ("MPO", "FPO") for c in ("elite", "elite_plus", "playoff", "major")]
+    curves = {k: points.event_curve(*k) for k in cols}
+    last = max(curves[cols[0]])
+    covered = set()
+    for row in re.findall(r"<tr>(.*?)</tr>", table.group(1), re.S):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row)
+        bounds = [int(n) for n in re.findall(r"\d+", cells[0])]
+        lo, hi = bounds[0], (last if cells[0].endswith("+") else bounds[-1])
+        for place in range(lo, hi + 1):
+            covered.add(place)
+            for k, shown in zip(cols, cells[1:]):
+                assert float(shown) == round(curves[k][place], 2), (place, k)
+    assert covered == set(range(1, last + 1))
