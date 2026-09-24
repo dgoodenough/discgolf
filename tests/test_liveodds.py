@@ -411,3 +411,35 @@ def test_falling_out_of_the_recorded_set_is_a_death():
     liveodds.record(res({1: stat(1.0)}), "MPO")
     assert marks_for("mpo") == [[1, 0, "P2"]]
     assert out_for("mpo")["2"] == [1, "P2"]
+
+
+def test_the_floor_is_published_for_the_table():
+    """The site's table needs the same bar the marks are cut at: a player the
+    history never recorded is absent from `out` entirely, so it has to fall
+    back to a win test, and a hardcoded one would drift from this."""
+    liveodds.record(res({1: stat(0.9), 2: stat(0.3, place=2)}), "MPO")
+    assert series_for("mpo")["dead_min"] == liveodds.DEAD_MIN == DEAD
+
+
+def test_nobody_ending_below_the_floor_is_missing_from_out():
+    """The invariant the table's alive test leans on.
+
+    `out` is the site's list of the buried, and anyone absent from it is read
+    as still in it. So a player whose odds end under DEAD_MIN must be in there
+    — otherwise a dead player comes out of the table alive.
+    """
+    liveodds.record(res({1: stat(0.5), 2: stat(0.3, place=2), 3: stat(0.2, place=3)}), "MPO")
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0, place=2), 3: stat(0.0005, place=3)}), "MPO")
+    liveodds.record(res({1: stat(1.0), 2: stat(0.0, place=2), 3: stat(0.0, place=3)}), "MPO")
+    out = out_for("mpo")
+    assert "2" in out and "3" in out, "a player ending at zero must be buried"
+    assert "1" not in out, "the winner is not buried"
+
+
+def test_a_player_between_the_bars_is_not_buried():
+    """Hysteresis cuts both ways: under CHART_MIN but above DEAD_MIN is not
+    dead, so the table must not list them as gone either."""
+    liveodds.record(res({1: stat(0.5), 2: stat(0.3, place=2)}), "MPO")
+    liveodds.record(res({1: stat(0.9), 2: stat(0.0005, place=2)}), "MPO")
+    assert out_for("mpo") == {}
+    assert marks_for("mpo") == []

@@ -410,6 +410,9 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
         # the two bars the app quotes when it explains which lines it drew
         "chart_min": CHART_MIN,
         "peak_min": PEAK_MIN,
+        # the floor the marks are cut at, so the table can tell a player the
+        # history never recorded from one it recorded and has not buried
+        "dead_min": DEAD_MIN,
         # win at the previous observation, for EVERY recorded player — the
         # table's move column covers the whole >0.1% list, not just the
         # dozen the chart had room to draw

@@ -537,18 +537,27 @@ function wireForkTips(root, r) {
 // never-in-it sorts below everyone who has a moment to point to
 const outAt = (v) => (v.out && v.out[0] != null ? v.out[0] : -1);
 
-function raceRows(d, tid, out) {
+function raceRows(d, tid, series) {
   const key = String(tid);
+  const out = series && series.out;
+  const floor = (series && series.dead_min) || 1e-4;
   return d.players
     .filter((p) => p.live && p.live[key])
     .map((p) => {
       const l = p.live[key], gone = out ? out[p.pdga] : null;
-      // Alive comes from the chart's own state machine rather than a fresh
-      // test on the current number: a player between the two bars has not
-      // crossed the lower one, so they are not dead yet and the marks above
-      // do not say they are. Three states, and the table keeps them apart —
-      // in it, out at a moment the reader can point to, or never in it.
-      const alive = out ? !gone : l.win > 0.001;
+      // Two tests, and both are needed. `out` buries anyone the chart's state
+      // machine has killed, which is the right question for a player sitting
+      // between the two bars — not dead until they cross the lower one, so no
+      // fresh test on the current number can be trusted to agree with the
+      // marks above.
+      //
+      // But `out` is built from the recorded history, and `_block` writes no
+      // row at all for a player with no equity and no top-25 place. Early in
+      // an event that is a dozen people: absent from `out`, and on `!gone`
+      // alone they came out as still in it with an empty Out cell. So anyone
+      // `out` has not buried still has to hold some equity to count as alive,
+      // and DEAD_MIN is the bar the marks themselves use.
+      const alive = out ? (!gone && l.win >= floor) : l.win > 0.001;
       return { p, l, alive, out: alive ? null : gone || null };
     })
     .sort((a, b) =>
@@ -560,7 +569,7 @@ function raceRows(d, tid, out) {
 }
 
 function raceTableHtml(d, tid, prev, onNow, series) {
-  const rows = raceRows(d, tid, series && series.out);
+  const rows = raceRows(d, tid, series);
   const ev = (d.events || []).find((e) => e.tid === tid) || { rounds: 0 };
   // Whether the bundle knows about drop-offs at all. Without this an older
   // one — the site is served from the last published bundle, which can predate
@@ -640,7 +649,7 @@ function renderRace(d) {
   const onNow = tid === liveTid;
   // The table lists the whole field now, so the lede has to take the living
   // back out of it — "31 players still have a chance" is the claim it makes.
-  const rows = raceRows(d, tid, series && series.out);
+  const rows = raceRows(d, tid, series);
   const living = rows.filter((v) => v.alive);
   const lead = living[0];
 
