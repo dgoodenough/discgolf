@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import config, fields, live_api, points, ratings, schedule, standings
+from . import asis, config, fields, live_api, points, ratings, schedule, standings
 
 # Score-model constants, recalibrated against all completed 2026 rounds
 # (94 rounds / 6,667 player-rounds; see dgpt/calibrate.py). The 2021 values
@@ -96,6 +96,8 @@ class SimResult:
     banked: list[list]       # per player: [(tid, points, is_major, place), ...]
     live_stats: dict         # {tid: {pdga: {cur, rem, win, mean_place, p10/p50/p90, mean_pts}}}
     dbl_info: dict           # {pdga: {partner_name, team_rating}} for the doubles championship
+    # the standings if the live event were called off now (asis.compute), or None
+    as_is: dict | None = None
 
 
 def _curve_vector(division: str, cls: str, size: int) -> np.ndarray:
@@ -1290,6 +1292,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         ],
         live_stats=live_stats,
         dbl_info=doubles.info,
+        as_is=asis.run(division, roster.table, sched, cut, fsz),
     )
 
 

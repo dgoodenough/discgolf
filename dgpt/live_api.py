@@ -725,6 +725,191 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     return out or None
 
 
+def _hole_list(s: dict) -> list:
+    """A row's per-hole strokes, one entry per hole ("" = not played yet).
+
+    `HoleScores` is the list form; `Scores` the comma string it mirrors,
+    padded out to the widest layout on the sheet.
+    """
+    hs = s.get("HoleScores")
+    if isinstance(hs, list):
+        return hs
+    raw = s.get("Scores")
+    return raw.split(",") if isinstance(raw, str) else []
+
+
+def _par_list(s: dict, sheet: dict) -> list[float | None]:
+    """Par per hole for the layout this row was played on.
+
+    The row's own `Pars` string is layout-local, which matters at an event
+    that plays more than one course; the sheet's `holes` table is the
+    fallback.
+    """
+    raw = s.get("Pars")
+    if isinstance(raw, str) and raw.strip(","):
+        return [_num(v) for v in raw.split(",")]
+    holes = sheet.get("holes") or []
+    return [_num(h.get("Par")) for h in holes if isinstance(h, dict)]
+
+
+def _started(s: dict) -> bool:
+    return bool(s.get("HasRoundScore")) or (s.get("Played") or 0) > 0
+
+
+def _done(s: dict) -> bool:
+    return bool(s.get("Completed")) or (s.get("Played") or 0) >= (s.get("Holes") or 18)
+
+
+def _scheduled(s: dict) -> bool:
+    """Has a tee time or group for this round (see event_complete)."""
+    return bool(s.get("TeeTime") or s.get("HasGroupAssignment") or s.get("TeeStart"))
+
+
+def counted_standing(tournament_id: int, division: str) -> dict | None:
+    """The event's result if it were called off right now.
+
+    When weather ends an event early, the result is not the live leaderboard.
+    A round in progress counts only on the holes EVERY player in it has
+    completed: a lightning stop that leaves the early cards through 18 and the
+    late ones through 9 banks holes 1-9 for everyone and throws the rest away
+    (a 2026 DGPT event was scored exactly this way). Taking the intersection
+    per round, rather than assuming holes 1..min(played), is what makes it
+    right for a shotgun start too, where the cards have played different
+    holes and the common set can be empty — in which case the round counts
+    for nothing, which is the all-or-nothing case as a special case.
+
+    Complete rounds are scored from `RoundtoPar`, exactly as live_field sums
+    them. Partial rounds are scored hole by hole against par from
+    `HoleScores`; where a sheet has no per-hole data the partial round
+    cannot be scored and is dropped (reported in `basis.unreadable`) rather
+    than guessed.
+
+    Returns {"basis": {...}, "players": {pdga: {"cur", "place"}}}, or None
+    before anyone has a counted hole. `place` is tied: equal counted
+    scores share the better place, which is the input assign_points expects
+    for tie-averaged points. A tie for first would really be settled by a
+    playoff; the averaged points are the honest answer until it is.
+    """
+    event = fetch_event(tournament_id)
+    div = next((d for d in (event.get("Divisions") or []) if d["Division"] == division), None)
+    if div is None or not div.get("LatestRound"):
+        return None
+    latest = div["LatestRound"]
+    sheet_ids, total_rounds = _round_plan(event, latest)
+    if not total_rounds:
+        return None
+
+    sheets: list[tuple[int, dict]] = []
+    for rnd in sheet_ids:
+        try:
+            sheets.append((rnd, fetch_round(tournament_id, division, rnd)))
+        except urllib.error.HTTPError:
+            if rnd == latest:
+                raise
+            continue
+
+    # Who is in the event at all: the same rule live_field applies — out on
+    # an explicit withdrawal marker, and out if they never played once the
+    # event is past its first round.
+    wd: set[int] = set()
+    active: set[int] = set()
+    for played_rounds, (_, sheet) in enumerate(sheets, 1):
+        for s in sheet.get("scores") or []:
+            pdga = s.get("PDGANum")
+            if not pdga:
+                continue
+            if (_wd_total(s.get("GrandTotal")) or _wd_to_par(s.get("RoundtoPar"))
+                    or _wd_to_par(s.get("ToPar"), played_rounds)):
+                wd.add(pdga)
+            elif _started(s):
+                active.add(pdga)
+    # Round 1 still being played: everyone on its sheet is in the event,
+    # teed off or not (live_field seeds them from scratch for the same
+    # reason). Leaving the late cards out would let the early ones' holes
+    # count, which is exactly what the holes-everyone-completed rule forbids.
+    if sheets:
+        first = [s for s in sheets[0][1].get("scores") or [] if s.get("PDGANum")]
+        if any(_scheduled(s) for s in first):   # a listed no-show is not in it
+            first = [s for s in first if _scheduled(s) or _started(s)]
+        if not all(_done(s) for s in first if s["PDGANum"] not in wd):
+            active |= {s["PDGANum"] for s in first}
+    field_ids = active - wd
+    if not field_ids:
+        return None
+
+    total = {p: 0.0 for p in field_ids}
+    made = {p: 0 for p in field_ids}   # counted rounds each player was in
+    rounds_complete, partial = 0, None
+    unreadable: list[int] = []
+    for rnd, sheet in sheets:
+        listed = [s for s in sheet.get("scores") or [] if s.get("PDGANum") in field_ids]
+        # Only the players scheduled into this round are in it. A finals
+        # sheet lists the whole field, the non-qualifiers with no tee time
+        # (USWDGC 2026: 33 of 77) — they never play it, so their empty cards
+        # must not decide which holes count. A sheet carrying no scheduling
+        # marker at all is read as everyone listed being in the round.
+        marked = any(_scheduled(s) for s in listed)
+        rows = {s["PDGANum"]: s for s in listed
+                if not marked or _scheduled(s) or _started(s)}
+        if not rows:
+            continue
+        done = all(_done(s) for s in rows.values())
+        if done and all(s.get("RoundtoPar") is not None for s in rows.values()):
+            for p, s in rows.items():
+                total[p] += float(s["RoundtoPar"])
+                made[p] += 1
+            rounds_complete += 1
+            continue
+        # a round in progress: only the holes every player has completed
+        holes = {p: _hole_list(s) for p, s in rows.items()}
+        if not all(holes.values()):
+            if any(_started(s) for s in rows.values()):
+                unreadable.append(rnd)
+            continue
+        width = min(len(h) for h in holes.values())
+        common = [i for i in range(width)
+                  if all(_num(h[i]) is not None and _num(h[i]) > 0 for h in holes.values())]
+        par_ok = True
+        add: dict[int, float] = {}
+        for p, s in rows.items():
+            pars = _par_list(s, sheet)
+            if any(i >= len(pars) or pars[i] is None for i in common):
+                par_ok = False
+                break
+            add[p] = sum(_num(holes[p][i]) - pars[i] for i in common)
+        if not par_ok:
+            unreadable.append(rnd)
+            continue
+        if common:
+            for p, v in add.items():
+                total[p] += v
+                made[p] += 1
+            partial = {"round": rnd, "holes": [i + 1 for i in common]}
+    if rounds_complete == 0 and partial is None:
+        return None
+
+    # Players who made a cut finish ahead of those who did not, whatever the
+    # scores; with no cut (every DGPT regular event) this is plain to-par.
+    key = {p: (-made[p], total[p]) for p in field_ids}
+    ordered = sorted(field_ids, key=lambda p: key[p])
+    players: dict[int, dict] = {}
+    for i, p in enumerate(ordered):
+        prev = ordered[i - 1] if i else None
+        place = players[prev]["place"] if prev is not None and key[prev] == key[p] else i + 1
+        players[p] = {"cur": total[p], "place": place}
+    return {
+        "basis": {
+            "total_rounds": total_rounds,
+            "rounds_complete": rounds_complete,
+            # the round in progress and which of its holes count (1-based)
+            "partial_round": partial["round"] if partial else None,
+            "partial_holes": partial["holes"] if partial else [],
+            "unreadable": unreadable,
+        },
+        "players": players,
+    }
+
+
 def live_state(tournament_id: int, division: str) -> dict[int, tuple[float, float]] | None:
     """Back-compat: {pdga: (current_to_par, rounds_remaining)}."""
     field = live_field(tournament_id, division)

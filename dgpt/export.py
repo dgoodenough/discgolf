@@ -65,6 +65,8 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
     strokes_frac = res.strokes_hist / res.n_sims
     countries = fields.load_countries()  # pdga -> ISO-3166 alpha-2 (blank if unknown)
 
+    as_is_players = res.as_is["players"] if res.as_is else {}
+
     players = []
     for i in range(n):
         players.append(
@@ -127,6 +129,10 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
                 },
                 # doubles championship pairing (None partner = solo, avg-partner model)
                 "dbl": res.dbl_info.get(res.pdga_numbers[i]),
+                # the standings if the live event ended now (meta.as_is says
+                # on what basis); absent when there is no such scenario
+                **({"as_is": as_is_players[res.pdga_numbers[i]]}
+                   if res.pdga_numbers[i] in as_is_players else {}),
             }
         )
     players.sort(key=lambda p: (-p["points"], p["rank"]))
@@ -191,6 +197,11 @@ def export(res: simulate.SimResult, seed: int = 7) -> None:
             # 0 in a bundle published before the Cup was simulated, which is
             # how the app knows not to draw a Win Cup column of zeroes.
             "cup_rounds": config.CUP_ROUNDS,
+            # "If it ended now": the live event scored on the holes every
+            # player has completed, banked, and the season re-ranked (see
+            # dgpt/asis.py). Absent unless an event is live and has counted
+            # holes; per-player numbers are under players[].as_is.
+            **({"as_is": res.as_is["meta"]} if res.as_is else {}),
             "start_strokes": {
                 "values": list(res.stroke_values),
                 "bands": [[rank, adv] for rank, adv in config.CUP_START_STROKES[division]],
