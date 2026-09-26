@@ -158,6 +158,29 @@ def test_export_bundle_is_well_formed(sim_result, tmp_path):
     assert star_row["live"]  # projected finish for the live event is attached
 
 
+def test_export_carries_the_as_is_standings(sim_result):
+    """The live event frozen where it stands. Its round 2 is mid-play with no
+    hole-by-hole data on the sheet, so only round 1 can be counted — and the
+    bundle says so rather than guessing."""
+    world, table, res = sim_result
+    export.export(res)
+    bundle = json.loads((export.DOCS_DATA / "mpo.json").read_text(encoding="utf-8"))
+    meta = bundle["meta"]["as_is"]
+    assert meta["decides_cup"] is False          # a major and the playoffs still to come
+    (ev,) = meta["events"]
+    assert ev["tid"] == world.live_tid
+    assert ev["rounds_complete"] == 1 and ev["unreadable"] == [2]
+
+    rows = {p["pdga"]: p for p in bundle["players"]}
+    ranks = sorted(p["as_is"]["rank"] for p in rows.values() if "as_is" in p)
+    assert ranks == list(range(1, len(ranks) + 1))
+    for p in rows.values():
+        # points only go up: freezing an event can only add to a total
+        assert p["as_is"]["points"] >= p["points"] - 1e-9
+    # round-1 leader wins the frozen event
+    assert rows[world.star]["as_is"]["event"][str(world.live_tid)]["place"] == 1
+
+
 def test_snapshot_and_movers_run_clean(sim_result):
     world, _, res = sim_result
     export.export(res)

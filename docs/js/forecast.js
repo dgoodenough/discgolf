@@ -70,6 +70,61 @@ function colGuideHtml(cols, meta) {
   </details>`;
 }
 
+/* "If it ended now": the standings with the live event called off where it
+   stands (dgpt/asis.py). Only in a bundle that carries meta.as_is — i.e. while
+   an event is live and has counted holes; older bundles simply lack it.
+
+   The basis is spelled out because it is not the live leaderboard: a round in
+   progress counts only on the holes every player has completed. */
+function asIsBasis(meta) {
+  const a = meta.as_is;
+  return (a.events || []).map((e) => {
+    const done = e.rounds_complete ? `R1${e.rounds_complete > 1 ? `–R${e.rounds_complete}` : ""}` : "";
+    const h = e.partial_holes || [];
+    // contiguous from hole 1 (tee times) reads as "holes 1–9"; anything else
+    // (a shotgun overlap) is counted rather than listed
+    const run = h.length && h[0] === 1 && h[h.length - 1] === h.length;
+    const part = !h.length ? ""
+      : `${run ? `holes 1–${h.length}` : `${h.length} holes`} of the round in progress`;
+    const counted = [done, part].filter(Boolean).join(" plus ") || "nothing yet";
+    const lost = (e.unreadable || []).length ? " (the round in progress has no hole-by-hole scores yet, so none of it counts)" : "";
+    return `${shortName(e.name)} scored on ${counted}${lost}`;
+  }).join("; ");
+}
+
+const AS_IS_CUP = {
+  auto: ["", "Automatic bid"],
+  mvp: ["MVP", "Cup spot from an MVP Open finish outside the cut"],
+  invite: ["inv", "Special invite for a DGPT/Major win — bottom seed"],
+};
+
+/* Rank, coloured by what it means for the Cup when the table is final (green
+   in the field, red out of it for anyone who still had a chance), a ▲▼ move
+   against the current standings, and a tag only for the two side doors. The
+   plain "in"/"out" is the colour: a word on every row was noise. */
+function asIsCell(p, meta) {
+  const a = p.as_is;
+  if (!a) return `<span class="dim">—</span>`;
+  const mv = p.rank - a.rank;
+  const arrow = !mv ? "" : `<span class="${mv > 0 ? "pos" : "neg"} asis-mv">${mv > 0 ? "▲" : "▼"}${Math.abs(mv)}</span>`;
+  let cls = "", tag = "", why = "";
+  if (meta.as_is.decides_cup) {
+    const entry = AS_IS_CUP[a.cup];
+    if (entry) {
+      cls = "pos";
+      tag = entry[0] ? `<span class="pos asis-cup">${entry[0]}</span>` : "";
+      why = ` — in the Cup (${entry[1].toLowerCase()}), starting on ${fmtStroke(a.strokes ?? 0)}`;
+    } else if (p.p_champ > 0.004) {
+      cls = "neg";
+      why = " — misses the Cup";
+    }
+  }
+  const ev = Object.values(a.event || {})[0];
+  const tip = `${ordinal(a.rank)} on ${fmtPts(a.points)} pts`
+    + (ev ? ` (${ordinal(ev.place)} at the event, ${fmtPts(ev.pts)} pts)` : "") + why;
+  return `<span class="asis" ${tipAttrs(tip)}><b class="${cls}">${a.rank}</b>${arrow}${tag}</span>`;
+}
+
 // Columns in priority order (left = most important). `hide` marks the tier
 // that drops out first as the screen narrows (core columns never hide).
 // `adv` columns only exist in the Advanced view.
@@ -103,6 +158,9 @@ function forecastCols(meta, adv = false) {
     ...(adv ? [flagCol] : []),
     { key: "name", label: "Player", num: false, get: (p) => p.name.toLowerCase(), cell: nameCell, dir0: "asc" },
     { key: "points", label: "Points", num: true, get: (p) => p.points, cell: (p) => `<b>${fmtPts(p.points)}</b>`, dir0: "desc" },
+    ...(meta.as_is ? [{ key: "as_is", label: "If over now", num: true,
+      title: `Where they would finish the standings if play stopped now and the event were final — not a forecast. ${asIsBasis(meta)}. ▲▼ is the move from the current standings${meta.as_is.decides_cup ? ". Green is in the Cup field, red is out; MVP and inv mark a Cup spot from an MVP Open finish or an event-win invite" : ""}`,
+      get: (p) => p.as_is ? p.as_is.rank : 1e9, cell: (p) => asIsCell(p, meta), dir0: "asc" }] : []),
     { key: "p_champ", label: "Cup", title: "P(in the Powerball Cup field): automatic bid, MVP-performance qualifier, or a DGPT/Major event win (special invite — 100% if already won)", num: true, get: (p) => p.p_champ, cell: (p) => `<b class="${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</b>`, dir0: "desc" },
     ...(hasCupWin ? [{ key: "p_cup_win", label: "Win Cup", hide: "t1", title: `P(wins the Powerball Cup): the four-round championship played out from each seed's starting strokes, over every season where they reach it. Unlike Cup, this one is a race — the whole field's odds add to 100%`, num: true, get: (p) => p.p_cup_win ?? 0, cell: (p) => `<b class="${probClass(p.p_cup_win ?? 0)}">${fmtPct(p.p_cup_win ?? 0)}</b>`, dir0: "desc" }] : []),
     { key: "mean_pts", label: "Proj. pts", hide: "t1", num: true, get: (p) => p.mean_pts, cell: (p) => `<span class="dim">${fmtPts(p.mean_pts)}</span>`, dir0: "desc" },
@@ -158,7 +216,7 @@ function renderForecast(d) {
       </div>
     </div>
     <div class="table-wrap${state.colsMode !== "auto" ? " cols-all" : ""}">
-      <table class="table-ledger" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+      <table class="table-ledger${meta.as_is ? " has-asis" : ""}" id="forecast-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <p class="dim" style="font-size:.75rem;margin-top:6px">${rows.length} players · click a column to sort · click a row for the event breakdown and inline what-if · tap or hover a sparkline for exact odds · <b>Cup</b> = Auto Bid + MVP Bid + event-winner invites.
     🥇 = won a points event this year; a DGPT Elite or Major win earns a guaranteed Cup spot via special invite (Cup = 100%), so these odds already include winning a remaining event.

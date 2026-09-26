@@ -29,6 +29,13 @@ the browser can rank an invented player against the field without re-simulating
 it. Its docstring is the argument for why quantiles are enough. It is emitted
 only for a tour with a postseason — the EuroTour bundle carries none.
 
+`asis.py` rides along with `simulate.run` the same way: while an event is live
+it freezes it where it stands (`live_api.counted_standing`: complete rounds in
+full, a round in progress only on the holes every player has completed),
+banks that through `points`, and re-ranks the season — `meta.as_is` and
+`players[].as_is`, the site's "If over now" column. A side panel: `asis.run`
+swallows its own failures, so it can never cost the forecast a publish.
+
 Supporting modules: `pdga_api` (authenticated REST, needs `.env`), `live_api`
 (public live scoring, no auth), `ratings`, `fields` (who plays what),
 `config` + `points` (the 2026 rules), `calibrate` (refits the score model),
