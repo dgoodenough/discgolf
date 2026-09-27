@@ -674,3 +674,45 @@ def test_a_tie_for_first_is_not_a_finished_event(fake_api):
     live_api._memo.clear()
     fake_api.round(1, "MPO", 3, sheet(2))   # playoff played: B is 2nd
     assert live_api.event_complete(1, divisions=("MPO",)) is True
+
+
+def _holes(r: dict, n: int) -> dict:
+    r["Holes"] = n
+    return r
+
+
+def test_a_shortened_final_round_is_measured_at_its_own_length(fake_api):
+    """MVP Open 2026 had 13- and 9-hole final-round layouts on standby. Holes
+    left are counted against the layout actually being played, not 18 — or
+    every chaser is handed golf that will never be played."""
+    full = lambda p, n: _holes(row(p, n, round_to_par=-2, played=18, has_score=True), 18)
+    _mini_event(fake_api, 3, {
+        1: [full(1, "A"), full(2, "B")],
+        2: [full(1, "A"), full(2, "B")],
+        3: [_holes(row(1, "A", round_to_par=-1, played=5), 13),
+            _holes(row(2, "B", played=0, tee_time="15:50"), 13)],
+    })
+    field = live_api.live_field(1, "MPO")
+    assert field[1]["rem"] == pytest.approx(8 / 18)     # 13-hole round, 5 played
+    assert field[2]["rem"] == pytest.approx(13 / 18)    # not yet teed off
+    assert field[1]["thru"] == 41
+
+
+def test_a_finished_nine_hole_round_leaves_nothing(fake_api):
+    """A completed short round reports HasRoundScore; its length is the
+    layout's, so nobody is left 'nine holes still to play'."""
+    full = lambda p, n: _holes(row(p, n, round_to_par=-2, played=18, has_score=True), 18)
+    _mini_event(fake_api, 3, {
+        1: [full(1, "A"), full(2, "B")],
+        2: [full(1, "A"), full(2, "B")],
+        3: [_holes(row(1, "A", round_to_par=-1, has_score=True), 9),
+            _holes(row(2, "B", round_to_par=1, played=9, has_score=True), 9)],
+    })
+    field = live_api.live_field(1, "MPO")
+    assert field[1]["rem"] == 0.0 and field[2]["rem"] == 0.0
+    assert field[1]["thru"] == 45
+
+
+def test_a_round_not_yet_published_is_assumed_full_length(fake_api):
+    _mini_event(fake_api, 1, {1: [_holes(row(1, "A", round_to_par=-1, played=9), 18)]})
+    assert live_api.live_field(1, "MPO")[1]["rem"] == pytest.approx((54 - 9) / 18)
