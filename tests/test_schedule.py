@@ -108,3 +108,74 @@ def test_grace_morning_banks_on_date_without_consulting(monkeypatch):
     row = _make_row(monkeypatch, hour=9, complete=False)
     assert row["completed"] is True
     assert row["_consulted"] is False
+
+
+# --- authorized overrun (config.END_DATE_EXTENSIONS) -----------------------
+# MVP Open 2026: PDGA lists a Sunday end, the DGPT may finish on Monday. The
+# calendar must not bank Sunday's unfinished round on Monday morning.
+
+def _overrun_row(monkeypatch, *, hour: int, complete, days_past_end: int = 1) -> dict:
+    """An event PDGA says ended `days_past_end` days ago, extended by one day."""
+    end = TODAY - D(days=days_past_end)
+    monkeypatch.setitem(schedule.config.END_DATE_EXTENSIONS, 42, (end + D(days=1)).isoformat())
+    monkeypatch.setattr(
+        schedule, "_utc_now",
+        lambda: dt.datetime.combine(TODAY, dt.time(hour), dt.timezone.utc))
+    calls = []
+
+    def fake_complete(tid):
+        calls.append(tid)
+        if isinstance(complete, Exception):
+            raise complete
+        return complete
+
+    monkeypatch.setattr(schedule.live_api, "event_complete", fake_complete)
+    row = schedule._row(_event(end - D(days=3), end), "playoff",
+                        mpo=True, fpo=True, fpo_points=True)
+    row["_consulted"] = bool(calls)
+    return row, end
+
+
+def test_monday_finish_is_not_banked_by_the_calendar(monkeypatch):
+    # Monday mid-morning: the plain grace night is long over, but the round
+    # is still unfinished — the extension keeps the scoreboard in charge
+    row, end = _overrun_row(monkeypatch, hour=14, complete=False)
+    assert row["completed"] is False and row["_consulted"] is True
+    assert row["end_date"] == (end + D(days=1)).isoformat()
+    assert schedule.live_events([row]) == [row]
+
+
+def test_monday_finish_banks_once_the_scoreboard_confirms(monkeypatch):
+    row, end = _overrun_row(monkeypatch, hour=19, complete=True)
+    assert row["completed"] is True
+    # the real end date again: a finished event is not live all Monday
+    assert row["end_date"] == end.isoformat()
+    assert schedule.live_events([row]) == []
+
+
+def test_an_unused_extension_changes_nothing(monkeypatch):
+    # finished on Sunday as scheduled: Monday reads exactly as it would have
+    row, end = _overrun_row(monkeypatch, hour=14, complete=True)
+    assert row["completed"] is True and row["end_date"] == end.isoformat()
+
+
+def test_scoreboard_outage_on_monday_does_not_bank(monkeypatch):
+    row, _ = _overrun_row(monkeypatch, hour=14, complete=RuntimeError("api down"))
+    assert row["completed"] is False
+
+
+def test_extension_gets_its_own_grace_night(monkeypatch):
+    # Tuesday 01:00 UTC is still Monday evening in the US
+    row, _ = _overrun_row(monkeypatch, hour=1, complete=False, days_past_end=2)
+    assert row["completed"] is False
+    assert schedule.live_events([row]) == [row]
+
+
+def test_extension_still_ends(monkeypatch):
+    # Tuesday morning: the date rules again, so a stuck row cannot hold it open
+    row, _ = _overrun_row(monkeypatch, hour=9, complete=False, days_past_end=2)
+    assert row["completed"] is True and row["_consulted"] is False
+
+
+def test_the_mvp_open_is_extended_to_monday():
+    assert schedule.config.END_DATE_EXTENSIONS[schedule.config.TID_MVP] == "2026-09-28"

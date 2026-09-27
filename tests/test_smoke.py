@@ -283,3 +283,48 @@ def test_an_unstaged_event_keeps_the_class_constant(tiny_world, fake_api):
     res = simulate.run("MPO", n_sims=200, chunk=100)
     gmc = next(e for e in res.events_meta if e["tid"] == config.TID_GMC)
     assert gmc["rounds"] == simulate.ROUNDS.get("playoff", 3) == 3
+
+
+def test_banked_mvp_open_still_awards_its_cup_spots(tiny_world, fake_api):
+    """Once the MVP Open is played and banked it is no longer drawn, and the
+    MVP-performance Cup spots used to be read only off the draw — so the
+    moment it banked, every one of them vanished. They come from the banked
+    result instead: the best MVP finishers outside the standings cut."""
+    rows = [r for r in schedule.load() if r["tournament_id"] != config.TID_GMC]
+    for r in rows:
+        if r["tournament_id"] == config.TID_MVP:
+            r["completed"] = True
+    import csv
+    with open(schedule.SCHEDULE_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=schedule.FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+    points.refresh_classes()
+
+    # the MVP Open's finishers: the top ten, then three players at the foot of
+    # the standings, far enough down the sheet that they stay there
+    deep = [p for p in tiny_world.players if p[0] in (5026, 5027, 5028)]
+    sheet = [row(p, n, r, played=18, has_score=True, running_place=i, grand_total=200)
+             for i, (p, n, r) in enumerate(tiny_world.players[:10], 1)]
+    sheet += [row(p, n, r, played=18, has_score=True, running_place=140 + i, grand_total=200)
+              for i, (p, n, r) in enumerate(deep)]
+    fake_api.event(config.TID_MVP, event_payload("Test MVP", 3, [("MPO", 3)], end_date="2000-01-01"))
+    for rnd in (1, 2, 3):
+        fake_api.round(config.TID_MVP, "MPO", rnd, round_payload(sheet))
+
+    res = simulate.run("MPO", n_sims=N_SIMS, chunk=200)
+    ix = {p: i for i, p in enumerate(res.pdga_numbers)}
+    # 5026-5028 finished the MVP Open deep enough (a point or so each) to
+    # stay at the foot of the standings, and there are more MVP-performance
+    # spots than such finishers: all three are in the Cup through that door
+    # in every season where the standings leave them out
+    for p in (5026, 5027, 5028):
+        i = ix[p]
+        assert res.p_champ[i] == 1.0
+        assert res.p_mvp_qual[i] == pytest.approx(1.0 - res.p_cut[i])
+    assert res.p_mvp_qual.sum() > 0
+    # nobody gets an MVP bid for an event they did not play
+    played = {r["PDGANum"] for r in sheet}
+    for p, i in ix.items():
+        if p not in played:
+            assert res.p_mvp_qual[i] == 0.0

@@ -116,7 +116,10 @@ def _row(e: dict, cls: str, *, mpo: bool, fpo: bool, fpo_points: bool) -> dict:
     tid = int(e["tournament_id"])
     today = dt.date.today()
     start = dt.date.fromisoformat(e["start_date"])
-    end = dt.date.fromisoformat(e["end_date"])
+    listed_end = dt.date.fromisoformat(e["end_date"])
+    # an authorized overrun (config.END_DATE_EXTENSIONS) moves every calendar
+    # rule below — "completed" by date, the grace night, and live_events()
+    end = max(listed_end, dt.date.fromisoformat(config.END_DATE_EXTENSIONS.get(tid, e["end_date"])))
     completed = end < today
     # In progress: an event may finish before its end date passes. Grace
     # night: the reverse — a US Sunday finish runs past 00:00 UTC, and banking
@@ -139,7 +142,10 @@ def _row(e: dict, cls: str, *, mpo: bool, fpo: bool, fpo_points: bool) -> dict:
         "name": e["tournament_name"],
         "cls": cls,
         "start_date": e["start_date"],
-        "end_date": e["end_date"],
+        # The extension is kept only while it is doing something: once the
+        # event is finished its real end date stands, so a finished event
+        # does not read as live through a Monday it never needed.
+        "end_date": (listed_end if completed else end).isoformat(),
         "mpo": mpo,
         "fpo": fpo,
         "fpo_points": fpo_points,

@@ -658,6 +658,11 @@ class _Qual:
     mvp_reg: np.ndarray | None = None
     gmc_final: bool = False
     mvp_final: bool = False
+    # (n,) MVP Open finishing place once it is BANKED (0 = did not finish).
+    # The MVP-performance Cup spots are awarded off that result, and once the
+    # event is no longer drawn there is no simulated place to read them from:
+    # without this every one of them vanished the moment the event banked.
+    mvp_banked_place: np.ndarray | None = None
 
 
 def _signup_mask(tid: int, division: str, roster: _Roster) -> tuple[np.ndarray | None, bool]:
@@ -727,7 +732,29 @@ def _build_qual(remaining: list[dict], division: str, roster: _Roster) -> _Qual:
         stroke_bucket=stroke_bucket,
         gmc_reg=gmc_reg, gmc_final=gmc_final,
         mvp_reg=mvp_reg, mvp_final=mvp_final,
+        mvp_banked_place=_banked_place(roster, config.TID_MVP) if mvp_ei is None else None,
     )
+
+
+def _banked_place(roster: _Roster, tid: int) -> np.ndarray | None:
+    """(n,) finishing place at a banked event, 0 for non-finishers; None if
+    nobody on the roster has it banked (not played yet, or not a points
+    event in this division)."""
+    place = np.array([
+        next((pl for t, _, pl, _ in r["events"] if t == tid and pl), 0)
+        for r in roster.table
+    ], dtype=np.int64)
+    if not place.any():
+        return None
+    # As an ORDER among the roster's finishers, not the raw sheet place:
+    # _top_k_by_place pads the ineligible with n + 1, and a real field runs
+    # deeper than the roster (an MVP Open place of 60 against a 40-player
+    # FPO roster) — a raw place past n + 1 would lose to the padding. Ties
+    # keep one shared value, so the order is exactly the sheet's.
+    order = np.unique(place[place > 0], return_inverse=True)[1] + 1
+    out = np.zeros_like(place)
+    out[place > 0] = order
+    return out
 
 
 # ------------------------------------------------------- Worlds play-in
@@ -1045,6 +1072,11 @@ def _simulate(n_sims: int, chunk: int, roster: _Roster, banked: _Banked,
             mvp_pts, mvp_place, mvp_plays = drawer.draw(qual.mvp_ei, mvp_plays, c, rows_ix, first_chunk)
             sim_win |= (mvp_place == 1) & mvp_plays
             extra.append(mvp_pts)
+
+        if mvp_place is None and qual.mvp_banked_place is not None:
+            # the MVP Open is played and banked: its real result, every sim
+            mvp_place = np.broadcast_to(qual.mvp_banked_place, (c, n))
+            mvp_plays = mvp_place > 0
 
         cut_n = qual.standings_cut
         totals = season_totals(extra)
