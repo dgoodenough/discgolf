@@ -666,7 +666,15 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
     # ToPar is used only as a fallback for a round that reports no
     # RoundtoPar at all, and only for the current round, where it is the
     # running total on the sheet being played.
+    #
+    # Round LENGTH comes from the sheet too. A weather-shortened round is
+    # played on a shorter layout (the 2026 MVP Open had 13- and 9-hole final
+    # rounds on standby), and measuring what is left against a fixed 18 hands
+    # every chaser golf that will never be played: the leader's odds read low
+    # until the last putt. A published sheet's rows carry their layout's
+    # `Holes`; a round with no sheet yet is assumed to be a full 18.
     state: dict[int, dict] = {}
+    sheet_len: dict[int, int] = {}      # sheet id -> the round's usual hole count
     for played_rounds, rnd in enumerate(sheet_ids, 1):
         try:
             scores = fetch_round(tournament_id, division, rnd).get("scores") or []
@@ -674,12 +682,15 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             if rnd == latest:
                 raise
             continue  # earlier sheet missing (restructured schedule) — skip it
+        sheet_len[rnd] = _round_length(scores)
         for s in scores:
             pdga = s.get("PDGANum")
             if not pdga:
                 continue
             rec = state.setdefault(pdga, {"name": None, "rating": None, "cur": None,
-                                          "holes": 0, "wd": False, "place": None})
+                                          "holes": 0, "wd": False, "place": None,
+                                          "len": {}})
+            rec["len"][rnd] = _row_length(s, sheet_len[rnd])
             rec["name"] = s.get("Name") or rec["name"]
             rec["rating"] = s.get("Rating") or rec["rating"]
             # Withdrawal, from any of the three fields that can carry it.
@@ -698,7 +709,7 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             # different holes played.
             if s.get("RunningPlace"):
                 rec["place"] = int(s["RunningPlace"])
-            played = s.get("Played") or (18 if s.get("HasRoundScore") else 0)
+            played = s.get("Played") or (rec["len"][rnd] if s.get("HasRoundScore") else 0)
             active = bool(s.get("HasRoundScore")) or played > 0
             if not active:
                 continue  # not started this round: carry what's accumulated
@@ -709,7 +720,8 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             elif topar is not None:
                 # no per-round score published: fall back to the sheet's total
                 rec["cur"] = float(topar)
-                rec["holes"] = (rnd - 1) * 18 + played
+                rec["holes"] = sum(rec["len"].get(r, sheet_len.get(r, 18))
+                                   for r in sheet_ids if r < rnd) + played
 
     out: dict[int, dict] = {}
     for pdga, r in state.items():
@@ -720,11 +732,16 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             if latest > 1:
                 continue  # mid-event never-started: not playing (DNS)
             cur, holes = 0.0, 0  # round 1 loaded, not yet teed off: seed from scratch
+        # the player's own layout length for every published round, the
+        # sheet's for one they have no row on, 18 for a round not yet published
+        planned = (sum(r["len"].get(rnd, sheet_len.get(rnd, 18)) for rnd in sheet_ids)
+                   + 18 * max(total_rounds - len(sheet_ids), 0))
         out[pdga] = {
             "name": r["name"],
             "rating": r["rating"],
             "cur": float(cur),
-            "rem": max(total_rounds * 18 - holes, 0) / 18.0,
+            # in rounds of 18 holes: the unit the score model's variance is in
+            "rem": max(planned - holes, 0) / 18.0,
             # Holes played, carried explicitly. It cannot be recovered from
             # `rem` downstream: `rem` is measured against this event's real
             # round list, while every consumer's round count is the per-class
@@ -919,6 +936,20 @@ def counted_standing(tournament_id: int, division: str) -> dict | None:
         },
         "players": players,
     }
+
+
+def _row_length(s: dict, default: int = 18) -> int:
+    """Holes on the layout this row is playing: `Holes`, else `default`."""
+    n = _num(s.get("Holes"))
+    return int(n) if n and 0 < n <= 36 else default
+
+
+def _round_length(scores: list[dict]) -> int:
+    """A sheet's usual layout length (most rows'), 18 if none say."""
+    from collections import Counter
+    counts = Counter(_row_length(s, 0) for s in scores)
+    counts.pop(0, None)
+    return counts.most_common(1)[0][0] if counts else 18
 
 
 def live_state(tournament_id: int, division: str) -> dict[int, tuple[float, float]] | None:
