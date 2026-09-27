@@ -34,8 +34,11 @@ def compute(division: str, table: list[dict], sched: list[dict], cut: int,
     singles events are frozen: doubles would need the team pairing, and no
     live doubles event can end the regular season.
     """
+    # A finished event stays in live_events() until its end date passes, but
+    # by then it is banked in `table`: freezing it again would count it twice.
     live_rows = [r for r in schedule.live_events(sched)
-                 if r[division.lower()] and r["cls"] not in ("doubles", "championship")
+                 if not r["completed"]
+                 and r[division.lower()] and r["cls"] not in ("doubles", "championship")
                  and not (division == "FPO" and not r["fpo_points"])]
     if not live_rows:
         return None

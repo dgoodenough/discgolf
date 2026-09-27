@@ -52,6 +52,23 @@ TID_USWDGC = 97341         # Major, FPO field only
 TID_USDGC = 97346          # XM tier, non-points
 TID_WORLDS = 97344         # Pro Worlds (major); part of its field comes from the play-in
 
+# Events allowed to run past the end date PDGA lists for them. Competition
+# Manual 4.10 (2026) lets a weather-disrupted Elite Series event finish on the
+# Monday, and PDGA does not move the event's EndDate when that happens. Every
+# calendar rule in the pipeline keys off that date — "completed" is decided by
+# the date alone from 06:00 UTC the day after it — so without this a Monday
+# finish would be banked on Monday morning from Sunday's unfinished sheet and
+# frozen into the results cache. schedule._row applies the later date only
+# while the event is unfinished; once the scoreboard says it is done, the real
+# end date is kept, so an extension that goes unused changes nothing.
+#
+# MVP Open 2026: shortened to three rounds by wind on Saturday; the DGPT
+# pre-authorized a Monday return to finish round 3 or settle ties for the win
+# or for Cup qualification (dgpt.com/news/2026-mvp-open-weekend-plan).
+END_DATE_EXTENSIONS: dict[int, str] = {
+    TID_MVP: "2026-09-28",
+}
+
 # Pro Worlds play-in (pdga.com/tour/event/106696): a single-round qualifier
 # played into the spots Worlds left open, for players who did not qualify
 # directly. The winners join the Worlds field and can bank major points, so

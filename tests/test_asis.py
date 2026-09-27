@@ -238,3 +238,12 @@ def test_a_failure_is_a_missing_panel_not_a_failed_run(mvp_weekend, monkeypatch,
     monkeypatch.setattr(live_api, "counted_standing", boom)
     assert asis.run("MPO", table, sched, cut=2, field_size=3) is None
     assert "as-is standings" in capsys.readouterr().err
+
+
+def test_a_banked_event_is_not_frozen_twice(mvp_weekend):
+    """A finished event stays in live_events() until its end date passes; by
+    then its points are in the banked table, so freezing it would add them
+    a second time."""
+    sched, table = mvp_weekend
+    next(r for r in sched if r["tournament_id"] == config.TID_MVP)["completed"] = True
+    assert asis.compute("MPO", table, sched, cut=2, field_size=3) is None

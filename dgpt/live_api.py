@@ -388,6 +388,17 @@ def event_complete(tournament_id: int, divisions: tuple[str, ...] = ("MPO", "FPO
             # An upcoming tee time means the tournament is not done.
             if s.get("TeeTime") or s.get("HasGroupAssignment"):
                 return False
+        # A tie for first is not a result: a playoff settles it, and the
+        # sheet's RunningPlace moves once it has. Usually that is minutes
+        # after the last putt, but the 2026 MVP Open pre-authorized a MONDAY
+        # playoff — and banking the tie on Sunday night would pay both
+        # players the averaged 1st/2nd points and freeze that into the
+        # results cache before the playoff was thrown. The calendar is still
+        # the backstop for a tie that is never broken on the sheet.
+        leaders = [s for s in scores
+                   if s.get("RunningPlace") == 1 and not _wd_total(s.get("GrandTotal"))]
+        if len(leaders) > 1:
+            return False
     return True
 
 
@@ -930,7 +941,13 @@ def final_results(tournament_id: int, division: str, *, use_cache: bool = True) 
 
     event = fetch_event(tournament_id)
     end = event.get("EndDate")
-    completed = bool(end) and date.fromisoformat(end) < date.today()
+    # PDGA leaves EndDate alone when an event runs into an authorized Monday,
+    # so the extension has to be applied here too — this date decides what
+    # gets frozen into the cache for good.
+    ext = config.END_DATE_EXTENSIONS.get(tournament_id)
+    if end and ext:
+        end = max(end[:10], ext)
+    completed = bool(end) and date.fromisoformat(end[:10]) < date.today()
 
     div = next((d for d in (event.get("Divisions") or []) if d["Division"] == division), None)
     if div is None:

@@ -629,3 +629,48 @@ def test_a_single_pool_event_is_untouched(fake_api):
     fake_api.round(1, "MPO", 1, round_payload(
         [row(9001, "P", 1030, round_to_par=-4, played=18, has_score=True)]))
     assert live_api.live_field(1, "MPO")[9001]["cur"] == -4.0
+
+
+def test_an_extended_event_is_not_frozen_into_the_cache(fake_api, monkeypatch):
+    """PDGA leaves EndDate on the Sunday when an event runs into an
+    authorized Monday. Reading results on the Monday must not cache the
+    unfinished sheet as the permanent result."""
+    import datetime as dt
+    today = dt.date.today()
+    monkeypatch.setitem(live_api.config.END_DATE_EXTENSIONS, 1, today.isoformat())
+    fake_api.event(1, event_payload("Rain Open", 3, [("MPO", 3)],
+                                    end_date=(today - dt.timedelta(days=1)).isoformat()))
+    for rnd in (1, 2, 3):
+        fake_api.round(1, "MPO", rnd, round_payload([
+            row(1, "A", round_to_par=-3, played=18, has_score=True, running_place=1),
+            row(2, "B", round_to_par=-1, played=18 if rnd < 3 else 9,
+                has_score=rnd < 3, running_place=2),
+        ]))
+    live_api.final_results(1, "MPO")
+    assert not (live_api.RESULTS_CACHE / "1_MPO.json").exists()
+    assert not live_api.LIVE_CACHE.exists() or not any(live_api.LIVE_CACHE.iterdir())
+
+    # the same payload without the extension is past its end date: cached
+    monkeypatch.delitem(live_api.config.END_DATE_EXTENSIONS, 1)
+    live_api._memo.clear()
+    live_api.final_results(1, "MPO", use_cache=False)
+    assert (live_api.RESULTS_CACHE / "1_MPO.json").exists()
+
+
+def test_a_tie_for_first_is_not_a_finished_event(fake_api):
+    """Everyone has posted, but two players share 1st: the playoff (which
+    the 2026 MVP Open may hold on the Monday) has not been played."""
+    def sheet(p1_place):
+        return round_payload([
+            row(1, "A", round_to_par=-3, played=18, has_score=True, running_place=1),
+            row(2, "B", round_to_par=-3, played=18, has_score=True, running_place=p1_place),
+            row(3, "C", round_to_par=0, played=18, has_score=True, running_place=3),
+        ])
+    fake_api.event(1, event_payload("Rain Open", 3, [("MPO", 3)]))
+    for rnd in (1, 2, 3):
+        fake_api.round(1, "MPO", rnd, sheet(1))
+    assert live_api.event_complete(1, divisions=("MPO",)) is False
+
+    live_api._memo.clear()
+    fake_api.round(1, "MPO", 3, sheet(2))   # playoff played: B is 2nd
+    assert live_api.event_complete(1, divisions=("MPO",)) is True
