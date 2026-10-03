@@ -1,0 +1,830 @@
+/* The "event odds" tab: the win-probability race at the tournament in
+   progress, as a time series and as a table. */
+
+import { $, fmtPct, fmtPts, ordinal, state } from "./core.js";
+import { probe, tipAttrs } from "./tooltip.js";
+import { liveEvents, liveThru, nameCell, probClass, shortName } from "./cells.js";
+
+/* ==========================================================================
+   EVENT ODDS — the win-probability race at the tournament in progress
+   ==========================================================================
+   The forecast tab answers a season-long question; this one answers the
+   question the season is being decided by right now. Two panels over the same
+   live projection: the race as a time series (from data/liveodds.json, which
+   the pipeline accumulates one block per scoring change) and the contenders as
+   a table (straight off this bundle, so it is right even before any history
+   has been recorded). */
+
+const RC = { W: 900, H: 398, L: 42, R: 142, T: 14, B: 72, lane: 38 };
+const RC_LINES = 12;   // palette size in style.css (.rc-c0 … .rc-c11)
+
+/* Surname is enough to label a line until two contenders share one, which at
+   a 200-player major is a coin flip (Schultz/Schultz, the Andersons) — and a
+   chart that labels two lines identically is worse than one with long labels. */
+function raceLabels(series) {
+  const surname = (n) => n.split(/\s+/).pop();
+  const seen = new Map();
+  series.forEach((s) => seen.set(surname(s.name), (seen.get(surname(s.name)) || 0) + 1));
+  return series.map((s) => {
+    const parts = s.name.split(/\s+/);
+    const label = seen.get(surname(s.name)) > 1 && parts.length > 1
+      ? `${parts[0][0]}. ${surname(s.name)}` : surname(s.name);
+    return label.length > 13 ? label.slice(0, 12) + "\u2026" : label;
+  });
+}
+
+/* Vertical label placement: lines converge at the right edge (that is what the
+   end of a tournament looks like), so the ends have to be pushed apart or the
+   leaders' labels stack on top of each other. Forward pass opens the gaps,
+   backward pass pulls the overflow back inside the plot. */
+function raceStack(ys, gap, lo, hi) {
+  const ix = ys.map((y, i) => i).sort((a, b) => ys[a] - ys[b]);
+  const out = ys.slice();
+  ix.forEach((i, k) => {
+    if (k && out[i] - out[ix[k - 1]] < gap) out[i] = out[ix[k - 1]] + gap;
+  });
+  for (let k = ix.length - 1; k >= 0; k--) {
+    const i = ix[k];
+    if (out[i] > hi) out[i] = hi - (ix.length - 1 - k) * gap;
+    if (k && out[i] - out[ix[k - 1]] < gap) out[ix[k - 1]] = out[i] - gap;
+  }
+  ix.forEach((i) => { out[i] = Math.max(lo, out[i]); });
+  return out;
+}
+
+/* Y is auto-scaled, unlike the row sparklines' pinned 0-100%. Those are read
+   as a column and have to be mutually comparable; this is one chart, and for
+   most of a tournament every line lives under 30% — pinning it would spend
+   three quarters of the plot on empty space and flatten the race into a hairline.
+   The ceiling is the smallest gridline multiple that clears the peak. */
+function raceScale(r) {
+  const peak = Math.max(...r.series.map((s) => Math.max(...s.y)), 0.01);
+  const step = [0.02, 0.05, 0.1, 0.2, 0.25, 0.5].find((v) => peak <= v * 5) || 0.25;
+  return { step, ymax: Math.min(1, Math.max(step, Math.ceil((peak * 1.05) / step) * step)) };
+}
+
+/* The two axes, and why there are two.
+
+   HOLES is the field's mean progress (see dgpt/liveodds.py): rounds come out
+   as equal slices, which is the right shape for reading a tournament back.
+
+   TIME is the clock with the hours nobody was playing taken out of it. The
+   pipeline records a block about every six minutes while a round is on and
+   then nothing at all until the next morning, so drawn literally the axis
+   spends most of its width on dead ground — measured over the four races on
+   file, 69% to 81% of it. A gap longer than GAP_CAP is therefore drawn as
+   GAP_CAP and marked with a break. Inside a session the spacing is untouched
+   and real: a frantic last hour is wide, a slow one is narrow.
+
+   Nothing is hidden by that, which is what makes it honest rather than just
+   tidier. A block is only recorded when the scoring moved, so a collapsed gap
+   is a stretch with no observations in it — every line crossed it as a single
+   straight segment either way — and the break marks say where the cut is.
+
+   Both plot the same observations. Neither changes a probability: each column
+   is one simulation run at one instant, so a vertical slice sums to ~100%
+   whichever axis is showing. Only the spacing differs. */
+
+// Both measured off this season's four recorded races rather than guessed. The
+// 95th-percentile gap between observations is 6-12 minutes and every genuine
+// break is 10-20 hours, with nothing at all between 1.6h and 10h — so the cap
+// cannot bite during live play, and SESSION_GAP clears the longest mid-round
+// lull on file (1.6h, MPO at Idlewild) by a wide margin.
+const GAP_CAP = 25 * 60e3;
+const SESSION_GAP = 4 * 36e5;
+
+/* Elapsed wall-clock with the dead stretches clamped. */
+function playClock(t) {
+  const ms = t.map((s) => Date.parse(s));
+  const out = [0];
+  for (let i = 1; i < ms.length; i++)
+    out.push(out[i - 1] + Math.min(Math.max(0, ms[i] - ms[i - 1]), GAP_CAP));
+  return out;
+}
+
+/* The runs of play between the real breaks — what a reader calls a day of the
+   tournament. The bands and the window picker are both built from this, so
+   neither has to know how long a round is or assume that it is 18 holes. */
+function raceSessions(r) {
+  const ms = r.t.map((s) => Date.parse(s));
+  const out = [{ from: 0, to: 0 }];
+  for (let i = 1; i < ms.length; i++) {
+    if (ms[i] - ms[i - 1] > SESSION_GAP) out.push({ from: i, to: i });
+    else out[out.length - 1].to = i;
+  }
+  return out.map((v) => ({
+    ...v,
+    label: new Date(ms[v.from]).toLocaleDateString(undefined, { weekday: "short" }),
+  }));
+}
+
+/* Where the clock was cut. Only on the time axis — the holes axis never had
+   the dead ground to begin with, because nobody plays a hole overnight. */
+function raceCuts(r, g) {
+  if (state.raceAxis !== "time") return [];
+  const ms = r.t.map((s) => Date.parse(s)), out = [];
+  for (let i = 1; i < ms.length; i++)
+    if (ms[i] - ms[i - 1] > GAP_CAP)
+      out.push({ at: (g.v[i] + g.v[i - 1]) / 2, ms: ms[i] - ms[i - 1] });
+  return out;
+}
+
+/* The break glyph: the lines are cut by a slug of the panel's own background
+   so a series cannot appear to run continuously through hours it did not, and
+   the two slashes on the axis are the convention that says why. */
+function cutsHtml(r, g, box) {
+  return raceCuts(r, g).map(({ at }) => {
+    const x = g.X(at), w = 3.5, base = box.T + g.ph;
+    return `<rect class="rc-cut" x="${(x - w).toFixed(1)}" y="${box.T}"
+        width="${(w * 2).toFixed(1)}" height="${g.ph}"/>
+      <path class="rc-cutmark" d="M${(x - w - 1).toFixed(1)} ${base + 3}l5 -8M${
+        (x - 1).toFixed(1)} ${base + 3}l5 -8"/>`;
+  }).join("");
+}
+
+const raceAxisVals = (r) => (state.raceAxis === "time" ? playClock(r.t) : r.x);
+
+/* Zoom: one session at a time, or the lot. Slicing the series and re-rendering
+   is the whole mechanism — every scale on both charts already fits itself to
+   what it is handed, so the win-probability ceiling and the fork's stroke range
+   re-fit to the window for free and nothing downstream needs to know a window
+   exists. `clipped` only suppresses the runway to the finish, which is a claim
+   about the event rather than about the view.
+
+   A drag-to-zoom brush is the obvious alternative and the wrong one here:
+   horizontal drag is already the scrub gesture on these charts (tooltip.js
+   takes the horizontal axis and leaves the vertical to the page), so a brush
+   would be fighting the readout for the same finger on every phone. */
+function raceWindow(r) {
+  const ss = raceSessions(r), i = state.raceWin;
+  if (i == null || !ss[i] || ss.length < 2) return r;
+  const { from, to } = ss[i];
+  const cut = (a) => a.slice(from, to + 1);
+  const f = r.fork;
+  const marks = (r.marks || [])
+    .filter((m) => m[0] >= from && m[0] <= to)
+    .map((m) => [m[0] - from, m[1], m[2]]);
+  return {
+    ...r, clipped: true, x: cut(r.x), t: cut(r.t), marks,
+    series: r.series.map((v) => ({ ...v, y: cut(v.y) })),
+    fork: f && { ...f, lead: cut(f.lead), lines: f.lines.map(cut),
+                 who: f.who.map(cut), alive: f.alive ? f.alive.map(cut) : f.alive },
+  };
+}
+
+/* The x mapping, shared by both charts on this tab. They are given the same
+   W, L and R so their plot areas line up to the pixel: the fork chart sits
+   under the race chart and a reader drops straight down from a line to the
+   score that line was still worth. Only the box height and the y scale differ. */
+function axisGeom(r, box) {
+  const { W, H, L, R, T, B } = box;
+  const v = raceAxisVals(r), last = v[v.length - 1];
+  // Holes keeps a runway to the finish; time has no known finish instant to
+  // draw one to, so the axis ends at the newest observation rather than
+  // inventing a projected end.
+  const x0 = v[0];
+  const x1 = state.raceAxis === "time"
+    ? Math.max(last, x0 + 36e5)                       // at least an hour wide
+    : Math.max(r.clipped ? 0 : r.holes, last, x0 + 18);
+  return {
+    v, x0, x1, pw: W - L - R, ph: H - T - B,
+    X: (h) => L + ((h - x0) / (x1 - x0)) * (W - L - R),
+  };
+}
+
+function raceGeom(r) {
+  const g = axisGeom(r, RC), { ymax } = raceScale(r);
+  return { ...g, ymax, Y: (p) => RC.T + (1 - Math.min(1, p / ymax)) * g.ph };
+}
+
+/* Bands along the bottom: rounds on the holes axis, sessions on the time one.
+   A session carries no rule of its own — the break mark between two sessions
+   already divides them, and drawing both put two dividers a few pixels apart. */
+function bandsHtml(r, g, box) {
+  const bands = state.raceAxis === "time"
+    ? raceSessions(r).map((v) => ({ from: g.v[v.from], to: g.v[v.to], label: v.label }))
+    : Array.from({ length: Math.ceil(g.x1 / 18) }, (_, k) => ({
+        boundary: k * 18,
+        from: Math.max(k * 18, g.x0),
+        to: Math.min((k + 1) * 18, g.x1),
+        label: `R${k + 1}`,
+      }));
+  let out = "";
+  for (const b of bands) {
+    if (b.to <= b.from) continue;
+    if (b.boundary > g.x0) {
+      const bx = g.X(b.boundary).toFixed(1);
+      out += `<line class="rc-round" x1="${bx}" y1="${box.T}" x2="${bx}" y2="${box.T + g.ph}"/>`;
+    }
+    if (g.X(b.to) - g.X(b.from) > 22) {
+      out += `<text class="rc-rlabel" x="${g.X((b.from + b.to) / 2).toFixed(1)}"
+        y="${box.T + g.ph + 16 + (box.lane || 0)}" text-anchor="middle">${b.label}</text>`;
+    }
+  }
+  return out;
+}
+
+/* The holes not yet played, shaded: without it the lines running out to the
+   label gutter read as the numbers continuing flat to the finish. Only on the
+   holes axis — the time axis ends at the newest observation, so there is no
+   runway, and shading "the future" there would be a guess at when the round
+   finishes. The caption goes on the upper chart only; both are the same holes. */
+function futureHtml(r, g, box, caption) {
+  const n = r.x.length, lastX = g.X(g.v[n - 1]), fw = box.W - box.R - lastX;
+  if (state.raceAxis === "time" || r.clipped || fw <= 3) return "";
+  return `<rect class="rc-future" x="${lastX.toFixed(1)}" y="${box.T}"
+      width="${fw.toFixed(1)}" height="${g.ph}"/>${
+    caption && fw > 90 ? `<text class="rc-flabel" x="${(lastX + fw / 2).toFixed(1)}"
+      y="${box.T + 12}" text-anchor="middle">${g.x1 - r.x[n - 1]} holes still to play</text>` : ""}`;
+}
+
+/* The two marks, drawn small enough to stack and still be told apart.
+
+   A skull is a round cranium; the phoenix is a bird in side profile with a
+   swept wing. The silhouettes matter more than the species at this size — a
+   flame was the other candidate and reads beautifully on its own, but it is a
+   teardrop, and next to a skull's blob at 11px the two would be a guessing
+   game. A bird is unmistakable from the shape alone.
+
+   Drawn rather than set as emoji: 💀 is a different colour and a different
+   shape on every platform, would not take the palette, and renders at a size
+   of the font's choosing inside an SVG. */
+const GLYPH = {
+  0: `<circle cx="0" cy="-1.5" r="4.5"/><rect x="-3" y="1.7" width="6" height="3.4" rx="1.2"/>
+      <circle class="rc-hollow" cx="-1.9" cy="-1.6" r="1.6"/>
+      <circle class="rc-hollow" cx="1.9" cy="-1.6" r="1.6"/>
+      <path class="rc-hollow" d="M0 0.5l1.1 2.1h-2.2z"/>
+      <rect class="rc-hollow" x="-1.7" y="3.1" width="0.8" height="2" rx="0.3"/>
+      <rect class="rc-hollow" x="0.9" y="3.1" width="0.8" height="2" rx="0.3"/>`,
+  1: `<path d="M3.4 -5.6l2.4 .7-2.2 .9c.4 .9 .3 1.9-.4 2.7L1.5 -.2
+      c1 .6 1.9 1.6 2.4 2.9-1.8-.7-3.6-.7-5.2 0l-3.9 2.9 1.6-3.6c-1.4-.6-2.5-1.8-3-3.3
+      1.6 1 3.4 1.2 5 .5l.8-1.8c-1.4-.9-2.4-2.4-2.6-4.1 1.2 1.5 2.9 2.4 4.6 2.5
+      .4-.9 1.3-1.5 2.2-1.4z"/>`,
+};
+
+/* Deaths and comebacks, grouped onto the observation they happened at. */
+function raceMarks(r) {
+  const by = new Map();
+  for (const m of r.marks || []) {
+    if (!by.has(m[0])) by.set(m[0], []);
+    by.get(m[0]).push({ kind: m[1], name: m[2] });
+  }
+  // a comeback on top of the skulls, so a stack reads bottom-up as it happened
+  for (const v of by.values()) v.sort((a, b) => a.kind - b.kind);
+  return by;
+}
+
+/* The tally in its own lane under the plot.
+
+   The lane is outside the plot rather than at y=0 inside it: most of these
+   players never had a line — the chart draws a dozen and a race records
+   eighty — so marks at zero would read as belonging to whichever drawn line
+   happens to be flat down there. Out here they are a count on the shared x. */
+function marksHtml(r, g, box) {
+  const lane = box.lane || 0;
+  if (!lane) return "";
+  const top = box.T + g.ph + 3, step = 11.5, cap = Math.floor(lane / step);
+  // Two passes, skulls then birds. At 239 observations across 800px the marks
+  // of neighbouring updates overlap, and drawn in time order the one phoenix
+  // of an event ends up buried under whichever skull came next. It is the
+  // rarest thing on the chart; it goes on top.
+  const pass = ["", ""];
+  let more = "";
+  for (const [i, who] of raceMarks(r)) {
+    if (i < 0 || i >= g.v.length) continue;
+    const x = g.X(g.v[i]);
+    who.slice(0, cap).forEach((m, k) => {
+      pass[m.kind] += `<g class="${m.kind ? "rc-phoenix" : "rc-skull"}" transform="translate(${
+        x.toFixed(1)} ${(top + k * step + step / 2).toFixed(1)}) scale(${
+        m.kind ? 1 : 0.92})">${GLYPH[m.kind]}</g>`;
+    });
+    if (who.length > cap)
+      more += `<text class="rc-xmore" x="${x.toFixed(1)}" y="${
+        (top + cap * step + 7).toFixed(1)}" text-anchor="middle">+${who.length - cap}</text>`;
+  }
+  return pass[0] + pass[1] + more;
+}
+
+function raceChartHtml(r) {
+  const { W, H, L, R, T } = RC;
+  const g = raceGeom(r), n = r.x.length;
+  const labels = raceLabels(r.series);
+
+  let grid = "";
+  const { step } = raceScale(r);
+  for (let p = 0; p <= g.ymax + 1e-9; p += step) {
+    const y = g.Y(p);
+    grid += `<line class="pv-grid" x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}"/>
+      <text class="pc-tick" x="${L - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${
+        +(p * 100).toFixed(1)}%</text>`;
+  }
+  const rounds = bandsHtml(r, g, RC), future = futureHtml(r, g, RC, true);
+
+  let lines = "", ends = "";
+  const endY = raceStack(r.series.map((s) => g.Y(s.y[n - 1])), 12.5, T + 4, T + g.ph - 2);
+  r.series.forEach((s, si) => {
+    const c = `rc-c${si % RC_LINES}`;
+    let dAttr = "";
+    for (let i = 0; i < n; i++) dAttr += `${i ? "L" : "M"}${g.X(g.v[i]).toFixed(1)} ${g.Y(s.y[i]).toFixed(1)}`;
+    lines += n > 1
+      ? `<path class="rc-line ${c}" d="${dAttr}"/>`
+      : `<circle class="rc-dot ${c}" cx="${g.X(g.v[0]).toFixed(1)}" cy="${g.Y(s.y[0]).toFixed(1)}" r="3"/>`;
+    // Labels sit in a column in the right margin, not beside the last point:
+    // mid-event that point is nowhere near the right edge, and free-floating
+    // labels over the runway read as data. A leader line keeps the link.
+    const px = g.X(g.v[n - 1]), py = g.Y(s.y[n - 1]), lx = W - R + 8;
+    ends += `<path class="rc-lead ${c}" d="M${px.toFixed(1)} ${py.toFixed(1)}H${
+        (lx - 26).toFixed(1)}L${(lx - 4).toFixed(1)} ${endY[si].toFixed(1)}"/>
+      <circle class="rc-dot ${c}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6"/>
+      <text class="rc-end ${c}" x="${lx}" y="${(endY[si] + 3.5).toFixed(1)}">${
+        labels[si]} <tspan class="rc-endnum">${fmtPct(s.y[n - 1])}</tspan></text>`;
+  });
+
+  return `<div class="pv-scroll"><svg class="pv-svg rc-svg" id="race-chart" width="${W}" height="${H}"
+    viewBox="0 0 ${W} ${H}" role="img"
+    aria-label="Probability of winning the event, per contender, over ${
+      state.raceAxis === "time" ? "time" : "the holes played"}">
+    ${grid}${future}${rounds}
+    <line class="rc-guide" id="race-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
+    <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
+    ${lines}${cutsHtml(r, g, RC)}${marksHtml(r, g, RC)}${ends}</svg></div>`;
+}
+
+/* ==========================================================================
+   THE FORK LINE
+   ==========================================================================
+   The Upshot podcast's question — at what line can you stick a fork in them,
+   because they're done? — and the exact complement of the race above. That
+   chart asks who is winning. This one asks how far back the tournament is
+   still live, which is the question everyone outside the lead card is asking.
+
+   Each line is a SCORE, and which score depends on how wrong the reader is
+   willing to be: walk the board down from the leader adding up the win
+   probability on each score, and stop once this much of it is covered. What is
+   left below is the chance the call is wrong, so a line's label is its own
+   error rate — 1 in 20 is once a year over a 25-event season, 1 in 200 about
+   once a decade. dgpt/liveodds.py builds them and carries the argument for why
+   they are cut this way rather than on each player's own odds.
+
+   Higher coverage is a more conservative call, so it sits further down the
+   board and the lines cannot cross. `cover` arrives outermost first, which
+   means index 0 is the bottom line here and the ramp runs with the index.
+
+   The one thing to keep straight in the copy: the guarantee runs DOWNWARD.
+   Below a line, that is how often the winner comes from down there. Above it
+   nothing is promised — a player can sit on the leaders' score and still be a
+   longshot — so the bands are ceilings on a score, not a floor under it. */
+
+const FK = { W: 900, H: 250, L: 42, R: 142, T: 16, B: 34 };
+const FK_PAD = 0.25;   // a quarter stroke, so no line ends up riding the frame
+
+/* Golf's own notation, and the same form the table below uses. */
+const toPar = (s) => (s === 0 ? "E" : (s > 0 ? "+" : "") + s);
+
+/* A line is labelled by how often it is WRONG, not by the coverage it is built
+   from: "1 in 20" cannot be misread, where a bare "95%" on a chart whose sister
+   panel plots win probability certainly could be. */
+const riskLabel = (cover) => `1 in ${Math.round(1 / (1 - cover))}`;
+
+/* "1 in 20" over a 25-event season is once a year — the frequency is the way
+   the reader actually holds a risk, so the copy quotes it. Derived from the
+   bundle's own schedule rather than a hardcoded season length. */
+function riskEvery(cover, events) {
+  const per = (1 - cover) * events;                // misses per season
+  if (per >= 1.6) return `about ${Math.round(per)} times a season`;
+  if (per >= 0.8) return "about once a season";
+  const years = Math.round(1 / per);
+  return years >= 8 ? "about once a decade" : `about once every ${years} years`;
+}
+
+const lastAt = (ys) => {
+  for (let i = ys.length - 1; i >= 0; i--) if (ys[i] != null) return i;
+  return -1;
+};
+
+/* Y is strokes and it runs the way a leaderboard does — best score at the top,
+   so the lines climb as the tournament tightens. The domain covers everything
+   drawn, the leader included, snapped out to the gridline step: a fork line
+   pinned to the frame edge reads as clipped rather than as a number. */
+function forkScale(f) {
+  const vals = f.lead.concat(...f.lines).filter((v) => v != null);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const step = [1, 2, 5, 10].find((v) => (hi - lo) / v <= 8) || 10;
+  return {
+    step,
+    lo: Math.floor((lo - FK_PAD) / step) * step,
+    hi: Math.ceil((hi + FK_PAD) / step) * step,
+  };
+}
+
+function forkGeom(r) {
+  const g = axisGeom(r, FK), { lo, hi } = forkScale(r.fork);
+  return { ...g, lo, hi, Y: (v) => FK.T + ((v - lo) / (hi - lo)) * g.ph };
+}
+
+function forkChartHtml(r) {
+  const { W, H, L, R, T } = FK;
+  const f = r.fork, g = forkGeom(r), n = r.x.length, k = f.cover.length;
+
+  // A cut nobody has reached yet is a gap, not a zero (dgpt/liveodds.py), so
+  // the pen lifts rather than dropping the line to the floor.
+  const linePath = (ys) => {
+    let d = "", pen = false;
+    for (let i = 0; i < n; i++) {
+      if (ys[i] == null) { pen = false; continue; }
+      d += `${pen ? "L" : "M"}${g.X(g.v[i]).toFixed(1)} ${g.Y(ys[i]).toFixed(1)}`;
+      pen = true;
+    }
+    return d;
+  };
+  // Each band is filled over the contiguous runs where both its edges exist,
+  // so a line that has not started yet leaves open ground instead of a fold.
+  const bandPath = (top, bot) => {
+    let d = "";
+    for (let i = 0; i < n; i++) {
+      if (top[i] == null || bot[i] == null) continue;
+      let j = i, out = "", back = "";
+      while (j + 1 < n && top[j + 1] != null && bot[j + 1] != null) j++;
+      for (let m = i; m <= j; m++) {
+        const x = g.X(g.v[m]).toFixed(1);
+        out += `${m === i ? "M" : "L"}${x} ${g.Y(top[m]).toFixed(1)}`;
+        back = `L${x} ${g.Y(bot[m]).toFixed(1)}` + back;
+      }
+      d += `${out}${back}Z`;
+      i = j;
+    }
+    return d;
+  };
+
+  let grid = "";
+  const { step } = forkScale(f);
+  for (let v = g.lo; v <= g.hi + 1e-9; v += step) {
+    const y = g.Y(v);
+    grid += `<line class="pv-grid" x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}"/>
+      <text class="pc-tick" x="${L - 6}" y="${(y + 3.5).toFixed(1)}" text-anchor="end">${toPar(v)}</text>`;
+  }
+
+  // Below the most conservative line is the one band that reads as a verdict
+  // rather than a ceiling, so it takes the palette's one negative colour. Not
+  // that nobody down there can win — the outermost line still gives that away
+  // at its stated rate — but that this is as done as the reader asked for.
+  let fills = `<path class="fk-dead" d="${bandPath(f.lines[0], new Array(n).fill(g.hi))}"/>`;
+  for (let i = 1; i < k; i++)
+    fills += `<path class="fk-band fk-c${i}" d="${bandPath(f.lines[i], f.lines[i - 1])}"/>`;
+
+  let lines = `<path class="fk-best" d="${linePath(f.lead)}"/>`;
+  for (let i = 0; i < k; i++)
+    lines += `<path class="fk-line fk-c${i}" d="${linePath(f.lines[i])}"/>`;
+
+  // Same gutter treatment as the race chart: the lines converge as the field
+  // thins, so the ends are pushed apart and a dotted leader keeps the link.
+  const tips = [{ v: f.lead, cls: "fk-best-end", label: "lead" }]
+    .concat(f.cover.map((c, i) => ({ v: f.lines[i], cls: `fk-c${i}`, label: riskLabel(c) })))
+    .map((e) => ({ ...e, i: lastAt(e.v) }))
+    .filter((e) => e.i >= 0);
+  const ty = raceStack(tips.map((e) => g.Y(e.v[e.i])), 12.5, T + 4, T + g.ph - 2);
+  const ends = tips.map((e, si) => {
+    const px = g.X(g.v[e.i]), py = g.Y(e.v[e.i]), lx = W - R + 8;
+    return `<path class="rc-lead ${e.cls}" d="M${px.toFixed(1)} ${py.toFixed(1)}H${
+        (lx - 26).toFixed(1)}L${(lx - 4).toFixed(1)} ${ty[si].toFixed(1)}"/>
+      <circle class="rc-dot ${e.cls}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.6"/>
+      <text class="rc-end ${e.cls}" x="${lx}" y="${(ty[si] + 3.5).toFixed(1)}">${
+        e.label} <tspan class="rc-endnum">${toPar(e.v[e.i])}</tspan></text>`;
+  }).join("");
+
+  return `<div class="pv-scroll"><svg class="pv-svg rc-svg" id="fork-chart" width="${W}" height="${H}"
+    viewBox="0 0 ${W} ${H}" role="img"
+    aria-label="The worst score still holding each chance of winning the event, over ${
+      state.raceAxis === "time" ? "time" : "the holes played"}">
+    ${fills}${grid}${bandsHtml(r, g, FK)}${futureHtml(r, g, FK, false)}
+    <line class="rc-guide" id="fork-guide" x1="0" y1="${T}" x2="0" y2="${T + g.ph}" visibility="hidden"/>
+    <line class="pv-axis" x1="${L}" y1="${T + g.ph}" x2="${W - R}" y2="${T + g.ph}"/>
+    ${lines}${cutsHtml(r, g, FK)}${ends}</svg></div>`;
+}
+
+/* The same scrub as the race chart, reporting the whole ladder at one instant:
+   every cut, the score it sat at, and the player who was holding it there. */
+function wireForkTips(root, r) {
+  const svg = root.querySelector("#fork-chart");
+  if (!svg || !r || !r.fork) return;
+  const f = r.fork, g = forkGeom(r), guide = root.querySelector("#fork-guide");
+  probe(svg, (cx) => {
+    const rect = svg.getBoundingClientRect(), sc = svg.viewBox.baseVal.width / rect.width;
+    const x = (cx - rect.left) * sc;
+    let best = 0;
+    g.v.forEach((h, i) => { if (Math.abs(g.X(h) - x) < Math.abs(g.X(g.v[best]) - x)) best = i; });
+    const gx = g.X(g.v[best]);
+    guide.setAttribute("x1", gx.toFixed(1));
+    guide.setAttribute("x2", gx.toFixed(1));
+    guide.setAttribute("visibility", "visible");
+    const ladder = f.cover.map((c, i) => {
+      const v = f.lines[i][best];
+      if (v == null) return `${riskLabel(c)} — no call to make yet`;
+      const who = f.names[String(f.who[i][best])];
+      const n = f.alive && f.alive[i] ? f.alive[i][best] : null;
+      return `${riskLabel(c)} ${toPar(v)}${who ? ` · ${who}` : ""}${
+        n ? ` · ${n} still in it` : ""}`;
+    }).reverse();
+    const when = new Date(Date.parse(r.t[best]))
+      .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+    return `${when} · hole ${r.x[best]} of ${r.holes}\nlead ${toPar(f.lead[best])}\n${
+      ladder.join("\n")}`;
+  }, () => guide.setAttribute("visibility", "hidden"));
+}
+
+/* The >0.1% list, read off this bundle rather than the history — the table has
+   to be right on the very first refresh of an event, before any series exists. */
+// never-in-it sorts below everyone who has a moment to point to
+const outAt = (v) => (v.out && v.out[0] != null ? v.out[0] : -1);
+
+function raceRows(d, tid, out) {
+  const key = String(tid);
+  return d.players
+    .filter((p) => p.live && p.live[key])
+    .map((p) => {
+      const l = p.live[key], gone = out ? out[p.pdga] : null;
+      // Alive comes from the chart's own state machine rather than a fresh
+      // test on the current number: a player between the two bars has not
+      // crossed the lower one, so they are not dead yet and the marks above
+      // do not say they are. Three states, and the table keeps them apart —
+      // in it, out at a moment the reader can point to, or never in it.
+      const alive = out ? !gone : l.win > 0.001;
+      return { p, l, alive, out: alive ? null : gone || null };
+    })
+    .sort((a, b) =>
+      b.alive - a.alive ||
+      // the living by their odds; the dead by how recently, since the last one
+      // out is the one the reader just watched go
+      (a.alive ? b.l.win - a.l.win || (a.l.place || 999) - (b.l.place || 999)
+               : outAt(b) - outAt(a) || (a.l.place || 999) - (b.l.place || 999)));
+}
+
+function raceTableHtml(d, tid, prev, onNow, series) {
+  const rows = raceRows(d, tid, series && series.out);
+  const ev = (d.events || []).find((e) => e.tid === tid) || { rounds: 0 };
+  // Whether the bundle knows about drop-offs at all. Without this an older
+  // one — the site is served from the last published bundle, which can predate
+  // a field by a refresh — would label every eliminated player "never", which
+  // is a claim rather than a blank.
+  const known = !!(series && series.out);
+  const stamp = (i) => {
+    const t = series && series.t && series.t[i];
+    return t ? new Date(Date.parse(t)).toLocaleString(undefined,
+      { weekday: "short", hour: "numeric", minute: "2-digit" }) : "";
+  };
+  // A banked event drops out of the live projection entirely, so there is no
+  // live row to list once it is over — the chart above is the record of it.
+  if (!rows.length) {
+    return `<p class="hint">This event has finished and banked, so it has dropped out of the
+      live projection entirely; the charts above are the record of it.</p>`;
+  }
+  const body = rows.map(({ p, l, alive, out }) => {
+    const was = prev ? prev[p.pdga] : null;
+    const dl = was == null ? null : l.win - was;
+    return `<tr class="${alive ? "" : "rc-gone"}"><td class="num dim">${
+      l.place ? ordinal(l.place) : "—"}</td>
+      <td>${nameCell(p)}</td>
+      <td class="num">${toPar(l.cur)}</td>
+      <td class="num dim t2">${liveThru(ev, l)}</td>
+      <td class="num"><b class="${probClass(l.win)}">${fmtPct(l.win)}</b></td>
+      <td class="num ${dl == null || Math.abs(dl) < 5e-4 ? "dim"
+                        : dl > 0 ? "movers-up" : "movers-down"}">${
+        // a move that rounds to nothing is nothing. Every player already out
+        // has one, and before this table listed them the case never showed —
+        // 49 rows of "−0.0" is noise dressed up as data.
+        dl == null || Math.abs(dl) < 5e-4 ? ""
+          : (dl > 0 ? "+" : "−") + (Math.abs(dl) * 100).toFixed(1)}</td>
+      <td class="num dim t2">${l.mean_place}</td>
+      <td class="num dim t3">${fmtPts(l.mean_pts)}</td>
+      <td class="num dim t2">${
+        alive ? "" : !known ? "—" : out && out[0] != null ? stamp(out[0]) : "never"}</td>
+      <td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td></tr>`;
+  }).join("");
+  return `<div class="pv-scroll pv-tall"><table class="table-ledger detail-tbl pv-tbl"><thead><tr>
+    <th class="num">Pos</th><th>Player</th><th class="num">Score</th>
+    <th class="num t2">Thru</th><th class="num">Win</th>
+    <th class="num" ${tipAttrs(`Change since the previous recorded update`)}>Δ</th>
+    <th class="num t2" ${tipAttrs(`Mean simulated finishing position`)}>Proj</th>
+    <th class="num t3" ${tipAttrs(`Mean DGPT points from this event`)}>Pts</th>
+    <th class="num t2" ${tipAttrs(`When this player's odds last hit zero — none of the ten thousand. `
+      + `"never" means they were never above it at all — recorded for their place on the `
+      + `board, not for a chance at winning.`)}>Out</th>
+    <th class="num" ${tipAttrs(`Powerball Cup odds`)}>Cup</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function renderRace(d) {
+  const el = $("#view-race");
+  const r = state.race && state.race[state.div];
+  const live = liveEvents(d);
+  const panel = (title, form, lede, chart, note) =>
+    `<section class="pv-panel"><div class="pv-head"><h2>${title}</h2><span class="pv-form">${form}</span></div>
+      <div class="pv-body"><p class="pv-lede">${lede}</p>${chart}
+      ${note ? `<p class="pv-note">${note}</p>` : ""}</div></section>`;
+
+  // Nothing live and nothing recorded: say so rather than showing an empty axis.
+  if (!r && !live.length) {
+    el.innerHTML = `<p class="pv-intro"><b>No event in progress.</b> This tab tracks the
+      race to win the tournament that is on — every contender's odds, updated within
+      minutes of a scoring change and kept as a series, so you can see who was ever in it
+      and where it turned. It fills in as the next event plays.</p>`;
+    return;
+  }
+  // An event that is live now always wins over a finished one still in the
+  // history: for the first refresh of a new tournament those differ, and the
+  // tab must not show last week's race under this week's live banner.
+  const liveTid = live.length ? live[0].tid : null;
+  const series = r && (liveTid == null || r.tid === liveTid) ? r : null;
+  const tid = series ? series.tid : liveTid;
+  const ev = (d.schedule || []).find((s) => s.tid === tid);
+  const name = ev ? shortName(ev.name) : `event ${tid}`;
+  const onNow = tid === liveTid;
+  // The table lists the whole field now, so the lede has to take the living
+  // back out of it — "31 players still have a chance" is the claim it makes.
+  const rows = raceRows(d, tid, series && series.out);
+  const living = rows.filter((v) => v.alive);
+  const lead = living[0];
+
+  // deltas for the table come from the previous recorded observation, which the
+  // bundle carries for every recorded player rather than only the charted ones
+  const prev = series && Object.keys(series.prev || {}).length ? series.prev : null;
+  const view = series ? raceWindow(series) : null;
+
+  // One setting drives both charts — they are meant to be read as one picture,
+  // so a slice has to mean the same instant in each — but the control is drawn
+  // on both: a reader down at the fork chart should not have to scroll back up
+  // to switch axes.
+  // Sessions of a single observation get no button: an event is staged for
+  // live scoring days before it tees off, so the first block of a race is
+  // often one lonely all-zeros row half a day ahead of the first tee time.
+  const picks = (series ? raceSessions(series) : [])
+    .map((v, i) => ({ ...v, i })).filter((v) => v.to > v.from);
+  const winSeg = picks.length < 2 ? "" : `<div class="seg pv-seg">
+      <button data-win="all" class="${state.raceWin == null ? "active" : ""}">All</button>
+      ${picks.map((v) => `<button data-win="${v.i}" class="${
+        state.raceWin === v.i ? "active" : ""}">${v.label}</button>`).join("")}
+     </div>`;
+  const axisTools = (legend) => `<div class="pv-tools"><div class="seg pv-seg">
+      <button data-axis="time" class="${state.raceAxis === "time" ? "active" : ""}">Time</button>
+      <button data-axis="holes" class="${state.raceAxis === "holes" ? "active" : ""}">Holes</button>
+     </div>${winSeg}<span class="pv-legend">${legend}</span></div>`;
+  const axisNote = state.raceAxis === "time"
+    ? "the clock, with the hours nobody was playing cut out"
+    : "the field's mean progress — every round an equal slice";
+  const chart = !series ? `<p class="hint">No updates recorded yet — the chart starts with the
+      next scoring change.</p>`
+    : `${axisTools(axisNote)}<div id="race-holder">${raceChartHtml(view)}</div>${
+        series.x.length < 2 ? `<p class="hint">Tracking started at hole
+      ${series.tracked_from} of ${series.holes}; the lines fill in from here as play continues.</p>` : ""}`;
+
+  // The fork panel only exists once the bundle carries the coverage levels.
+  // The site is served from the last published bundle, which can predate this
+  // field by a refresh, so its absence is a normal state and not an error.
+  // `cover` is also what tells an older bundle's cuts apart from these, which
+  // is why it is a new key rather than the old one with new numbers in it.
+  const fork = series && series.fork && series.fork.cover && series.fork.lead
+    ? series.fork : null;
+  const forkNow = fork ? fork.cover.map((c, i) => {
+    const at = lastAt(fork.lines[i]);
+    return at < 0 ? null : {
+      cover: c, v: fork.lines[i][at],
+      who: fork.names[String(fork.who[i][at])],
+      alive: fork.alive && fork.alive[i] ? fork.alive[i][at] : null,
+    };
+  }).filter(Boolean) : [];
+  // Positional, so the copy survives a change to the levels: [0] is the most
+  // conservative line and the one the lede leads on is the next rung in, which
+  // is cautious enough to mean something without being most of the board.
+  const forkOut = forkNow[0], forkHead = forkNow[Math.min(1, forkNow.length - 1)];
+  const season = (d.schedule || []).length;
+  const forkSw = (cls, text) => `<span class="sw fk-sw ${cls}"></span>${text}`;
+
+  el.innerHTML = `
+    <p class="pv-intro"><b>${name}${onNow ? " is on now" : " — final"}.</b>
+      ${living.length ? `<b>${living.length}</b> player${living.length === 1 ? "" : "s"} still have
+        better than a 0.1% chance to win it${
+        lead ? `, led by <b>${lead.p.name}</b> at ${fmtPct(lead.l.win)}` : ""}${
+        rows.length > living.length ? `, and <b>${rows.length - living.length}</b> no longer do`
+        : ""}. ` : ""}
+      ${onNow
+        ? `Every simulated season starts from this tournament's real, in-progress scores, so
+           these are the same numbers driving the Cup odds on the other two tabs.`
+        : `These are the odds as the tournament actually played out, recorded as it went.`}</p>
+
+    ${panel(`Who wins ${name}?`,
+      series ? `${series.x.length} update${series.x.length === 1 ? "" : "s"} recorded` : "no history yet",
+      `Win probability through the event, one line per contender, ${state.raceAxis === "time"
+        ? `against the clock with the hours nobody was playing cut out — inside a round the
+           pace is real, so a frantic finish is wide and a slow stretch is narrow, and a
+           break mark shows each place the clock was cut`
+        : `against how far through the event the field is, which makes every round an equal
+           slice`}. Neither view moves a number: every column is one simulation at one
+       instant${picks.length > 1 ? ", and picking a day just crops the axis to it" : ""}.`,
+      chart,
+      series ? `Lines are drawn for the ${series.series.length} biggest contender${
+       series.series.length === 1 ? "" : "s"} — anyone above ${fmtPct(series.chart_min || 0.001)} now,
+       plus up to three who once held ${fmtPct(series.peak_min || 0.15)} and have since fallen off it${
+       series.others ? `; ${series.others} more sit above ${fmtPct(series.chart_min || 0.001)}
+       but below the chart's cap` : ""}.
+${(series.marks || []).length ? `
+       A <b>skull</b> under the axis is a player taking none of the ten thousand simulated
+       tournaments at that moment — the strongest thing this model can say about anyone.
+       Coming back takes ten times that, 0.1%, which is what the rest of this tab means by
+       alive; do it and you get a <b>phoenix</b>. The gap between the two is what stops a
+       player sitting on the floor from flickering, and it makes the bird rare — about one
+       an event. Most of these players never had a line up here: the chart draws a dozen
+       and the race records eighty.` : ""}
+       Tap the chart for the standings at that point, or drag across it with a mouse. Where
+       it is wider than the screen, swipe it sideways to reach the rest.` : "")}
+
+    ${fork ? panel("Where is the fork line?", "worst score still alive",
+      `<b>“At what line can you stick a fork in them, cause they're done?”</b> Each line is a
+       score rather than a probability, and which score depends on how wrong you are willing
+       to be.${forkHead ? ` Right now the <b>${riskLabel(forkHead.cover)}</b> line is at
+       <b>${toPar(forkHead.v)}</b>${forkHead.alive ? `, with <b>${forkHead.alive}</b> player${
+         forkHead.alive === 1 ? "" : "s"} still in it` : ""} — call everyone worse than that
+       done and you would be wrong ${season ? riskEvery(forkHead.cover, season) : "about once a season"}.${
+       forkOut && forkOut !== forkHead ? ` Want to be wrong only ${
+         season ? riskEvery(forkOut.cover, season) : "about once a decade"}? The line falls back
+       to <b>${toPar(forkOut.v)}</b>${forkOut.alive ? `, keeping <b>${forkOut.alive}</b>` : ""}.` : ""}` : ""}`,
+      `${axisTools(`<span>how often the call is wrong:</span>${
+        fork.cover.map((c, i) => forkSw(`fk-c${i}`, riskLabel(c))).reverse().join("")} ·${
+        forkSw("fk-deadsw", "done")}`)}<div id="fork-holder">${forkChartHtml(view)}</div>`,
+      `The guarantee runs <b>downward</b>: below a line, that is how often the winner comes
+       from down there${season ? ` — over a ${season}-event season, ${riskLabel(fork.cover[1] ?? 0.95)}
+       is ${riskEvery(fork.cover[1] ?? 0.95, season)} if you look once an event` : ""}. Above a
+       line nothing is promised, since a player can sit on the leaders' score and still be a
+       longshot, so the bands are <b>ceilings</b> on a score rather than a floor under it and
+       the clear ground at the top is where the tournament still is. They cannot cross, because
+       a more cautious call always sits further down the board — and a line is only ever a
+       score somebody is actually standing on, which is why they start bunched at even par,
+       when the whole field is there. Tap for the whole ladder at that point, and swipe the
+       chart sideways if it runs off the screen.`)
+      : ""}
+
+    ${panel(onNow ? "Who is left, and who is out" : "How it finished",
+      `${rows.length} player${rows.length === 1 ? "" : "s"}`,
+      `The whole field, in the app's own terms: where they stand, what the model gives them,
+       and what winning here would do for their Powerball Cup odds. Everyone still above 0.1%
+       comes first, in order; below them the players who have fallen through it, most recently
+       out at the top.`,
+      raceTableHtml(d, tid, prev, onNow, series),
+      `Score is to par; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
+       points this event pays them. <b>Δ</b> is the move since the previous recorded update, and
+       <b>Out</b> is the last time a player's odds hit zero — the same moment as their final
+       skull on the chart above. A player who climbed back out and stayed out is not listed
+       as gone at all.`)}`;
+
+  wireRaceTips(el, view);
+  wireForkTips(el, fork ? view : null);
+  el.querySelectorAll("[data-axis]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.raceAxis = b.dataset.axis;
+      renderRace(d);   // the lede and the legend move with the axis, not just the plot
+    })
+  );
+  el.querySelectorAll("[data-win]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.raceWin = b.dataset.win === "all" ? null : +b.dataset.win;
+      renderRace(d);
+    })
+  );
+}
+
+/* One SVG, up to a dozen lines: hover resolves the nearest recorded update from
+   the pointer's x and reports the whole board there, which is the question a
+   win-probability chart actually gets asked ("who was ahead at the turn?"). */
+function wireRaceTips(root, r) {
+  const svg = root.querySelector("#race-chart");
+  if (!svg || !r) return;
+  const g = raceGeom(r), guide = root.querySelector("#race-guide");
+  probe(svg, (cx) => {
+    const rect = svg.getBoundingClientRect(), sc = svg.viewBox.baseVal.width / rect.width;
+    const x = (cx - rect.left) * sc;
+    let best = 0;
+    g.v.forEach((h, i) => { if (Math.abs(g.X(h) - x) < Math.abs(g.X(g.v[best]) - x)) best = i; });
+    const gx = g.X(g.v[best]);
+    guide.setAttribute("x1", gx.toFixed(1));
+    guide.setAttribute("x2", gx.toFixed(1));
+    guide.setAttribute("visibility", "visible");
+    const board = r.series
+      .map((s) => ({ name: s.name, v: s.y[best] }))
+      .sort((a, b) => b.v - a.v)
+      .filter((s) => s.v > 0.001)
+      .slice(0, 8)
+      .map((s) => `${s.name} ${fmtPct(s.v)}`);
+    const when = new Date(Date.parse(r.t[best]))
+      .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+    const here = raceMarks(r).get(best) || [];
+    const say = (kind, lead) => {
+      const nm = here.filter((v) => v.kind === kind).map((v) => v.name);
+      return nm.length ? `\n${lead} ${nm.join(", ")}` : "";
+    };
+    return `${when} · hole ${r.x[best]} of ${r.holes}\n${
+      board.length ? board.join("\n") : "nobody above 0.1%"}${
+      say(0, "out here:")}${say(1, "back from the dead:")}`;
+  // the vertical guide is this chart's own cursor, so it retracts with the
+  // readout — including when a tap elsewhere or a scroll dismisses it
+  }, () => guide.setAttribute("visibility", "hidden"));
+}
+
+export { renderRace };
