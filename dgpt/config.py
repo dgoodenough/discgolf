@@ -85,7 +85,7 @@ PLAYIN_ROUNDS = 1
 # matching more than one listing is ambiguous and tracks nothing.
 SIDE_EVENTS: tuple[dict, ...] = (
     {"key": "usdgc", "tid": TID_USDGC, "divisions": ("MPO",)},
-    {"key": "throw-pink", "name": "Throw Pink", "divisions": ("FPO",)},
+    {"key": "throw-pink", "tid": 102613, "name": "Throw Pink", "divisions": ("FPO",)},
 )
 # Tiers searched for a by-name entry, beyond the ES / M / A listings
 # schedule.build already fetches. Elite tiers only: "Throw Pink" is also the
