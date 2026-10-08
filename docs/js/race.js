@@ -537,9 +537,20 @@ function wireForkTips(root, r) {
 // never-in-it sorts below everyone who has a moment to point to
 const outAt = (v) => (v.out && v.out[0] != null ? v.out[0] : -1);
 
-function raceRows(d, tid, out) {
+/* An odds-only event (no points — the USDGC, Throw Pink) is in no season
+   bundle, so its rows come from the race payload's own `table`: the recorded
+   field at the latest update. Shaped like a bundle player so nameCell and the
+   sort below take it unchanged. */
+function sideRows(r) {
+  return (r.table || []).map((t) => ({
+    pdga: t.pdga, name: t.name, banked: [],
+    live: { [String(r.tid)]: t },
+  }));
+}
+
+function raceRows(d, tid, out, players) {
   const key = String(tid);
-  return d.players
+  return (players || d.players)
     .filter((p) => p.live && p.live[key])
     .map((p) => {
       const l = p.live[key], gone = out ? out[p.pdga] : null;
@@ -559,8 +570,8 @@ function raceRows(d, tid, out) {
                : outAt(b) - outAt(a) || (a.l.place || 999) - (b.l.place || 999)));
 }
 
-function raceTableHtml(d, tid, prev, onNow, series) {
-  const rows = raceRows(d, tid, series && series.out);
+function raceTableHtml(d, tid, prev, onNow, series, side) {
+  const rows = raceRows(d, tid, series && series.out, side ? sideRows(series) : null);
   const ev = (d.events || []).find((e) => e.tid === tid) || { rounds: 0 };
   // Whether the bundle knows about drop-offs at all. Without this an older
   // one — the site is served from the last published bundle, which can predate
@@ -574,6 +585,9 @@ function raceTableHtml(d, tid, prev, onNow, series) {
   };
   // A banked event drops out of the live projection entirely, so there is no
   // live row to list once it is over — the chart above is the record of it.
+  if (!rows.length && side) {
+    return `<p class="hint">No players recorded at the latest update.</p>`;
+  }
   if (!rows.length) {
     return `<p class="hint">This event has finished and banked, so it has dropped out of the
       live projection entirely; the charts above are the record of it.</p>`;
@@ -594,22 +608,22 @@ function raceTableHtml(d, tid, prev, onNow, series) {
         // 49 rows of "−0.0" is noise dressed up as data.
         dl == null || Math.abs(dl) < 5e-4 ? ""
           : (dl > 0 ? "+" : "−") + (Math.abs(dl) * 100).toFixed(1)}</td>
-      <td class="num dim t2">${l.mean_place}</td>
-      <td class="num dim t3">${fmtPts(l.mean_pts)}</td>
+      ${side ? "" : `<td class="num dim t2">${l.mean_place}</td>
+      <td class="num dim t3">${fmtPts(l.mean_pts)}</td>`}
       <td class="num dim t2">${
         alive ? "" : !known ? "—" : out && out[0] != null ? stamp(out[0]) : "never"}</td>
-      <td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td></tr>`;
+      ${side ? "" : `<td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td>`}</tr>`;
   }).join("");
   return `<div class="pv-scroll pv-tall"><table class="table-ledger detail-tbl pv-tbl"><thead><tr>
     <th class="num">Pos</th><th>Player</th><th class="num">Score</th>
     <th class="num t2">Thru</th><th class="num">Win</th>
     <th class="num" ${tipAttrs(`Change since the previous recorded update`)}>Δ</th>
-    <th class="num t2" ${tipAttrs(`Mean simulated finishing position`)}>Proj</th>
-    <th class="num t3" ${tipAttrs(`Mean DGPT points from this event`)}>Pts</th>
+    ${side ? "" : `<th class="num t2" ${tipAttrs(`Mean simulated finishing position`)}>Proj</th>
+    <th class="num t3" ${tipAttrs(`Mean DGPT points from this event`)}>Pts</th>`}
     <th class="num t2" ${tipAttrs(`When this player's odds last hit zero — none of the ten thousand. `
       + `"never" means they were never above it at all — recorded for their place on the `
       + `board, not for a chance at winning.`)}>Out</th>
-    <th class="num" ${tipAttrs(`Powerball Cup odds`)}>Cup</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    ${side ? "" : `<th class="num" ${tipAttrs(`Powerball Cup odds`)}>Cup</th>`}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function renderRace(d) {
@@ -632,15 +646,22 @@ function renderRace(d) {
   // An event that is live now always wins over a finished one still in the
   // history: for the first refresh of a new tournament those differ, and the
   // tab must not show last week's race under this week's live banner.
-  const liveTid = live.length ? live[0].tid : null;
-  const series = r && (liveTid == null || r.tid === liveTid) ? r : null;
+  //
+  // An odds-only event (no points: the USDGC, Throw Pink) is not on the season
+  // schedule at all, so it never shows up in `live` — the race payload is the
+  // whole of what the page knows about it, its own live flag included. A
+  // points event that is on still wins; the pipeline already prefers one.
+  const side = !!(r && r.side) && !live.length;
+  const liveTid = side ? (r.live ? r.tid : null) : live.length ? live[0].tid : null;
+  const series = r && (side || liveTid == null || r.tid === liveTid) ? r : null;
   const tid = series ? series.tid : liveTid;
   const ev = (d.schedule || []).find((s) => s.tid === tid);
-  const name = ev ? shortName(ev.name) : `event ${tid}`;
+  const name = side ? shortName(r.event || `event ${tid}`)
+    : ev ? shortName(ev.name) : `event ${tid}`;
   const onNow = tid === liveTid;
   // The table lists the whole field now, so the lede has to take the living
   // back out of it — "31 players still have a chance" is the claim it makes.
-  const rows = raceRows(d, tid, series && series.out);
+  const rows = raceRows(d, tid, series && series.out, side ? sideRows(series) : null);
   const living = rows.filter((v) => v.alive);
   const lead = living[0];
 
@@ -705,7 +726,12 @@ function renderRace(d) {
         lead ? `, led by <b>${lead.p.name}</b> at ${fmtPct(lead.l.win)}` : ""}${
         rows.length > living.length ? `, and <b>${rows.length - living.length}</b> no longer do`
         : ""}. ` : ""}
-      ${onNow
+      ${side
+        ? `This is not a DGPT points event, so these odds are the tournament on its own: the
+           same score model, run on the real, in-progress scores, and nothing here moves the
+           standings or the Cup odds on the other tabs.${onNow ? ""
+           : ` These are the odds as it actually played out, recorded as it went.`}`
+        : onNow
         ? `Every simulated season starts from this tournament's real, in-progress scores, so
            these are the same numbers driving the Cup odds on the other two tabs.`
         : `These are the odds as the tournament actually played out, recorded as it went.`}</p>
@@ -763,13 +789,17 @@ ${(series.marks || []).length ? `
 
     ${panel(onNow ? "Who is left, and who is out" : "How it finished",
       `${rows.length} player${rows.length === 1 ? "" : "s"}`,
-      `The whole field, in the app's own terms: where they stand, what the model gives them,
+      side
+        ? `The top of the board and everyone else with a chance, at the latest update. Everyone
+           still above 0.1% comes first, in order; below them the players who have fallen
+           through it, most recently out at the top.`
+        : `The whole field, in the app's own terms: where they stand, what the model gives them,
        and what winning here would do for their Powerball Cup odds. Everyone still above 0.1%
        comes first, in order; below them the players who have fallen through it, most recently
        out at the top.`,
-      raceTableHtml(d, tid, prev, onNow, series),
-      `Score is to par; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
-       points this event pays them. <b>Δ</b> is the move since the previous recorded update, and
+      raceTableHtml(d, tid, prev, onNow, series, side),
+      `Score is to par${side ? "" : `; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
+       points this event pays them`}. <b>Δ</b> is the move since the previous recorded update, and
        <b>Out</b> is the last time a player's odds hit zero — the same moment as their final
        skull on the chart above. A player who climbed back out and stayed out is not listed
        as gone at all.`)}`;

@@ -425,11 +425,33 @@ def _series(rows: list[dict], live_tids: set[int], names: dict[int, str]) -> dic
     }
 
 
+def _side_table(rows: list[dict]) -> list[dict]:
+    """The latest block of an odds-only event, as the tab's table rows.
+
+    A points event's table is read off the season bundle, which carries every
+    player in the live field; an odds-only event is in no bundle, so its table
+    is the recorded field itself — everyone with a chance, plus the top of the
+    board (`RECORD_PLACE`).
+    """
+    newest = max(r["taken_at"] for r in rows)
+    return [{
+        "pdga": int(r["pdga_number"]), "name": r["name"],
+        "place": int(r["place"]) if r["place"] not in ("", None) else None,
+        "cur": float(r["cur"]), "thru": int(r["thru"]), "rem": float(r["rem"]),
+        "win": float(r["win"]),
+    } for r in rows if r["taken_at"] == newest]
+
+
 def write_json() -> str:
-    """Build docs/data/liveodds.json from the history. Newest event per division."""
+    """Build docs/data/liveodds.json from the history, one event per division:
+    a points event live now if there is one, else the newest recorded."""
+    from . import sideodds  # imports this module for record
+
     rows = _read()
-    sched = {r["tournament_id"]: r for r in schedule.load()}
-    live_tids = {r["tournament_id"] for r in schedule.live_events()}
+    side = {r["tournament_id"]: r for r in sideodds.load()}
+    sched = {**side, **{r["tournament_id"]: r for r in schedule.load()}}
+    points_live = {r["tournament_id"] for r in schedule.live_events()}
+    live_tids = points_live | {r["tournament_id"] for r in sideodds.live_events(list(side.values()))}
     out: dict[str, dict | None] = {}
     for division in ("MPO", "FPO"):
         mine = [r for r in rows if r["division"] == division]
@@ -437,9 +459,19 @@ def write_json() -> str:
         if mine:
             last = _last_seen(mine)
             newest = max(last, key=lambda t: last[t])
+            # A points event that is on outranks an odds-only one: the same
+            # weekend (Throw Pink against the Powerball Cup) both are recorded,
+            # but the tab is for the race the season is in. Only then — between
+            # points events the newest still wins over a stale live flag.
+            on = [t for t in last if int(t) in points_live]
+            if int(newest) in side and on:
+                newest = max(on, key=lambda t: last[t])
             ev = [r for r in mine if str(r["tid"]) == newest]
             names = {int(r["pdga_number"]): r["name"] for r in ev}
             payload = _series(ev, live_tids, names)
+            if payload and payload["tid"] in side:
+                payload["side"] = True
+                payload["table"] = _side_table(ev)
         if payload:
             row = sched.get(payload["tid"])
             payload["event"] = row["name"] if row else str(payload["tid"])

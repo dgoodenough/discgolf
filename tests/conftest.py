@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from dgpt import (config, export, fields, invariants, live_api, liveodds, movers, points,
-                  project, ratings, schedule, season2027, snapshot)
+                  project, ratings, schedule, season2027, sideodds, snapshot)
 
 PAYLOADS = Path(__file__).parent / "fixtures" / "payloads"
 
@@ -52,6 +52,10 @@ def _isolate(monkeypatch, tmp_path):
     monkeypatch.setattr(live_api, "LIVE_CACHE", tmp_path / "_cache" / "live")
     monkeypatch.setattr(live_api, "RESULTS_CACHE", tmp_path / "_cache" / "results")
     monkeypatch.setattr(live_api, "FLIGHT_DIR", tmp_path / "_cache" / "flight")
+    # Odds-only events are real config naming real tournaments; a test opts in
+    # by setting its own (see tests/test_sideodds.py).
+    monkeypatch.setattr(config, "SIDE_EVENTS", ())
+    monkeypatch.setattr(sideodds, "SIDE_CSV", tmp_path / "_side" / "side_events.csv")
 
     def _no_network(*args, **kwargs):
         raise AssertionError("network access attempted from a test")

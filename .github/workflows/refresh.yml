@@ -40,15 +40,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Stand down entirely while a points event is on. The live loop refreshes
+  # Stand down entirely while an event is on — a points event, or an odds-only
+  # one (dgpt/sideodds.py), which the live loop runs for too. The live loop refreshes
   # every ~5 minutes during play and already covers everything this workflow
   # does except `project.run()` — the experimental 2027 / EuroTour tabs, whose
   # inputs move on the scale of weeks and whose last published bundle the live
   # loop carries across on every republish. Racing it for the same two branches
   # to regenerate those is a bad trade; stale-by-a-weekend is the right answer.
   #
-  # stdlib only (schedule.live_events reads data/schedule_2026.csv off disk),
-  # so this costs a checkout and no pip. Fails closed: a crashed check stops
+  # stdlib only (sideodds.any_live reads data/schedule_2026.csv and
+  # data/side_events_2026.csv off disk; an id-pinned odds-only entry not on
+  # file yet costs one public live-scoring fetch), so this costs a checkout and
+  # no pip. Fails closed: a crashed check stops
   # the run rather than being read as "nothing live".
   gate:
     runs-on: ubuntu-latest
@@ -65,12 +68,12 @@ jobs:
       - id: check
         run: |
           rc=0
-          python -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)' || rc=$?
+          python -c 'import sys; from dgpt import sideodds; sys.exit(0 if sideodds.any_live() else 3)' || rc=$?
           case "$rc" in
-            0) echo "A points event is live — deferring to live-refresh.yml."
+            0) echo "An event is live — deferring to live-refresh.yml."
                echo "live=true" >> "$GITHUB_OUTPUT" ;;
             3) echo "live=false" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::live_events() check crashed (rc=$rc)"; exit 1 ;;
+            *) echo "::error::any_live() check crashed (rc=$rc)"; exit 1 ;;
           esac
 
   # `force` is the manual override. The live gate is there to stop the daily

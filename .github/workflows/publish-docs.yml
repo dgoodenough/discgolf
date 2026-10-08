@@ -42,14 +42,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Warn if a points event is live
+      - name: Warn if an event is live
         run: |
           rc=0
           # python3, not python: this job has no setup-python step. A missing
           # interpreter gives rc=127, which simply skips the warning.
-          python3 -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)' || rc=$?
+          python3 -c 'import sys; from dgpt import sideodds; sys.exit(0 if sideodds.any_live() else 3)' || rc=$?
           if [ "$rc" = 0 ]; then
-            echo "::warning::A points event is live. This publish and the live loop's next one (within ~5 min) both force-push \`site\`; whichever lands second wins. Re-dispatch if your pages do not appear."
+            echo "::warning::An event is live. This publish and the live loop's next one (within ~5 min) both force-push \`site\`; whichever lands second wins. Re-dispatch if your pages do not appear."
           fi
 
       - name: Carry the published data bundle across

@@ -16,6 +16,7 @@ standings.compute()     per division, from banked results
      -> export.export()     docs/data/<div>.json      <- the seam with docs/
      -> snapshot.record()   predictions/history_*.csv <- the scorecard
      -> liveodds.record()   the live win-probability series
+     -> sideodds.record()   the same, for no-points events (USDGC, Throw Pink)
   -> project.run()      the experimental 2027 / EuroTour tabs
      -> whatif.Kit         the drop-in summary the What-if tab reads
 movers / feed / liveodds.write_json()
@@ -35,6 +36,13 @@ full, a round in progress only on the holes every player has completed),
 banks that through `points`, and re-ranks the season — `meta.as_is` and
 `players[].as_is`, the site's "If over now" column. A side panel: `asis.run`
 swallows its own failures, so it can never cost the forecast a publish.
+
+`sideodds.py` is the odds-only path for events that award no points
+(`config.SIDE_EVENTS`). They live in their own `data/side_events_2026.csv`,
+never the points schedule, so standings, movers, the scorecard and
+`validate` cannot see them; they share only the score model. The live loop's
+gates ask `sideodds.any_live()` (points events or these). `sideodds.record`
+swallows its own failures, like `asis.run`.
 
 Supporting modules: `pdga_api` (authenticated REST, needs `.env`), `live_api`
 (public live scoring, no auth), `ratings`, `fields` (who plays what),

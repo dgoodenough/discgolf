@@ -15,7 +15,7 @@ import hashlib
 import os
 import sys
 
-from . import config, live_api, ratings, schedule
+from . import config, live_api, ratings, schedule, sideodds
 
 STATE_SIG = config.DATA_DIR / "live_signature.txt"
 
@@ -25,7 +25,10 @@ def signature() -> str:
     completed/live status, every live player's current score, and the
     current official ratings snapshot (PDGA updates it ~monthly; the
     fetch behind it is TTL-throttled so this check stays cheap)."""
+    # The odds-only events (no points; see sideodds) count the same way: their
+    # scores move only the Event odds tab, but that tab is why the loop runs.
     rows = schedule.load()
+    side = sideodds.load()
     # Which events are in progress is schedule.live_events()' judgement, not a
     # date comparison of our own. It carries a grace day past the end date
     # because a US Sunday final round runs past 00:00 UTC, and re-deriving
@@ -34,9 +37,10 @@ def signature() -> str:
     # reported "unchanged" and the site froze with the lead card mid-round —
     # the same failure the grace day was added to fix (Ledgestone 2026,
     # repeated at the Discmania Challenge on 2026-08-10).
-    live_tids = {r["tournament_id"] for r in schedule.live_events(rows)}
+    live_tids = ({r["tournament_id"] for r in schedule.live_events(rows)}
+                 | {r["tournament_id"] for r in sideodds.live_events(side)})
     parts: list[str] = [f"ratings:{ratings.signature_component()}"]
-    for r in rows:
+    for r in rows + side:
         completed = r["completed"]
         live = r["tournament_id"] in live_tids
         parts.append(f"{r['tournament_id']}:{int(completed)}:{int(live)}")
