@@ -7,7 +7,8 @@ name: Live refresh
 # cron is NOT the cadence here; it only (re)starts the loop below. Once a run
 # is going, it drives its own tight cadence: every ~5 minutes it runs a cheap
 # change-check (stdlib only, no sim) and re-simulates only when a live event's
-# scores actually moved. It keeps looping until no points event is live or it
+# scores actually moved. It keeps looping until no event is live (points or
+# odds-only, see dgpt/sideodds.py) or it
 # nears the 6h per-job ceiling, then yields.
 #
 # Continuation across that ceiling needs no PAT: the concurrency group keeps
@@ -122,7 +123,7 @@ jobs:
 
           # 0 = live, 3 = clean "nothing live", 1 = crashed (traceback shows)
           is_live() {
-            python -c 'import sys; from dgpt import schedule; sys.exit(0 if schedule.live_events() else 3)'
+            python -c 'import sys; from dgpt import sideodds; sys.exit(0 if sideodds.any_live() else 3)'
           }
 
           fail_step() {
@@ -142,7 +143,7 @@ jobs:
             # errexit exempts.
             live_rc=0; is_live || live_rc=$?
             if [ "$live_rc" = 3 ]; then
-              echo "No points event live — exiting (cron will restart when one is)."
+              echo "No event live — exiting (cron will restart when one is)."
               exit_reason=idle
               break
             elif [ "$live_rc" != 0 ]; then

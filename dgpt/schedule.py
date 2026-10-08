@@ -37,13 +37,18 @@ def build(client: PDGAClient | None = None) -> list[dict]:
     client = client or PDGAClient()
     season = config.SEASON
     rows: list[dict] = []
+    listed: list[dict] = []   # every listing fetched, for the odds-only lookup
 
-    for e in client.events(tier="ES", start_date=f"{season}-01-01", end_date=f"{season}-12-31"):
+    es = client.events(tier="ES", start_date=f"{season}-01-01", end_date=f"{season}-12-31")
+    listed += es
+    for e in es:
         tid = int(e["tournament_id"])
         cls = classify_es(e["tournament_name"], tid)
         rows.append(_row(e, cls, mpo=True, fpo=True, fpo_points=tid != config.TID_HEINOLA))
 
-    for e in client.events(tier="M", start_date=f"{season}-01-01", end_date=f"{season}-12-31"):
+    majors = client.events(tier="M", start_date=f"{season}-01-01", end_date=f"{season}-12-31")
+    listed += majors
+    for e in majors:
         tid = int(e["tournament_id"])
         if tid in config.MAJOR_TIDS_MPO:
             rows.append(_row(e, "major", mpo=True, fpo=True, fpo_points=True))
@@ -52,10 +57,10 @@ def build(client: PDGAClient | None = None) -> list[dict]:
         # all other M-tier events (Am/Masters/Junior worlds, USDGC=XM) are non-points
 
     # JomezPro Series: A-tier listings carrying "JomezPro" in the name
+    a_tier = client.events(tier="A", start_date=f"{season}-01-01", end_date=f"{season}-12-31")
+    listed += a_tier
     jomez = [
-        e for e in client.events(
-            tier="A", start_date=f"{season}-01-01", end_date=f"{season}-12-31",
-        )
+        e for e in a_tier
         if "JomezPro" in e["tournament_name"]
         and "Finale" not in e["tournament_name"]  # Finale awards no points
     ]
@@ -69,6 +74,11 @@ def build(client: PDGAClient | None = None) -> list[dict]:
         w = csv.DictWriter(f, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(rows)
+
+    # The no-points events whose live odds the Event odds tab carries. A
+    # separate file, so nothing that reads the points schedule ever sees them.
+    from . import sideodds
+    sideodds.build(listed, client)
     return rows
 
 

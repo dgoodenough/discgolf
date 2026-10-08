@@ -77,6 +77,21 @@ TID_WORLDS_PLAYIN = 106696
 WORLDS_PLAYIN_SPOTS = {"MPO": 6, "FPO": 2}   # open Worlds spots, per event 97344
 PLAYIN_ROUNDS = 1
 
+# Odds-only events (dgpt/sideodds.py): no World Standings points and no part in
+# the forecast — live win odds on the Event odds tab and nothing else. Named by
+# tournament id where it is known; by name where it is not, in which case
+# schedule.build looks for it in the PDGA event listing and records the id it
+# found in data/side_events_2026.csv. Pin `tid` once the id is known — a name
+# matching more than one listing is ambiguous and tracks nothing.
+SIDE_EVENTS: tuple[dict, ...] = (
+    {"key": "usdgc", "tid": TID_USDGC, "divisions": ("MPO",)},
+    {"key": "throw-pink", "tid": 102613, "name": "Throw Pink", "divisions": ("FPO",)},
+)
+# Tiers searched for a by-name entry, beyond the ES / M / A listings
+# schedule.build already fetches. Elite tiers only: "Throw Pink" is also the
+# name of a women's-outreach programme, and club-level events carry it too.
+SIDE_SEARCH_TIERS = ("XA", "XM", "NT")
+
 # Playoff qualification (dgpt.com/announcements/playoff-qualification-update).
 # "cut" is the points-qualification line, "fill" the number the field expands
 # to if the primary window doesn't fill. MVP also admits the top GMC finishers

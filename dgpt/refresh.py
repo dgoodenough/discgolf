@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 
 from . import (export, feed, liveodds, movers, project, schedule, season2027,
-               simulate, snapshot, standings)
+               sideodds, simulate, snapshot, standings)
 
 
 def project_season(division: str, table: list[dict], sched: list[dict], n_sims: int) -> None:
@@ -43,7 +43,7 @@ def main() -> None:
     ap.add_argument("--skip-projection", action="store_true",
                     help="don't re-run the 2027 / EuroTour projections (they barely move day to day)")
     ap.add_argument("--only-if-live", action="store_true",
-                    help="exit early unless a points event is in progress (for the frequent live cron)")
+                    help="exit early unless an event is in progress (for the frequent live cron)")
     args = ap.parse_args()
 
     print("building schedule from PDGA API ...")
@@ -54,7 +54,7 @@ def main() -> None:
     print(f"  {len(rows)} points-relevant events, {done} completed")
 
     if args.only_if_live:
-        live = schedule.live_events(rows)
+        live = schedule.live_events(rows) + sideodds.live_events()
         if not live:
             print("no live event — skipping refresh")
             return
@@ -72,6 +72,8 @@ def main() -> None:
             export.export(res)
             print("  " + snapshot.record(res, division))
             print("  " + liveodds.record(res, division))
+            # no-points events (USDGC, Throw Pink): odds only, never fatal
+            print("  " + sideodds.record(division, n_sims=args.sims))
         if not args.skip_projection:
             project_season(division, table, rows, args.project_sims)
 
