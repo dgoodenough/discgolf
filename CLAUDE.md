@@ -46,6 +46,7 @@ one when you are working in the area it covers:
 
 | file | read it when |
 |---|---|
+| `notes/OFFSEASON_PLAN.md` | planning or picking up offseason work — the consolidated inventory, sequence and checkpoints for 2026-27 |
 | `notes/HARDENING.md` | touching the pipeline, CI, or failure handling — it is the incident log and the engineering backlog |
 | `notes/MODEL_IDEAS.md` | changing the score model or its calibration |
 | `notes/MOVERS_DESIGN.md` | changing the movers panel or the snapshot history behind it |
