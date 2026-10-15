@@ -193,15 +193,23 @@ class SideResult:
     unrated: dict = field(default_factory=dict)      # {tid: [names played at the field's floor]}
 
 
-def _event_stats(tid: int, division: str, n_sims: int, rng) -> tuple[dict, dict, list[str]]:
-    """({pdga: stats}, {pdga: name}, unrated names) for one live event."""
+def _event_stats(tid: int, division: str, n_sims: int, rng, *, state: dict | None = None,
+                 head: dict[int, float] | None = None) -> tuple[dict, dict, list[str]]:
+    """({pdga: stats}, {pdga: name}, unrated names) for one live event.
+
+    `head` is a head start in strokes added to each player's score — the
+    Powerball Cup's seed advantage, where it is not already in the sheet's
+    scores (see start_strokes). The reported `cur` includes it, which is the
+    total the sheet itself ranks on.
+    """
     import numpy as np
 
     from . import simulate
 
-    state = live_api.live_field(tid, division)
+    state = state if state is not None else live_api.live_field(tid, division)
     if not state:
         return {}, {}, []
+    head = head or {}
     official = ratings.current(division)
     pdga = sorted(state)
     rated = {p: official.get(p) or state[p].get("rating") for p in pdga}
@@ -213,7 +221,7 @@ def _event_stats(tid: int, division: str, n_sims: int, rng) -> tuple[dict, dict,
     floor = min(known) if known else 1000.0
     unrated = [state[p].get("name") or str(p) for p in pdga if not rated[p]]
     rtg = np.array([float(rated[p] or floor) for p in pdga])
-    cur = np.array([float(state[p]["cur"]) for p in pdga])
+    cur = np.array([float(state[p]["cur"]) + head.get(p, 0.0) for p in pdga])
     rem = np.array([float(state[p]["rem"]) for p in pdga])
     tie = np.array([simulate.TIE_EPS * (state[p].get("place") or 0) for p in pdga])
 
@@ -247,6 +255,86 @@ def _event_stats(tid: int, division: str, n_sims: int, rng) -> tuple[dict, dict,
     }
     names = {p: state[p].get("name") or str(p) for p in pdga}
     return stats, names, unrated
+
+
+# ------------------------------------------------------- the Powerball Cup
+
+def _misplaced(totals: dict[int, float], place: dict[int, int]) -> int:
+    """How far the sheet's places are from the ones `totals` would give.
+
+    A place is one plus the number of players strictly ahead, so ties share
+    it — which is what lets a tie tell the two readings apart: two players
+    level on the sheet are only level on one of them. (Counting pairs ranked
+    the wrong way round cannot see that; it scores a tie as no evidence.)
+    """
+    ps = [p for p in place if p in totals]
+    return sum(abs(place[p] - (1 + sum(totals[q] < totals[p] - 1e-9 for q in ps))) for p in ps)
+
+
+def start_strokes(state: dict[int, dict], seeds: dict[int, float]) -> tuple[dict[int, float], str]:
+    """The head start to add to each player's `cur`, and how that was decided.
+
+    The Cup is stroke play from a seeded start (-7 for the MPO No. 1 seed down
+    to even), and whether live_field's `cur` already carries it depends on how
+    PDGA publishes it — so it is detected, not assumed, in this order:
+
+    1. The sheet's "* adv" pseudo-round (live_field `adv`, how PDGA shows it in
+       2026). live_field keeps those strokes out of `cur`, so add them back.
+    2. The sheet's own RunningPlace, which ranks on the real total. Whichever
+       of `cur` and `cur + seed` reproduces its places more closely is the score.
+    3. Before any place is published: players yet to tee off either already
+       read their seed or read even.
+
+    A wrong answer here moves the No. 1 seed seven strokes, so the decision is
+    returned for the log rather than made silently.
+    """
+    adv = {p: float(r.get("adv") or 0.0) for p, r in state.items()}
+    if any(adv.values()):
+        return adv, "from the sheet's starting-strokes round"
+    cur = {p: float(r["cur"]) for p, r in state.items()}
+    place = {p: r["place"] for p, r in state.items() if r.get("place")}
+    if len(place) >= 2:
+        bare = _misplaced(cur, place)
+        seeded = _misplaced({p: cur[p] + seeds.get(p, 0.0) for p in cur}, place)
+        if seeded < bare:
+            return dict(seeds), f"added from the seed table (sheet places off by {seeded}, vs {bare} without)"
+        if bare < seeded:
+            return {}, f"already in the sheet's scores (sheet places off by {bare}, vs {seeded} with them added)"
+    waiting = [p for p, r in state.items() if not r.get("thru") and seeds.get(p)]
+    if waiting and all(abs(cur[p] - seeds[p]) < 1e-9 for p in waiting):
+        return {}, "already in the sheet's scores (players yet to tee off read their seed)"
+    return dict(seeds), "added from the seed table"
+
+
+@dataclass
+class CupLive:
+    stats: dict            # {pdga: {cur, rem, thru, place, win, mean_place}}
+    names: dict            # {pdga: name}
+    unrated: list
+    how: str               # where the starting strokes came from (start_strokes)
+
+
+def cup_stats(division: str, ranks: dict[int, int], n_sims: int = DEFAULT_SIMS,
+              seed: int | None = 2026) -> CupLive | None:
+    """Live win odds for the Powerball Cup, starting strokes included.
+
+    `ranks` is the final World Standings rank by PDGA number, which sets each
+    player's seed (config.cup_start_strokes; past the ladder, even). None
+    before the Cup has a readable live field.
+    """
+    import numpy as np
+
+    tid = config.TID_CHAMPIONSHIP
+    state = live_api.live_field(tid, division)
+    if not state:
+        return None
+    ladder = config.cup_start_strokes(division)
+    seeds = {p: float(ladder[ranks[p] - 1]) if 0 < ranks.get(p, 0) <= len(ladder) else 0.0
+             for p in state}
+    head, how = start_strokes(state, seeds)
+    stats, names, unrated = _event_stats(tid, division, n_sims, np.random.default_rng(seed),
+                                         state=state, head=head)
+    return CupLive(stats=stats, names=names, unrated=unrated, how=how)
 
 
 def run(division: str, rows: list[dict], n_sims: int = DEFAULT_SIMS,

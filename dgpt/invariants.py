@@ -106,8 +106,10 @@ def check_event(tid: int, division: str) -> list[str]:
         for s in scores
         if s.get("PDGANum") and s.get("RunningPlace")
     }
+    # The sheet ranks on its own total, which at the Powerball Cup includes the
+    # "* adv" starting strokes that live_field keeps out of `cur`.
     rows = sorted(
-        (rec["cur"], place[p], rec["name"] or str(p))
+        (rec["cur"] + rec.get("adv", 0.0), place[p], rec["name"] or str(p))
         for p, rec in field.items()
         if p in place
     )

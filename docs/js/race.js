@@ -570,7 +570,7 @@ function raceRows(d, tid, out, players) {
                : outAt(b) - outAt(a) || (a.l.place || 999) - (b.l.place || 999)));
 }
 
-function raceTableHtml(d, tid, prev, onNow, series, side) {
+function raceTableHtml(d, tid, prev, onNow, series, side, cup) {
   const rows = raceRows(d, tid, series && series.out, side ? sideRows(series) : null);
   const ev = (d.events || []).find((e) => e.tid === tid) || { rounds: 0 };
   // Whether the bundle knows about drop-offs at all. Without this an older
@@ -608,22 +608,22 @@ function raceTableHtml(d, tid, prev, onNow, series, side) {
         // 49 rows of "−0.0" is noise dressed up as data.
         dl == null || Math.abs(dl) < 5e-4 ? ""
           : (dl > 0 ? "+" : "−") + (Math.abs(dl) * 100).toFixed(1)}</td>
-      ${side ? "" : `<td class="num dim t2">${l.mean_place}</td>
-      <td class="num dim t3">${fmtPts(l.mean_pts)}</td>`}
+      ${side ? "" : `<td class="num dim t2">${l.mean_place}</td>`}
+      ${side || cup ? "" : `<td class="num dim t3">${fmtPts(l.mean_pts)}</td>`}
       <td class="num dim t2">${
         alive ? "" : !known ? "—" : out && out[0] != null ? stamp(out[0]) : "never"}</td>
-      ${side ? "" : `<td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td>`}</tr>`;
+      ${side || cup ? "" : `<td class="num ${probClass(p.p_champ)}">${fmtPct(p.p_champ)}</td>`}</tr>`;
   }).join("");
   return `<div class="pv-scroll pv-tall"><table class="table-ledger detail-tbl pv-tbl"><thead><tr>
     <th class="num">Pos</th><th>Player</th><th class="num">Score</th>
     <th class="num t2">Thru</th><th class="num">Win</th>
     <th class="num" ${tipAttrs(`Change since the previous recorded update`)}>Δ</th>
-    ${side ? "" : `<th class="num t2" ${tipAttrs(`Mean simulated finishing position`)}>Proj</th>
-    <th class="num t3" ${tipAttrs(`Mean DGPT points from this event`)}>Pts</th>`}
+    ${side ? "" : `<th class="num t2" ${tipAttrs(`Mean simulated finishing position`)}>Proj</th>`}
+    ${side || cup ? "" : `<th class="num t3" ${tipAttrs(`Mean DGPT points from this event`)}>Pts</th>`}
     <th class="num t2" ${tipAttrs(`When this player's odds last hit zero — none of the ten thousand. `
       + `"never" means they were never above it at all — recorded for their place on the `
       + `board, not for a chance at winning.`)}>Out</th>
-    ${side ? "" : `<th class="num" ${tipAttrs(`Powerball Cup odds`)}>Cup</th>`}</tr></thead><tbody>${body}</tbody></table></div>`;
+    ${side || cup ? "" : `<th class="num" ${tipAttrs(`Powerball Cup odds`)}>Cup</th>`}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function renderRace(d) {
@@ -659,6 +659,9 @@ function renderRace(d) {
   const name = side ? shortName(r.event || `event ${tid}`)
     : ev ? shortName(ev.name) : `event ${tid}`;
   const onNow = tid === liveTid;
+  // The Powerball Cup pays no points and decides the Cup itself, so its table
+  // has no Pts or Cup-odds column, and its score includes the seed head start.
+  const cup = !side && !!ev && ev.cls === "championship";
   // The table lists the whole field now, so the lede has to take the living
   // back out of it — "31 players still have a chance" is the claim it makes.
   const rows = raceRows(d, tid, series && series.out, side ? sideRows(series) : null);
@@ -731,6 +734,10 @@ function renderRace(d) {
            same score model, run on the real, in-progress scores, and nothing here moves the
            standings or the Cup odds on the other tabs.${onNow ? ""
            : ` These are the odds as it actually played out, recorded as it went.`}`
+        : cup
+        ? `Scores include each seed's starting strokes, and these are the same numbers as the
+           Win Cup column on the Forecast tab.${onNow ? ""
+           : ` These are the odds as it actually played out, recorded as it went.`}`
         : onNow
         ? `Every simulated season starts from this tournament's real, in-progress scores, so
            these are the same numbers driving the Cup odds on the other two tabs.`
@@ -789,16 +796,17 @@ ${(series.marks || []).length ? `
 
     ${panel(onNow ? "Who is left, and who is out" : "How it finished",
       `${rows.length} player${rows.length === 1 ? "" : "s"}`,
-      side
-        ? `The top of the board and everyone else with a chance, at the latest update. Everyone
+      side || cup
+        ? `The ${side ? "top of the board and everyone else with a chance, at the latest update" : "whole field"}. Everyone
            still above 0.1% comes first, in order; below them the players who have fallen
            through it, most recently out at the top.`
         : `The whole field, in the app's own terms: where they stand, what the model gives them,
        and what winning here would do for their Powerball Cup odds. Everyone still above 0.1%
        comes first, in order; below them the players who have fallen through it, most recently
        out at the top.`,
-      raceTableHtml(d, tid, prev, onNow, series, side),
-      `Score is to par${side ? "" : `; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
+      raceTableHtml(d, tid, prev, onNow, series, side, cup),
+      `Score is to par${cup ? ", starting strokes included; <b>Proj</b> is the mean simulated finish"
+        : side ? "" : `; <b>Proj</b> is the mean simulated finish and <b>Pts</b> the mean DGPT
        points this event pays them`}. <b>Δ</b> is the move since the previous recorded update, and
        <b>Out</b> is the last time a player's odds hit zero — the same moment as their final
        skull on the chart above. A player who climbed back out and stayed out is not listed

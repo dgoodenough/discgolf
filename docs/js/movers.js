@@ -85,7 +85,8 @@ function moversHtml(d, div) {
   // "Last event" column for the live one: where they stand now, and what the
   // model projects for them versus what it expected before a disc was thrown.
   const liveTid = active === "day"
-    ? (liveEvents(d).map((e) => e.tid).find((t) => d.players.some((p) => p.live && p.live[t])) ?? null)
+    // (not the Powerball Cup: it pays no points, so "projected points" is nothing)
+    ? (liveEvents(d).filter((e) => e.cls !== "championship").map((e) => e.tid).find((t) => d.players.some((p) => p.live && p.live[t])) ?? null)
     : null;
   const liveOf = new Map(
     liveTid == null ? [] : d.players.filter((p) => p.live && p.live[liveTid]).map((p) => [p.pdga, p.live[liveTid]])
