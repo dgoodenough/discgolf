@@ -249,6 +249,28 @@ def _is_playoff(entry: dict, rid: int, final: int | None) -> bool:
     return final is not None and rid > final
 
 
+def _is_advantage(entry: dict) -> bool:
+    """Is this RoundsList entry the Powerball Cup's starting-strokes "round"?
+
+    The Cup seeds the field with a head start (config.CUP_START_STROKES), and
+    PDGA Live carries it as a fake round labelled "* adv": no holes, just each
+    player's advantage as their score. It is not a round — counting it would
+    hand everyone a phantom 18 holes, and on a four-day event the day-span cap
+    in _round_plan would then drop the real final round to make room — but its
+    strokes ARE part of the score the sheet ranks on (see live_field `adv`).
+    Matched on the label: "adv", or the leading "*" PDGA uses for it.
+    """
+    label = " ".join(str(entry.get(k) or "") for k in ("Label", "LabelAbbreviated")).strip()
+    return label.startswith("*") or "adv" in label.lower()
+
+
+def _adv_rounds(event: dict) -> list[int]:
+    """Ids of the starting-strokes pseudo-rounds (see _is_advantage), if any."""
+    rounds_list = event.get("RoundsList") or {}
+    return sorted(int(k) for k, v in rounds_list.items()
+                  if str(k).isdigit() and _is_advantage(v or {}))
+
+
 def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     """(sheet ids to read, number of rounds the field plays).
 
@@ -304,9 +326,10 @@ def _round_plan(event: dict, latest: int) -> tuple[list[int], int]:
     else:
         final = event.get("FinalRound")
         final = int(final) if final else None
+        entry = lambda i: rounds_list.get(str(i)) or rounds_list.get(i) or {}  # noqa: E731
         ids = [
             i for i in ids
-            if not _is_playoff(rounds_list.get(str(i)) or rounds_list.get(i) or {}, i, final)
+            if not _is_playoff(entry(i), i, final) and not _is_advantage(entry(i))
         ]
     span = _day_span(event)
     if span and len(ids) > span:
@@ -723,6 +746,8 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
                 rec["holes"] = sum(rec["len"].get(r, sheet_len.get(r, 18))
                                    for r in sheet_ids if r < rnd) + played
 
+    adv = _advantage(tournament_id, division, event)
+
     out: dict[int, dict] = {}
     for pdga, r in state.items():
         if r["wd"]:
@@ -749,8 +774,36 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             # an elite_plus event, so there the two differ by a whole round.
             "thru": int(holes),
             "place": r["place"],   # current standing per the sheet (None pre-tee)
+            # Starting strokes from the "* adv" pseudo-round (the Powerball
+            # Cup's seed advantage), NOT included in `cur`: cur stays the score
+            # over holes actually played, as at every other event. The sheet's
+            # own total and RunningPlace are cur + adv.
+            "adv": adv.get(pdga, 0.0),
         }
     return out or None
+
+
+def _advantage(tournament_id: int, division: str, event: dict) -> dict[int, float]:
+    """{pdga: starting strokes} from the event's "* adv" sheet(s); {} if none.
+
+    Read off the row's per-round score, falling back to its total — the sheet
+    has no holes, so the two can only differ by layout par, which it has none
+    of. A sheet that fails to load is skipped rather than fatal: the Cup path
+    (sideodds.cup_stats) has its own way of telling whether the strokes are in.
+    """
+    out: dict[int, float] = {}
+    for rid in _adv_rounds(event):
+        try:
+            scores = fetch_round(tournament_id, division, rid).get("scores") or []
+        except Exception:  # noqa: BLE001 - see docstring
+            continue
+        for s in scores:
+            pdga = s.get("PDGANum")
+            val = next((_num(s.get(k)) for k in ("RoundtoPar", "ToPar")
+                        if _num(s.get(k)) is not None), None)
+            if pdga and val is not None:
+                out[pdga] = out.get(pdga, 0.0) + val
+    return out
 
 
 def _hole_list(s: dict) -> list:

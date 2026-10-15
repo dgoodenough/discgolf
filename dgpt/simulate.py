@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import asis, config, fields, live_api, points, ratings, schedule, standings
+from . import asis, config, fields, live_api, points, ratings, schedule, sideodds, standings
 
 # Score-model constants, recalibrated against all completed 2026 rounds
 # (94 rounds / 6,667 player-rounds; see dgpt/calibrate.py). The 2021 values
@@ -1224,6 +1224,43 @@ def _live_projections(drawer: _Drawer, roster: _Roster, live: _LiveState,
 
 # ------------------------------------------------------------------- run
 
+def _live_cup(division: str, roster: _Roster, sched: list[dict],
+              n_sims: int) -> "sideodds.CupLive | None":
+    """The Powerball Cup in progress, from its real scores.
+
+    `_simulate` plays the Cup from scratch at the end of every simulated
+    season, which is the right answer until it tees off and the wrong one
+    after: it never reads the scoreboard, so through all four rounds the Win
+    Cup column sat on its pre-event number and the Event odds tab, which only
+    hears about events in `remaining`, had nothing to draw (2026-10-15). Once
+    it is live, the field is set and only the tournament is left, so it is the
+    remaining-holes model over the live field with each seed's head start
+    (sideodds.cup_stats) — and that replaces the season draw's answer.
+
+    A side panel like asis.run: a failure here keeps the season draw's Cup
+    odds and is printed as a warning, never raised.
+    """
+    # Live, or finished: once it is over the scoreboard is the result, and
+    # handing the column back to the season draw would republish pre-event
+    # odds for a Cup somebody has already won.
+    live = {r["tournament_id"] for r in schedule.live_events(sched)}
+    if not any(r["tournament_id"] == config.TID_CHAMPIONSHIP and r[division.lower()]
+               and (r["tournament_id"] in live or r["completed"]) for r in sched):
+        return None
+    try:
+        ranks = {r["pdga_number"]: r["rank"] for r in roster.table if r.get("points")}
+        cup = sideodds.cup_stats(division, ranks, n_sims=n_sims)
+    except Exception as e:  # noqa: BLE001 - see docstring
+        print(f"::warning::{division} live Cup odds skipped ({type(e).__name__}: {e})")
+        return None
+    if cup is None:
+        return None
+    print(f"  {division} Cup live: {len(cup.stats)} players; starting strokes {cup.how}")
+    if cup.unrated:
+        print(f"  {division} Cup: unrated, played at the field's lowest rating: {', '.join(cup.unrated)}")
+    return cup
+
+
 def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         chunk: int = 500) -> SimResult:
     rng = np.random.default_rng(seed)
@@ -1283,6 +1320,11 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
             p_drop[i][tid] = round(float(t.drop_major_hits[i, j] / n_sims), 4)
 
     live_stats = _live_projections(drawer, roster, live, remaining, curves, division, doubles)
+    p_cup_win = t.cup_win_hits / n_sims
+    cup = _live_cup(division, roster, sched, n_sims)
+    if cup is not None:
+        live_stats[config.TID_CHAMPIONSHIP] = cup.stats
+        p_cup_win = np.array([cup.stats.get(p, {}).get("win", 0.0) for p in roster.pdga_numbers])
 
     cut = STANDINGS_CUT[division]
     fsz = FIELD_SIZE[division]
@@ -1313,7 +1355,7 @@ def run(division: str, n_sims: int = DEFAULT_SIMS, seed: int | None = 2026,
         rank_hist=t.rank_hist,
         strokes_hist=t.strokes_hist,
         stroke_values=qual.stroke_values,
-        p_cup_win=t.cup_win_hits / n_sims,
+        p_cup_win=p_cup_win,
         cutline=t.cutline,
         cutline2=t.cutline2,
         att_probs=drawer.att_count / n_sims,
