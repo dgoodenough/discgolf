@@ -754,7 +754,12 @@ def live_field(tournament_id: int, division: str) -> dict[int, dict] | None:
             continue
         cur, holes = r["cur"], r["holes"]
         if cur is None:  # no activity on any sheet
-            if latest > 1:
+            # Past the first REAL round, not past round id 1: at the Powerball
+            # Cup the "* adv" pseudo-round is id 1 and round 1 is id 2, so
+            # `latest > 1` read the whole of day one as mid-event and dropped
+            # everyone yet to tee off — the top seeds, who go out last, among
+            # them (2026-10-15: 20 of 32 MPO in the odds, the leaders absent).
+            if len(sheet_ids) > 1:
                 continue  # mid-event never-started: not playing (DNS)
             cur, holes = 0.0, 0  # round 1 loaded, not yet teed off: seed from scratch
         # the player's own layout length for every published round, the
