@@ -24,7 +24,8 @@ tab wiring. Everything else lives in `js/`:
 | `race.js` | the event-odds chart and table |
 | `projection.js` | the two experimental tables (2027, EuroTour) |
 | `whatif.js` | the What-if tab: sliders for an invented player, dropped into the 2027 field |
-| `tourplan.js` | the Tour planner tab: best home base / cheapest driving trip over the 2027 calendar, from `data/tourplan.json` |
+| `tourplan.js` | the Tour planner tab: controls, worker plumbing and rendering, over `data/tourplan.json` |
+| `tourplan-search.js` | the planner's search (events played within weekends on the road, per home town); no imports, so it also runs in `tourplan-worker.js` |
 
 **The import graph is layered and must stay acyclic.** `core` imports nothing;
 each layer only reaches downward:
@@ -34,9 +35,12 @@ core <- tooltip <- cells <- sim <- movers <- {forecast, possible, race, projecti
                                                                    ^-- whatif <-'
 ```
 
-`tourplan` imports only `core` and `tooltip` and is imported only by `app`; it
-reads its own bundle (`dgpt/tourplan.py` writes it, not `export.py`) and
-shares nothing with the forecast.
+`tourplan` imports only `core`, `tooltip` and `tourplan-search`, and is
+imported only by `app`; it reads its own bundle (`dgpt/tourplan.py` writes it,
+not `export.py`) and shares nothing with the forecast. `tourplan-search`
+imports nothing and touches no DOM, because `tourplan-worker.js` (not
+preloaded, not part of the graph above) loads it off the main thread: ranking
+every home is up to a few seconds at generous settings.
 
 `whatif` sits one layer above `projection` because it reuses `loadProj` — the
 two tabs read the same 2027 bundle, and fetching it twice would be a second
