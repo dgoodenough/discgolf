@@ -25,6 +25,7 @@ tab wiring. Everything else lives in `js/`:
 | `projection.js` | the two experimental tables (2027, EuroTour) |
 | `whatif.js` | the What-if tab: sliders for an invented player, dropped into the 2027 field |
 | `tourplan.js` | the Tour planner tab: controls, worker plumbing and rendering, over `data/tourplan.json` |
+| `amplan.js` | the Am planner tab (alpha): every sanctioned amateur event, one home at a time, estimated drive times; reuses `tourplan-search` |
 | `tourplan-search.js` | the planner's search (events played within weekends on the road, per home town); no imports, so it also runs in `tourplan-worker.js` |
 
 **The import graph is layered and must stay acyclic.** `core` imports nothing;
@@ -41,6 +42,10 @@ not `export.py`) and shares nothing with the forecast. `tourplan-search`
 imports nothing and touches no DOM, because `tourplan-worker.js` (not
 preloaded, not part of the graph above) loads it off the main thread: ranking
 every home is up to a few seconds at generous settings.
+
+`amplan` imports `core`, `tooltip` and `tourplan-search` and reads
+`data/amplan.json` (`dgpt/amplan.py`). The trip formatters both planners share
+(`dateRange`, `hm`, `hrs`, `esc`, `plural`) live in `core`.
 
 `whatif` sits one layer above `projection` because it reuses `loadProj` — the
 two tabs read the same 2027 bundle, and fetching it twice would be a second
