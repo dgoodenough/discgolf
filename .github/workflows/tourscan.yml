@@ -1,0 +1,57 @@
+name: Tour planner scan (prototype)
+
+# Measures whether the Tour planner could cover every sanctioned event (the
+# amateur version): pulls all events for the given years from the PDGA API and
+# prints a report — counts by tier / class, coordinate coverage, density per
+# weekend, the drive-time estimate's error, and how much "nearest K events per
+# weekend" pruning costs. See dgpt/tourscan.py.
+#
+# Read-only: it commits nothing, publishes nothing and touches no tracked data.
+# The report goes to the job log and the run summary; the raw events and the
+# report are uploaded as an artifact.
+#
+# The push trigger is for the prototype's own branches only, so the scan can
+# run before this workflow exists on main (a dispatch-only workflow can't).
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Years to pull, space-separated"
+        default: "2026 2027"
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "dgpt/tourscan.py"
+      - ".github/workflows/tourscan.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tourscan
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Scan
+        env:
+          PDGA_USERNAME: ${{ secrets.PDGA_USERNAME }}
+          PDGA_PASSWORD: ${{ secrets.PDGA_PASSWORD }}
+        run: |
+          python -m dgpt.tourscan --years ${{ inputs.years || '2026 2027' }} --out results/tourscan
+          cat results/tourscan/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tourscan
+          path: results/tourscan/
+          retention-days: 14
