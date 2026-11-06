@@ -24,6 +24,7 @@ tab wiring. Everything else lives in `js/`:
 | `race.js` | the event-odds chart and table |
 | `projection.js` | the two experimental tables (2027, EuroTour) |
 | `whatif.js` | the What-if tab: sliders for an invented player, dropped into the 2027 field |
+| `tourplan.js` | the Tour planner tab: best home base / cheapest driving trip over the 2027 calendar, from `data/tourplan.json` |
 
 **The import graph is layered and must stay acyclic.** `core` imports nothing;
 each layer only reaches downward:
@@ -32,6 +33,10 @@ each layer only reaches downward:
 core <- tooltip <- cells <- sim <- movers <- {forecast, possible, race, projection} <- app
                                                                    ^-- whatif <-'
 ```
+
+`tourplan` imports only `core` and `tooltip` and is imported only by `app`; it
+reads its own bundle (`dgpt/tourplan.py` writes it, not `export.py`) and
+shares nothing with the forecast.
 
 `whatif` sits one layer above `projection` because it reuses `loadProj` — the
 two tabs read the same 2027 bundle, and fetching it twice would be a second

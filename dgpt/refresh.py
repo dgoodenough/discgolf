@@ -82,6 +82,16 @@ def main() -> None:
         print("  " + feed.write_feed())
         print("  " + liveodds.write_json())
 
+    # The tour planner's bundle: a re-encode of tracked files under
+    # data/tourplan/, no network. Never fatal, for the same reason as the
+    # projections — and the live loop carries the last published copy across.
+    if not args.skip_projection:
+        try:
+            from . import tourplan
+            print("  " + tourplan.export())
+        except Exception as e:  # noqa: BLE001 - an experimental tab never fails the run
+            print(f"  tourplan export skipped ({e})")
+
     # Publish-gate invariants (flag-only): the refresh must still succeed —
     # the workflows read the marker file after committing and turn violations
     # into a red run, so bad-looking data alerts without the site going stale.

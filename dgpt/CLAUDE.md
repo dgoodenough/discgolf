@@ -20,8 +20,20 @@ standings.compute()     per division, from banked results
   -> project.run()      the experimental 2027 / EuroTour tabs
      -> whatif.Kit         the drop-in summary the What-if tab reads
 movers / feed / liveodds.write_json()
+tourplan.export()       docs/data/tourplan.json, offline, never fatal
 invariants.run_checks()
 ```
+
+`tourplan.py` is the one stage that does its network work out of band.
+`python -m dgpt.tourplan` (by hand, when the PDGA updates the 2027 schedule)
+scrapes pdga.com/news/2027schedule, geocodes new towns with OpenStreetMap
+Nominatim and rebuilds the road-time matrix with the public OSRM server, all
+into tracked files under `data/tourplan/`. The refresh only re-encodes those
+files. Eligibility the PDGA table under-labels (women-only, juniors-only
+events listed plain "Pro/Am") is corrected in
+`data/tourplan/eligibility_overrides.csv`. Known gap: masters (40+) events are
+excluded outright; planning a masters tour needs a masters division here and
+on the page.
 
 `whatif.py` is a summary of a projection rather than a stage of one: it rides
 along with `project.run` and reduces the 2027 DGPT standings ladder, both
