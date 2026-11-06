@@ -5,55 +5,42 @@
    data/tourplan.json by dgpt/tourplan.py. Nothing is simulated: every number
    on the tab is a sum of drive legs a reader could check on a map.
 
-   The question has four knobs and one answer per home town:
+   The question has five knobs and one answer per home town:
 
-     events    which slice of the calendar a player can enter — Elite Series
-               plus Majors (a tour card), that plus every A-tier, or A-tiers
-               only (no tour card)
-     style     "home base": drive home after every event and out again to the
-               next; "road trip": event to event, home only at the end
-     length    how many events the trip plays, from two up to the longest
-               chain the settings allow — the whole drivable season, if so
-     spacing   back-to-back weekends only, or up to one / two weekends off
-               between events
+     events     which slice of the calendar a player can enter — Elite Series
+                plus Majors (a tour card), that plus every A-tier, or A-tiers
+                only (no tour card)
+     style      "home base": drive home after every event and out again to the
+                next; "road trip": event to event, home only at the end
+     played     how many events the trip plays
+     on road    how many weekends the trip spans, first event to last. The
+                difference is the trip's weekends off, spent wherever the
+                calendar makes the driving cheapest; equal is back-to-back
+     home       optional: one town's trips instead of the best town's
 
-   For each candidate home (every venue town on the calendar) a dynamic
-   program over the events in weekend order finds the cheapest trip of that
-   length; the best homes are the ones whose cheapest trip is cheapest. It is
-   a few million additions per control change, which is why it runs here
-   rather than being precomputed for every combination. */
+   The search lives in tourplan-search.js, which has no imports so the ranking
+   can run in tourplan-worker.js; this module is the controls, the worker
+   plumbing and the rendering. */
 
 import { $, bust } from "./core.js";
 import { tipAttrs } from "./tooltip.js";
-
-/* A leg has to fit in the days between one event's last round and the next
-   one's first, at this many hours behind the wheel a day. Ten is a long day
-   but a normal one for touring pros, and it is the constraint that stops a
-   Sunday finish in Florida "connecting" to a Friday start in Washington. */
-const DRIVE_HOURS_PER_DAY = 10;
+import { DRIVE_HOURS_PER_DAY, MIN_LEN, clampQuery, rank, tripsFrom } from "./tourplan-search.js";
 
 const SETS = [
-  ["tour", "Elite + Majors", "Tour-card schedule: DGPT Elite Series stops and the PDGA Majors", (c) => c !== "a"],
-  ["all", "Elite + Majors + A-tiers", "Everything open to a touring pro with a card", () => true],
-  ["atier", "A-tiers only", "No tour card: A-tier events only (JomezPro stops are A-tiers)", (c) => c === "a"],
+  ["tour", "Elite + Majors", "Tour-card schedule: DGPT Elite Series stops and the PDGA Majors"],
+  ["all", "Elite + Majors + A-tiers", "Everything open to a touring pro with a card"],
+  ["atier", "A-tiers only", "No tour card: A-tier events only (JomezPro stops are A-tiers)"],
 ];
 const STYLES = [
   ["hub", "Home base", "Drive home after every event, and out again to the next"],
   ["road", "Road trip", "Drive event to event; home only at the start and the end"],
 ];
-/* The length slider runs from MIN_LEN to the longest trip the current
-   settings allow (maxLength below): back-to-back that is the longest unbroken
-   run of weekends, with weeks off it can be most of the season. */
-const MIN_LEN = 2;
-const SPACING = [
-  [0, "Back-to-back", "An event every weekend, no weekends off"],
-  [1, "≤1 week off", "Up to one empty weekend between consecutive events"],
-  [2, "≤2 weeks off", "Up to two empty weekends between consecutive events"],
-];
-const TOP_HOMES = 15;
 const ALT_TRIPS = 5;
+/* Show "working" only if an answer takes longer than this; most settings
+   come back well inside it and a flash of status text would be noise. */
+const BUSY_MS = 150;
 
-const cfg = { set: "all", style: "hub", n: 5, off: 0, home: null };
+const cfg = { set: "all", style: "hub", n: 5, weeks: 6, home: null };
 let bundle;  // undefined = not fetched yet, null = fetch failed
 
 async function loadTour() {
@@ -74,117 +61,45 @@ function dateRange(a, b) {
   const [m1, d1] = dParts(a), [m2, d2] = dParts(b);
   return m1 === m2 ? `${MON[m1 - 1]} ${d1}–${d2}` : `${MON[m1 - 1]} ${d1}–${MON[m2 - 1]} ${d2}`;
 }
-const dayNum = (iso) => Date.UTC(...iso.split("-").map((x, i) => (i === 1 ? x - 1 : +x))) / 86400000;
 const hm = (min) => (min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`);
 const hrs = (min) => (min / 60).toFixed(min < 600 ? 1 : 0) + " h";
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const CAT = { elite: "Elite", major: "Major", a: "A" };
 
-/* ---------- the search ---------- */
+/* ---------- the ranking, off the main thread ---------- */
 
-/* The events a reader can enter under the current settings, in weekend
-   order, each with its predecessors: earlier events 1..(1+off) weekends
-   before it that end before it starts. */
-function prepare(b, div, set, off) {
-  const keep = SETS.find((s) => s[0] === set)[3];
-  const ev = b.events
-    .filter((e) => e[div] && keep(e.cat))
-    .map((e) => ({ ...e, s: dayNum(e.start), f: dayNum(e.end) }))
-    .sort((x, y) => x.wk - y.wk || x.s - y.s);
-  for (const e of ev) {
-    e.pred = [];
-    for (let j = 0; j < ev.length; j++) {
-      const p = ev[j], dw = e.wk - p.wk;
-      if (dw >= 1 && dw <= 1 + off && e.s > p.f) e.pred.push(j);
-    }
-  }
-  return ev;
-}
+/* One worker, fed the bundle once. A query that arrives while another is
+   still running terminates the worker rather than queueing behind it: a
+   stale answer is worthless, and a slider drag would otherwise stack up
+   seconds of them. Where workers are unavailable the ranking runs inline. */
+let worker = null, busy = false, gen = 0, onRanked = null;
 
-/* Whether a leg from event p to event e fits in the days between them. */
-const fits = (min, p, e) => min <= (e.s - p.f) * DRIVE_HOURS_PER_DAY * 60;
-
-/* The most events any trip can string together under these settings: a
-   longest path through the events in weekend order. A road trip's legs don't
-   depend on home (only its first and last, which are unconstrained), so one
-   pass answers it; a home-base trip's do, so it is the best over every home. */
-function maxLength(ev, M, nv, style) {
-  const d = (a, b) => M[a * nv + b];
-  const longest = (ok) => {
-    const L = new Int32Array(ev.length);
-    let best = 0;
-    for (let i = 0; i < ev.length; i++) {
-      let l = 1;
-      for (const j of ev[i].pred) if (L[j] + 1 > l && ok(ev[j], ev[i])) l = L[j] + 1;
-      L[i] = l;
-      if (l > best) best = l;
-    }
-    return best;
+function startWorker() {
+  try {
+    worker = new Worker(new URL("./tourplan-worker.js", import.meta.url), { type: "module" });
+  } catch { worker = null; return; }
+  worker.onmessage = ({ data }) => {
+    busy = false;
+    if (data.gen === gen && onRanked) onRanked(data.res);
   };
-  if (style === "road") return longest((p, e) => fits(d(p.v, e.v), p, e));
-  let best = 0;
-  for (let h = 0; h < nv; h++) best = Math.max(best, longest((p, e) => fits(d(p.v, h) + d(h, e.v), p, e)));
-  return best;
+  worker.onerror = () => { worker?.terminate(); worker = null; busy = false; };
+  worker.postMessage({ bundle });
 }
 
-/* The cheapest n-event trip from home `h`, ending at each event: one DP pass,
-   then a backtrack. With `all`, one trip per end event, sorted cheapest first
-   (the itinerary's alternatives); without, only the cheapest (the ranking,
-   which asks every home and would otherwise build ~E paths for each). */
-function tripsFrom(h, ev, M, nv, n, style, all = true) {
-  const E = ev.length, INF = Infinity;
-  const d = (a, b) => M[a * nv + b];
-  // the cost of getting from event p to event e, or INF if it doesn't fit
-  const leg = style === "hub"
-    ? (p, e) => { const c = d(p.v, h) + d(h, e.v); return fits(c, p, e) ? c : INF; }
-    : (p, e) => { const c = d(p.v, e.v); return fits(c, p, e) ? c : INF; };
-  let cost = new Float64Array(E);
-  const back = [];
-  for (let i = 0; i < E; i++) cost[i] = d(h, ev[i].v);
-  for (let k = 1; k < n; k++) {
-    const next = new Float64Array(E).fill(INF), par = new Int32Array(E).fill(-1);
-    for (let i = 0; i < E; i++) {
-      const e = ev[i];
-      for (const j of e.pred) {
-        if (cost[j] === INF) continue;
-        const c = cost[j] + leg(ev[j], e);
-        if (c < next[i]) { next[i] = c; par[i] = j; }
-      }
-    }
-    back.push(par);
-    cost = next;
+function requestRank(q) {
+  const my = ++gen;
+  if (busy && worker) { worker.terminate(); worker = null; }
+  if (!worker) startWorker();
+  if (!worker) {
+    setTimeout(() => { if (my === gen && onRanked) onRanked(rank(bundle, q)); }, 0);
+    return;
   }
-  const trace = (i) => {
-    const path = [i];
-    for (let k = back.length - 1; k >= 0; k--) path.unshift(back[k][path[0]]);
-    return path;
-  };
-  const out = [];
-  let bi = -1, bt = INF;
-  for (let i = 0; i < E; i++) {
-    if (cost[i] === INF) continue;
-    const total = cost[i] + d(ev[i].v, h);
-    if (all) out.push({ total, path: trace(i) });
-    else if (total < bt) { bt = total; bi = i; }
-  }
-  if (!all) return bi < 0 ? [] : [{ total: bt, path: trace(bi) }];
-  out.sort((a, b) => a.total - b.total);
-  return out;
+  busy = true;
+  worker.postMessage({ gen: my, q });
 }
 
-function solve(b, div) {
-  const ev = prepare(b, div, cfg.set, cfg.off);
-  const M = b.minutes, nv = b.venues.length;
-  const maxLen = maxLength(ev, M, nv, cfg.style);
-  cfg.n = Math.max(Math.min(cfg.n, maxLen), Math.min(MIN_LEN, maxLen));
-  const homes = [];
-  for (let h = 0; h < nv; h++) {
-    const [best] = tripsFrom(h, ev, M, nv, cfg.n, cfg.style, false);
-    if (best) homes.push({ h, best });
-  }
-  homes.sort((a, b2) => a.best.total - b2.best.total);
-  return { ev, homes, maxLen };
-}
+/* ---------- itinerary helpers ---------- */
 
 /* One row per event: the drive to it and, in Home base style, the drive back
    (a round trip from home); in Road trip style the drive back is the final
@@ -199,6 +114,7 @@ function stops(trip, h, ev, M, nv, style) {
     return row;
   });
 }
+
 /* Distinct alternatives for one home: no two share a starting weekend. */
 function alternatives(trips, ev) {
   const seen = new Set(), out = [];
@@ -220,20 +136,30 @@ function segHtml(key, opts, cur) {
       ${tip ? tipAttrs(tip) : ""}>${label}</button>`).join("")}</div>`;
 }
 
+function rangeHtml(id, label, unit, tip) {
+  return `<div class="tp-row"><label class="tp-label" for="${id}">${label}
+      <span class="wi-of" ${tipAttrs(tip)}>?</span></label>
+    <input class="wi-range tp-range" type="range" id="${id}" min="${MIN_LEN}" max="${MIN_LEN}" step="1"
+      value="${MIN_LEN}" aria-describedby="${id}-out">
+    <output class="tp-n-out" id="${id}-out"></output><span class="tp-unit">${unit}</span></div>`;
+}
+
 function controlsHtml(b, div) {
   const homes = b.venues.map((v, i) => [i, v.name]).sort((x, y) => x[1].localeCompare(y[1]));
   return `<div class="pv-panel">
     <div class="pv-head"><h2>Plan a trip</h2><span class="pv-form">${b.events.filter((e) => e[div]).length} drivable events · ${b.venues.length} towns</span></div>
     <div class="pv-body tp-controls">
-      <div class="tp-row"><span class="tp-label">Events</span>${segHtml("set", SETS, cfg.set)}</div>
+      <div class="tp-row"><span class="tp-label">Schedule</span>${segHtml("set", SETS, cfg.set)}</div>
       <div class="tp-row"><span class="tp-label">Style</span>${segHtml("style", STYLES, cfg.style)}</div>
-      <div class="tp-row"><label class="tp-label" for="tp-n">Length</label>
-        <input class="wi-range tp-range" type="range" id="tp-n" min="${MIN_LEN}" max="${Math.max(MIN_LEN, cfg.n)}"
-          step="1" value="${cfg.n}" aria-describedby="tp-n-out">
-        <output class="tp-n-out" id="tp-n-out">${cfg.n}</output>
-        <span class="tp-unit">events · <span id="tp-max-note"></span></span>
-        <button type="button" class="tp-max" id="tp-max">Max</button></div>
-      <div class="tp-row"><span class="tp-label">Spacing</span>${segHtml("off", SPACING, cfg.off)}</div>
+      ${rangeHtml("tp-w", "On the road", "weekends",
+        "How many weekends the trip spans, from the first event to the last. Any weekend in that span without an event is a weekend off.")}
+      ${rangeHtml("tp-n", "Events", "played",
+        "How many events you play. It can't exceed the weekends on the road — one event a weekend — or the most this calendar fits in them.")}
+      <div class="tp-row tp-fit"><span class="tp-label"></span>
+        <span id="tp-fit-note" class="tp-unit"></span>
+        <button type="button" class="tp-max" id="tp-b2b" ${tipAttrs("Shrink the weekends on the road to the events played: no weekends off")}>Back-to-back</button>
+        <button type="button" class="tp-max" id="tp-any" ${tipAttrs("Open the weekends on the road to the whole season, so events can be spaced any distance apart")}>Any spacing</button>
+        <button type="button" class="tp-max" id="tp-fill" ${tipAttrs("Play as many events as fit in these weekends — with Any spacing, the whole season's worth")}>Fill</button></div>
       <div class="tp-row"><label class="tp-label" for="tp-home">Your home</label>
         <select id="tp-home"><option value="">Best home base (below)</option>${homes.map(([i, name]) =>
           `<option value="${i}" ${cfg.home === i ? "selected" : ""}>${esc(name)}</option>`).join("")}</select></div>
@@ -242,31 +168,31 @@ function controlsHtml(b, div) {
 
 /* The trip as a chain of names; a long one keeps its ends and elides the
    middle, which the itinerary below spells out in full. */
-function tripCell(trip, ev) {
+function tripCell(path, ev) {
   const arrow = " <span class=\"tp-arrow\">→</span> ";
-  const names = trip.path.map((i) => esc(ev[i].name));
+  const names = path.map((i) => esc(ev[i].name));
   if (names.length <= 6) return names.join(arrow);
   return names.slice(0, 3).join(arrow) + arrow +
     `<span class="tp-arrow">${names.length - 5} more</span>` + arrow + names.slice(-2).join(arrow);
 }
 
-function homesHtml(b, res) {
-  const { ev, homes } = res;
-  if (!homes.length) return "";
-  const rows = homes.slice(0, TOP_HOMES).map(({ h, best }, r) => {
-    const first = ev[best.path[0]], last = ev[best.path[best.path.length - 1]];
+function homesHtml(b, ev, res) {
+  const rows = res.homes.map(({ h, total, path }, r) => {
+    const first = ev[path[0]], last = ev[path[path.length - 1]];
+    const span = last.wk - first.wk + 1;
     return `<tr class="tp-home-row${cfg.home === h ? " tp-sel" : ""}" data-h="${h}" tabindex="0">
       <td class="num">${r + 1}</td>
       <td class="tp-town">${esc(b.venues[h].name)}</td>
-      <td class="num"><b>${hrs(best.total)}</b></td>
-      <td class="num t2">${hrs(best.total / cfg.n)}</td>
-      <td class="tp-when">${dateRange(first.start, last.end)}</td>
-      <td class="tp-trip t1">${tripCell(best, ev)}</td></tr>`;
+      <td class="num"><b>${hrs(total)}</b></td>
+      <td class="num t2">${hrs(total / res.n)}</td>
+      <td class="tp-when">${dateRange(first.start, last.end)}<span class="tp-at">${plural(span, "weekend")}</span></td>
+      <td class="tp-trip t1">${tripCell(path, ev)}</td></tr>`;
   }).join("");
   return `<div class="pv-panel">
-    <div class="pv-head"><h2>Best home bases</h2><span class="pv-form">cheapest ${cfg.n}-event trip from each town</span></div>
+    <div class="pv-head"><h2>Best home bases</h2><span class="pv-form">${res.n} events in ≤${res.weeks} weekends</span></div>
     <div class="pv-body">
-      <p class="pv-lede">Every town on the 2027 calendar, ranked by the total driving of its single best trip. Tap a town for its itinerary and runner-up trips${cfg.home == null ? "; the top town's is below" : ""}.</p>
+      <p class="pv-lede">All ${res.count} towns that can make this trip, ranked by the total driving of each one's best
+        trip; the top ${res.homes.length} are listed. Tap a town for its itinerary and runner-up trips${cfg.home == null ? "; the top town's is below" : ""}.</p>
       <div class="pv-scroll"><table class="table-ledger pv-tbl tp-tbl">
         <thead><tr><th class="num">#</th><th>Home base</th><th class="num">Driving</th>
           <th class="num t2">Per event</th><th>When</th><th class="t1">Trip</th></tr></thead>
@@ -274,15 +200,14 @@ function homesHtml(b, res) {
     </div></div>`;
 }
 
-function itineraryHtml(b, res, h) {
-  const { ev } = res;
+function itineraryHtml(b, ev, res, h) {
   const M = b.minutes, nv = b.venues.length;
-  const alts = alternatives(tripsFrom(h, ev, M, nv, cfg.n, cfg.style), ev);
+  const alts = alternatives(tripsFrom(h, ev, M, nv, res.n, res.weeks, cfg.style), ev);
   const home = esc(b.venues[h].name);
   const hub = cfg.style === "hub";
   if (!alts.length) {
     return `<div class="pv-panel" id="tp-itin"><div class="pv-head"><h2>From ${home}</h2></div>
-      <div class="pv-body"><p class="pv-lede">No ${cfg.n}-event trip fits these settings from here.</p></div></div>`;
+      <div class="pv-body"><p class="pv-lede">No ${res.n}-event trip within ${res.weeks} weekends fits from here.</p></div></div>`;
   }
   const blocks = alts.map((t, k) => {
     const S = stops(t, h, ev, M, nv, cfg.style);
@@ -291,15 +216,18 @@ function itineraryHtml(b, res, h) {
     const legsMin = S.flatMap((r) => (hub ? [r.there, r.back] : [r.there])).concat(hub ? [] : [homeLeg]);
     const longest = Math.max(...legsMin);
     const first = S[0].e;
-    const weeks = lastE.wk - first.wk + 1;
-    const rows = S.map((r) => `<tr><td class="tp-when">${dateRange(r.e.start, r.e.end)}</td>
+    const weeks = lastE.wk - first.wk + 1, off = weeks - S.length;
+    const rows = S.map((r, x) => {
+      const gap = x > 0 ? r.e.wk - S[x - 1].e.wk - 1 : 0;
+      return (gap > 0 ? `<tr class="tp-offrow"><td></td><td>${plural(gap, "weekend")} off</td><td></td></tr>` : "") +
+        `<tr><td class="tp-when">${dateRange(r.e.start, r.e.end)}</td>
         <td><span class="tp-cat tp-${r.e.cat}">${CAT[r.e.cat]}</span> ${esc(r.e.name)}
           <span class="tp-at">${esc(b.venues[r.e.v].name)}</span></td>
-        <td class="num tp-drive">${hub ? (r.there + r.back ? hm(r.there + r.back) : "—") : (r.there ? hm(r.there) : "—")}</td></tr>`).join("")
-      + (hub ? "" : `<tr class="tp-homeleg"><td></td><td>Home to ${home}</td>
+        <td class="num tp-drive">${hub ? (r.there + r.back ? hm(r.there + r.back) : "—") : (r.there ? hm(r.there) : "—")}</td></tr>`;
+    }).join("") + (hub ? "" : `<tr class="tp-homeleg"><td></td><td>Home to ${home}</td>
         <td class="num tp-drive">${homeLeg ? hm(homeLeg) : "—"}</td></tr>`);
     const head = `<b>${k === 0 ? "Best trip" : `Option ${k + 1}`}</b> ·
-        ${dateRange(first.start, lastE.end)} · ${cfg.n} events over ${weeks} weekend${weeks > 1 ? "s" : ""} ·
+        ${dateRange(first.start, lastE.end)} · ${plural(S.length, "event")} over ${plural(weeks, "weekend")}${off ? ` (${off} off)` : ""} ·
         <b>${hrs(t.total)}</b> driving · longest leg ${hm(longest)}`;
     return `<details class="tp-trip-block"${k === 0 ? " open" : ""}>
       <summary class="tp-trip-head">${head}</summary>
@@ -315,14 +243,16 @@ function itineraryHtml(b, res, h) {
 function notesHtml(b) {
   const m = b.meta;
   return `<p class="pv-intro">The PDGA's published 2027 schedule, with <b>real road times</b> between every
-    venue town. Pick the events you can enter, how you travel, how many events and how many weekends off, and the
-    planner finds the cheapest trip from every town on the calendar.</p>
+    venue town. Pick the events you can enter, how you travel, how many weekends you'll be on the road and how
+    many events you'll play in them, and the planner finds the cheapest trip from every town on the calendar.</p>
     <details class="tp-notes"><summary>What this assumes</summary><ul>
       <li>Drive times are OpenStreetMap road routing (OSRM), routed ${m.routed || "recently"}. They run
         conservative: long interstate legs come out roughly 20% longer than Google Maps quotes, so read the
         totals for ranking, not for planning fuel stops.</li>
       <li>A leg must fit between one event's last day and the next event's first at ${DRIVE_HOURS_PER_DAY} hours of
         driving a day. In <i>Home base</i> style that includes the detour home.</li>
+      <li>Weekends off fall wherever they make the driving cheapest. In <i>Road trip</i> style you stay out
+        through them; the planner doesn't send you home for an empty weekend.</li>
       <li>Home bases are the ${b.venues.length} towns that host a drivable event — a dense enough grid that the
         nearest one stands in for wherever you actually live.</li>
       <li>Only events open MPO / FPO pros can enter: amateur, junior, collegiate and masters (40+) events are left
@@ -333,34 +263,71 @@ function notesHtml(b) {
     </ul></details>`;
 }
 
-/* Keep the length slider's range on the longest trip these settings allow. */
-function syncLength(maxLen) {
-  const r = $("#tp-n");
-  if (!r) return;
-  r.max = String(Math.max(MIN_LEN, maxLen));
-  r.value = String(cfg.n);
-  r.disabled = maxLen <= MIN_LEN;
-  $("#tp-n-out").textContent = String(cfg.n);
-  $("#tp-max-note").textContent = `longest possible ${maxLen}`;
+/* Put both sliders on the clamped settings: weekends up to the season's
+   span, events up to the most that fit in those weekends. */
+function syncSliders(c) {
+  const w = $("#tp-w"), n = $("#tp-n");
+  if (!w || !n) return;
+  w.max = String(Math.max(MIN_LEN, c.span));
+  w.value = String(c.weeks);
+  $("#tp-w-out").textContent = String(c.weeks);
+  n.max = String(Math.max(MIN_LEN, c.fitMax));
+  n.value = String(c.n);
+  n.disabled = c.fitMax <= MIN_LEN;
+  $("#tp-n-out").textContent = String(c.n);
+  const off = c.weeks - c.n;
+  $("#tp-fit-note").textContent =
+    `${off ? `up to ${plural(off, "weekend")} off` : "back-to-back"} · at most ${c.fitMax} events fit in ${c.weeks} weekends`;
 }
 
-function renderResults(b, div) {
-  const res = solve(b, div);
-  syncLength(res.maxLen);
+/* A settings change: clamp on the page (cheap) so the sliders answer at
+   once, then rank in the worker and draw when the answer comes back. */
+function update(b, div, backToBack = false) {
+  let c = clampQuery(b, { div, set: cfg.set, style: cfg.style, n: cfg.n, weeks: cfg.weeks });
+  // Back-to-back pins weekends to events; when the calendar can't fit that
+  // many in a row, the event count clamps down and the weekends follow it.
+  while (backToBack && c.n < c.weeks && c.n >= MIN_LEN) {
+    c = clampQuery(b, { div, set: cfg.set, style: cfg.style, n: c.n, weeks: c.n });
+  }
+  cfg.weeks = c.weeks;
+  cfg.n = c.n;
+  syncSliders(c);
   const el = $("#tp-results");
+  if (c.n < MIN_LEN) {
+    el.innerHTML = `<div class="pv-panel"><div class="pv-body"><p class="pv-lede"><b>No trip fits.</b>
+      Fewer than two events in this set connect within ${c.weeks} weekends — add weekends or widen the event set.</p></div></div>`;
+    return;
+  }
+  const busyTimer = setTimeout(() => el.classList.add("tp-busy"), BUSY_MS);
+  onRanked = (res) => {
+    clearTimeout(busyTimer);
+    el.classList.remove("tp-busy");
+    draw(b, div, c.ev, res);
+  };
+  requestRank({ div, set: cfg.set, style: cfg.style, n: c.n, weeks: c.weeks });
+}
+
+let last = null;  // the last ranking drawn, so picking a home doesn't re-rank
+
+function draw(b, div, ev, res) {
+  last = { ev, res };
+  const el = $("#tp-results");
+  el.dataset.drawn = String(+(el.dataset.drawn || 0) + 1);  // lets a test wait for a fresh answer
   if (!res.homes.length) {
     el.innerHTML = `<div class="pv-panel"><div class="pv-body"><p class="pv-lede"><b>No trip fits.</b>
-      No two events in this set connect under these settings — widen the event set or allow weeks off.</p></div></div>`;
+      ${cfg.style === "hub"
+        ? "No home base can fit these events in these weekends with a drive home between each — try Road trip, more weekends or fewer events."
+        : "Try more weekends or fewer events."}</p></div></div>`;
     return;
   }
   const h = cfg.home ?? res.homes[0].h;
-  el.innerHTML = homesHtml(b, res) + itineraryHtml(b, res, h);
+  el.innerHTML = homesHtml(b, ev, res) + itineraryHtml(b, ev, res, h);
   el.querySelectorAll(".tp-home-row").forEach((tr) => {
     const pick = () => {
       cfg.home = +tr.dataset.h;
       const sel = $("#tp-home");
       if (sel) sel.value = String(cfg.home);
-      renderResults(b, div);
+      draw(b, div, ev, res);
       $("#tp-itin")?.scrollIntoView({ block: "start", behavior: "smooth" });
     };
     tr.addEventListener("click", pick);
@@ -394,28 +361,29 @@ async function renderTourPlan(div) {
   el.innerHTML = notesHtml(b) + controlsHtml(b, div) + `<div id="tp-results"></div>`;
   el.querySelectorAll(".tp-seg").forEach((seg) => seg.querySelectorAll("button").forEach((btn) =>
     btn.addEventListener("click", () => {
-      const key = seg.dataset.key;
-      cfg[key] = key === "off" ? +btn.dataset.v : btn.dataset.v;
+      cfg[seg.dataset.key] = btn.dataset.v;
       seg.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === btn));
-      renderResults(b, div);
+      update(b, div);
     })));
-  // a drag fires input on every step; coalesce to one solve per frame
+  // a drag fires input on every step; coalesce to one update per frame, and
+  // the worker drops whatever a newer step superseded
   let frame = 0;
-  el.querySelector("#tp-n").addEventListener("input", (e) => {
-    cfg.n = +e.target.value;
-    $("#tp-n-out").textContent = String(cfg.n);
-    cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(() => renderResults(b, div));
-  });
-  el.querySelector("#tp-max").addEventListener("click", () => {
-    cfg.n = Infinity;  // solve() clamps it to the longest possible
-    renderResults(b, div);
-  });
+  for (const [id, key] of [["#tp-w", "weeks"], ["#tp-n", "n"]]) {
+    el.querySelector(id).addEventListener("input", (e) => {
+      cfg[key] = +e.target.value;
+      $(`${id}-out`).textContent = e.target.value;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => update(b, div));
+    });
+  }
+  el.querySelector("#tp-b2b").addEventListener("click", () => { cfg.weeks = cfg.n; update(b, div, true); });
+  el.querySelector("#tp-any").addEventListener("click", () => { cfg.weeks = Infinity; update(b, div); });
+  el.querySelector("#tp-fill").addEventListener("click", () => { cfg.n = Infinity; update(b, div); });
   el.querySelector("#tp-home").addEventListener("change", (e) => {
     cfg.home = e.target.value === "" ? null : +e.target.value;
-    renderResults(b, div);
+    if (last) draw(b, div, last.ev, last.res);
   });
-  renderResults(b, div);
+  update(b, div);
 }
 
-export { renderTourPlan, maxLength, prepare, tripsFrom };
+export { renderTourPlan };
