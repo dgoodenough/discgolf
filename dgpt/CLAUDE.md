@@ -21,6 +21,8 @@ standings.compute()     per division, from banked results
      -> whatif.Kit         the drop-in summary the What-if tab reads
 movers / feed / liveodds.write_json()
 tourplan.export()       docs/data/tourplan.json, offline, never fatal
+amplan.build()          docs/data/amplan.json: every sanctioned amateur event
+                        from the PDGA API (~1 min), never fatal, daily only
 invariants.run_checks()
 ```
 
@@ -34,6 +36,15 @@ events listed plain "Pro/Am") is corrected in
 `data/tourplan/eligibility_overrides.csv`. Known gap: masters (40+) events are
 excluded outright; planning a masters tour needs a masters division here and
 on the page.
+
+`amplan.py` is the Am planner's bundle: every sanctioned event open to
+amateurs in the US and Canada for this season and next, pulled month by month
+from the PDGA REST API (which carries coordinates, so no geocoding). The last
+good pull is cached in `data/cache/amplan_events.json` — the daily workflow
+restores that directory — so a failed pull re-exports yesterday's events. Drive
+times there are a straight-line fit to the Tour planner's OSRM matrix.
+`tourscan.py` is the prototype scan that measured all of this (run by
+`.github/workflows/tourscan.yml`, read-only).
 
 `whatif.py` is a summary of a projection rather than a stage of one: it rides
 along with `project.run` and reduces the 2027 DGPT standings ladder, both

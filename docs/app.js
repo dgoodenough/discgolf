@@ -1,9 +1,9 @@
 /* DGPT Standings Forecast — the shell.
 
-   Seven tabs over four rendering paths: three views of the live 2026 bundle,
+   Eight tabs over five rendering paths: three views of the live 2026 bundle,
    two tables off the projection bundles, the what-if, which reads the 2027
    bundle but renders one invented player rather than the field, and the tour
-   planner, which reads its own schedule-and-road-times bundle. Exactly one
+   planner and its amateur sibling, which read their own bundles. Exactly one
    section is visible at a time. This module owns the page header, the
    freshness flag and the tab wiring; the views themselves live in js/.
 
@@ -19,6 +19,7 @@ import { renderRace } from "./js/race.js";
 import { PROJ_VIEWS, renderProjection } from "./js/projection.js";
 import { renderWhatIf } from "./js/whatif.js";
 import { renderTourPlan } from "./js/tourplan.js";
+import { renderAmPlan } from "./js/amplan.js";
 
 /* ---------- shell ---------- */
 
@@ -27,7 +28,7 @@ import { renderTourPlan } from "./js/tourplan.js";
 const VIEW_SECTIONS = [
   ["forecast", "#view-forecast"], ["possible", "#view-possible"],
   ["race", "#view-race"], ["next", "#view-next"], ["whatif", "#view-whatif"],
-  ["euro", "#view-euro"], ["tour", "#view-tour"],
+  ["euro", "#view-euro"], ["tour", "#view-tour"], ["am", "#view-am"],
 ];
 
 /* What counts as late is set by the pipeline's own cadence, not a fixed
@@ -47,6 +48,8 @@ function freshness(d) {
 }
 
 async function render() {
+  // the amateur planner has no divisions; every other view is per division
+  $("#division-seg").hidden = state.view === "am" && !state.permalink;
   // The projection tabs read their own bundle and write their own header, so
   // they branch before loadDiv: the 2026 forecast's stakes line, live note and
   // freshness flag are all statements about a season in progress, and none of
@@ -71,6 +74,13 @@ async function render() {
   if (state.view === "tour" && !state.permalink) {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "tour";
     await renderTourPlan(state.div);
+    return;
+  }
+  // The amateur planner (alpha) is the same search over every sanctioned
+  // amateur event, from one home — its own bundle and header again.
+  if (state.view === "am" && !state.permalink) {
+    for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "am";
+    await renderAmPlan();
     return;
   }
   const d = await loadDiv(state.div);

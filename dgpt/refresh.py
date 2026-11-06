@@ -91,6 +91,13 @@ def main() -> None:
             print("  " + tourplan.export())
         except Exception as e:  # noqa: BLE001 - an experimental tab never fails the run
             print(f"  tourplan export skipped ({e})")
+        # The amateur planner pulls every sanctioned event (~1 min of API
+        # calls), so it rides the daily run only — never the live loop.
+        try:
+            from . import amplan
+            print("  " + amplan.build())
+        except Exception as e:  # noqa: BLE001 - an experimental tab never fails the run
+            print(f"  amplan export skipped ({e})")
 
     # Publish-gate invariants (flag-only): the refresh must still succeed —
     # the workflows read the marker file after committing and turn violations

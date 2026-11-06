@@ -714,3 +714,10 @@ footer { margin-top: 22px; color: var(--ink-3); font-size: var(--fs-small); }
 .tp-offrow td { color: var(--ink-3); font-size: var(--fs-caption); padding-top: 2px; padding-bottom: 2px; }
 #tp-results.tp-busy { opacity: .45; transition: opacity .15s; }
 #tp-results.tp-busy::before { content: "Working…"; display: block; font-size: var(--fs-small); color: var(--ink-2); margin-bottom: 6px; }
+
+/* ---------- amateur planner ---------- */
+.am-home { font: inherit; font-size: var(--fs-small); padding: 3px 6px; flex: 1 1 200px; max-width: 280px;
+  border: 1px solid var(--grid-strong); border-radius: var(--radius); background: var(--paper); color: var(--ink); }
+.am-tiers { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.am-tier { font-size: var(--fs-small); color: var(--ink-2); white-space: nowrap; cursor: pointer; }
+.am-tier input { accent-color: var(--accent); vertical-align: -2px; }

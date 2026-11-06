@@ -22,7 +22,7 @@
    can run in tourplan-worker.js; this module is the controls, the worker
    plumbing and the rendering. */
 
-import { $, bust } from "./core.js";
+import { $, bust, dateRange, esc, hm, hrs, plural } from "./core.js";
 import { tipAttrs } from "./tooltip.js";
 import { DRIVE_HOURS_PER_DAY, MIN_LEN, clampQuery, rank, tripsFrom } from "./tourplan-search.js";
 
@@ -53,18 +53,6 @@ async function loadTour() {
   return bundle;
 }
 
-/* ---------- formatting ---------- */
-
-const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const dParts = (iso) => { const [, m, d] = iso.split("-").map(Number); return [m, d]; };
-function dateRange(a, b) {
-  const [m1, d1] = dParts(a), [m2, d2] = dParts(b);
-  return m1 === m2 ? `${MON[m1 - 1]} ${d1}–${d2}` : `${MON[m1 - 1]} ${d1}–${MON[m2 - 1]} ${d2}`;
-}
-const hm = (min) => (min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${String(min % 60).padStart(2, "0")}m`);
-const hrs = (min) => (min / 60).toFixed(min < 600 ? 1 : 0) + " h";
-const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const CAT = { elite: "Elite", major: "Major", a: "A" };
 
 /* ---------- the ranking, off the main thread ---------- */
