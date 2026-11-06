@@ -12,7 +12,8 @@
                only (no tour card)
      style     "home base": drive home after every event and out again to the
                next; "road trip": event to event, home only at the end
-     length    how many events the trip plays
+     length    how many events the trip plays, from two up to the longest
+               chain the settings allow — the whole drivable season, if so
      spacing   back-to-back weekends only, or up to one / two weekends off
                between events
 
@@ -40,7 +41,10 @@ const STYLES = [
   ["hub", "Home base", "Drive home after every event, and out again to the next"],
   ["road", "Road trip", "Drive event to event; home only at the start and the end"],
 ];
-const LENGTHS = [3, 4, 5, 6, 7, 8];
+/* The length slider runs from MIN_LEN to the longest trip the current
+   settings allow (maxLength below): back-to-back that is the longest unbroken
+   run of weekends, with weeks off it can be most of the season. */
+const MIN_LEN = 2;
 const SPACING = [
   [0, "Back-to-back", "An event every weekend, no weekends off"],
   [1, "≤1 week off", "Up to one empty weekend between consecutive events"],
@@ -97,16 +101,43 @@ function prepare(b, div, set, off) {
   return ev;
 }
 
+/* Whether a leg from event p to event e fits in the days between them. */
+const fits = (min, p, e) => min <= (e.s - p.f) * DRIVE_HOURS_PER_DAY * 60;
+
+/* The most events any trip can string together under these settings: a
+   longest path through the events in weekend order. A road trip's legs don't
+   depend on home (only its first and last, which are unconstrained), so one
+   pass answers it; a home-base trip's do, so it is the best over every home. */
+function maxLength(ev, M, nv, style) {
+  const d = (a, b) => M[a * nv + b];
+  const longest = (ok) => {
+    const L = new Int32Array(ev.length);
+    let best = 0;
+    for (let i = 0; i < ev.length; i++) {
+      let l = 1;
+      for (const j of ev[i].pred) if (L[j] + 1 > l && ok(ev[j], ev[i])) l = L[j] + 1;
+      L[i] = l;
+      if (l > best) best = l;
+    }
+    return best;
+  };
+  if (style === "road") return longest((p, e) => fits(d(p.v, e.v), p, e));
+  let best = 0;
+  for (let h = 0; h < nv; h++) best = Math.max(best, longest((p, e) => fits(d(p.v, h) + d(h, e.v), p, e)));
+  return best;
+}
+
 /* The cheapest n-event trip from home `h`, ending at each event: one DP pass,
-   then a backtrack per end. Returns trips sorted cheapest first. */
-function tripsFrom(h, ev, M, nv, n, style) {
+   then a backtrack. With `all`, one trip per end event, sorted cheapest first
+   (the itinerary's alternatives); without, only the cheapest (the ranking,
+   which asks every home and would otherwise build ~E paths for each). */
+function tripsFrom(h, ev, M, nv, n, style, all = true) {
   const E = ev.length, INF = Infinity;
   const d = (a, b) => M[a * nv + b];
-  const budget = (p, e) => (e.s - p.f) * DRIVE_HOURS_PER_DAY * 60;
   // the cost of getting from event p to event e, or INF if it doesn't fit
   const leg = style === "hub"
-    ? (p, e) => { const c = d(p.v, h) + d(h, e.v); return c <= budget(p, e) ? c : INF; }
-    : (p, e) => { const c = d(p.v, e.v); return c <= budget(p, e) ? c : INF; };
+    ? (p, e) => { const c = d(p.v, h) + d(h, e.v); return fits(c, p, e) ? c : INF; }
+    : (p, e) => { const c = d(p.v, e.v); return fits(c, p, e) ? c : INF; };
   let cost = new Float64Array(E);
   const back = [];
   for (let i = 0; i < E; i++) cost[i] = d(h, ev[i].v);
@@ -123,14 +154,20 @@ function tripsFrom(h, ev, M, nv, n, style) {
     back.push(par);
     cost = next;
   }
+  const trace = (i) => {
+    const path = [i];
+    for (let k = back.length - 1; k >= 0; k--) path.unshift(back[k][path[0]]);
+    return path;
+  };
   const out = [];
+  let bi = -1, bt = INF;
   for (let i = 0; i < E; i++) {
     if (cost[i] === INF) continue;
     const total = cost[i] + d(ev[i].v, h);
-    const path = [i];
-    for (let k = back.length - 1; k >= 0; k--) path.unshift(back[k][path[0]]);
-    out.push({ total, path });
+    if (all) out.push({ total, path: trace(i) });
+    else if (total < bt) { bt = total; bi = i; }
   }
+  if (!all) return bi < 0 ? [] : [{ total: bt, path: trace(bi) }];
   out.sort((a, b) => a.total - b.total);
   return out;
 }
@@ -138,15 +175,15 @@ function tripsFrom(h, ev, M, nv, n, style) {
 function solve(b, div) {
   const ev = prepare(b, div, cfg.set, cfg.off);
   const M = b.minutes, nv = b.venues.length;
+  const maxLen = maxLength(ev, M, nv, cfg.style);
+  cfg.n = Math.max(Math.min(cfg.n, maxLen), Math.min(MIN_LEN, maxLen));
   const homes = [];
-  const perHome = new Map();
   for (let h = 0; h < nv; h++) {
-    const trips = tripsFrom(h, ev, M, nv, cfg.n, cfg.style);
-    perHome.set(h, trips);
-    if (trips.length) homes.push({ h, best: trips[0] });
+    const [best] = tripsFrom(h, ev, M, nv, cfg.n, cfg.style, false);
+    if (best) homes.push({ h, best });
   }
   homes.sort((a, b2) => a.best.total - b2.best.total);
-  return { ev, homes, perHome };
+  return { ev, homes, maxLen };
 }
 
 /* One row per event: the drive to it and, in Home base style, the drive back
@@ -190,8 +227,12 @@ function controlsHtml(b, div) {
     <div class="pv-body tp-controls">
       <div class="tp-row"><span class="tp-label">Events</span>${segHtml("set", SETS, cfg.set)}</div>
       <div class="tp-row"><span class="tp-label">Style</span>${segHtml("style", STYLES, cfg.style)}</div>
-      <div class="tp-row"><span class="tp-label">Length</span>${segHtml("n", LENGTHS.map((n) => [n, `${n}`, `${n} events`]), cfg.n)}
-        <span class="tp-unit">events</span></div>
+      <div class="tp-row"><label class="tp-label" for="tp-n">Length</label>
+        <input class="wi-range tp-range" type="range" id="tp-n" min="${MIN_LEN}" max="${Math.max(MIN_LEN, cfg.n)}"
+          step="1" value="${cfg.n}" aria-describedby="tp-n-out">
+        <output class="tp-n-out" id="tp-n-out">${cfg.n}</output>
+        <span class="tp-unit">events · <span id="tp-max-note"></span></span>
+        <button type="button" class="tp-max" id="tp-max">Max</button></div>
       <div class="tp-row"><span class="tp-label">Spacing</span>${segHtml("off", SPACING, cfg.off)}</div>
       <div class="tp-row"><label class="tp-label" for="tp-home">Your home</label>
         <select id="tp-home"><option value="">Best home base (below)</option>${homes.map(([i, name]) =>
@@ -199,8 +240,14 @@ function controlsHtml(b, div) {
     </div></div>`;
 }
 
+/* The trip as a chain of names; a long one keeps its ends and elides the
+   middle, which the itinerary below spells out in full. */
 function tripCell(trip, ev) {
-  return trip.path.map((i) => esc(ev[i].name)).join(" <span class=\"tp-arrow\">→</span> ");
+  const arrow = " <span class=\"tp-arrow\">→</span> ";
+  const names = trip.path.map((i) => esc(ev[i].name));
+  if (names.length <= 6) return names.join(arrow);
+  return names.slice(0, 3).join(arrow) + arrow +
+    `<span class="tp-arrow">${names.length - 5} more</span>` + arrow + names.slice(-2).join(arrow);
 }
 
 function homesHtml(b, res) {
@@ -228,9 +275,9 @@ function homesHtml(b, res) {
 }
 
 function itineraryHtml(b, res, h) {
-  const { ev, perHome } = res;
+  const { ev } = res;
   const M = b.minutes, nv = b.venues.length;
-  const alts = alternatives(perHome.get(h) || [], ev);
+  const alts = alternatives(tripsFrom(h, ev, M, nv, cfg.n, cfg.style), ev);
   const home = esc(b.venues[h].name);
   const hub = cfg.style === "hub";
   if (!alts.length) {
@@ -286,12 +333,24 @@ function notesHtml(b) {
     </ul></details>`;
 }
 
+/* Keep the length slider's range on the longest trip these settings allow. */
+function syncLength(maxLen) {
+  const r = $("#tp-n");
+  if (!r) return;
+  r.max = String(Math.max(MIN_LEN, maxLen));
+  r.value = String(cfg.n);
+  r.disabled = maxLen <= MIN_LEN;
+  $("#tp-n-out").textContent = String(cfg.n);
+  $("#tp-max-note").textContent = `longest possible ${maxLen}`;
+}
+
 function renderResults(b, div) {
   const res = solve(b, div);
+  syncLength(res.maxLen);
   const el = $("#tp-results");
   if (!res.homes.length) {
-    el.innerHTML = `<div class="pv-panel"><div class="pv-body"><p class="pv-lede"><b>No ${cfg.n}-event trip fits.</b>
-      ${cfg.off === 0 ? "This calendar has no run of that many back-to-back weekends for this event set — allow a week off, or shorten the trip." : "Shorten the trip or widen the event set."}</p></div></div>`;
+    el.innerHTML = `<div class="pv-panel"><div class="pv-body"><p class="pv-lede"><b>No trip fits.</b>
+      No two events in this set connect under these settings — widen the event set or allow weeks off.</p></div></div>`;
     return;
   }
   const h = cfg.home ?? res.homes[0].h;
@@ -336,10 +395,22 @@ async function renderTourPlan(div) {
   el.querySelectorAll(".tp-seg").forEach((seg) => seg.querySelectorAll("button").forEach((btn) =>
     btn.addEventListener("click", () => {
       const key = seg.dataset.key;
-      cfg[key] = key === "n" || key === "off" ? +btn.dataset.v : btn.dataset.v;
+      cfg[key] = key === "off" ? +btn.dataset.v : btn.dataset.v;
       seg.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === btn));
       renderResults(b, div);
     })));
+  // a drag fires input on every step; coalesce to one solve per frame
+  let frame = 0;
+  el.querySelector("#tp-n").addEventListener("input", (e) => {
+    cfg.n = +e.target.value;
+    $("#tp-n-out").textContent = String(cfg.n);
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => renderResults(b, div));
+  });
+  el.querySelector("#tp-max").addEventListener("click", () => {
+    cfg.n = Infinity;  // solve() clamps it to the longest possible
+    renderResults(b, div);
+  });
   el.querySelector("#tp-home").addEventListener("change", (e) => {
     cfg.home = e.target.value === "" ? null : +e.target.value;
     renderResults(b, div);
@@ -347,4 +418,4 @@ async function renderTourPlan(div) {
   renderResults(b, div);
 }
 
-export { renderTourPlan, prepare, tripsFrom };
+export { renderTourPlan, maxLength, prepare, tripsFrom };

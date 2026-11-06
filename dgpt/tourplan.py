@@ -56,7 +56,9 @@ OSRM = "https://router.project-osrm.org/table/v1/driving/"
 # The public OSRM server caps a table request at 100 coordinates in total.
 OSRM_BLOCK = 50
 
-DRIVABLE = {"USA", "Canada"}
+# Everything a pro can drive to from the US. The 2027 table has nothing in
+# Mexico or further south; listed so an event there is picked up if one appears.
+DRIVABLE = {"USA", "Canada", "Mexico"}
 EVENT_FIELDS = ["start", "end", "tier", "cls", "name", "location", "city",
                 "region", "country", "cat", "mpo", "fpo", "wk"]
 
@@ -282,7 +284,7 @@ def _get_json(url: str, tries: int = 4):
 def geocode(row: dict) -> dict:
     """One town via Nominatim, checked against the state / province we asked for."""
     city = CITY_ALIASES.get(row["city"], row["city"]).split("/")[0].strip()
-    cc = {"USA": "us", "Canada": "ca"}[row["country"]]
+    cc = {"USA": "us", "Canada": "ca", "Mexico": "mx"}[row["country"]]
     q = urllib.parse.urlencode({"city": city, "state": row["region"], "countrycodes": cc,
                                 "format": "jsonv2", "addressdetails": 1, "limit": 5})
     want = f"{cc.upper()}-{row['region']}"
