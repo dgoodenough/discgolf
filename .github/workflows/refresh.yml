@@ -92,7 +92,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.live != 'true' || inputs.force
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       # `ref: main` matters: with no ref, checkout takes the SHA pinned when
       # the run was CREATED, which for a run that sat queued is not main's tip.
@@ -165,20 +165,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # bot pushes (GITHUB_TOKEN) don't auto-trigger legacy Pages, and the
-          # deploy step occasionally returns "try again later" and sticks in an
-          # errored state — so trigger explicitly and retry until it builds.
-          for attempt in 1 2 3; do
-            gh api -X POST "repos/${{ github.repository }}/pages/builds" >/dev/null
-            for i in $(seq 1 20); do
-              sleep 10
-              status=$(gh api "repos/${{ github.repository }}/pages/builds/latest" --jq .status)
-              echo "attempt $attempt: $status"
-              [ "$status" = "built" ] && exit 0
-              [ "$status" = "errored" ] && break
-            done
-          done
-          echo "::warning::Pages did not reach 'built' after 3 attempts (data commit still landed)"
+          # bot pushes (GITHUB_TOKEN) don't auto-trigger legacy Pages; see the
+          # script for why it waits on a slow deploy rather than re-triggering.
+          .github/pages-build.sh
 
       # Last steps: a failure here fails the run (owner gets notified) after
       # the data commit and deploy have already gone out. Runs weekly rather
