@@ -9,20 +9,12 @@ name: Tour planner scan (prototype)
 # Read-only: it commits nothing, publishes nothing and touches no tracked data.
 # The report goes to the job log and the run summary; the raw events and the
 # report are uploaded as an artifact.
-#
-# The push trigger is for the prototype's own branches only, so the scan can
-# run before this workflow exists on main (a dispatch-only workflow can't).
 on:
   workflow_dispatch:
     inputs:
       years:
         description: "Years to pull, space-separated"
         default: "2026 2027"
-  push:
-    branches: ["claude/**"]
-    paths:
-      - "dgpt/tourscan.py"
-      - ".github/workflows/tourscan.yml"
 
 permissions:
   contents: read
