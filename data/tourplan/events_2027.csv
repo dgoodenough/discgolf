@@ -1,0 +1,287 @@
+start,end,tier,cls,name,location,city,region,country,cat,mpo,fpo,wk
+2027-01-01,2027-01-03,A,Pro/Am,2026 Charlotte Roar,"Charlotte, NC  USA",Charlotte,NC,USA,a,True,True,0
+2027-01-09,2027-01-10,A,Pro/Am,Estero Open XII,"Estero, FL  USA",Estero,FL,USA,a,True,True,1
+2027-01-15,2027-01-17,A,Pro only,Savannah Open - PRO Weekend,"Pooler, GA  USA",Pooler,GA,USA,a,True,True,2
+2027-01-22,2027-01-24,A,Pro/Am,Winter Wonderland 2027,"Brooksville, FL  USA",Brooksville,FL,USA,a,True,True,3
+2027-01-23,2027-01-24,A,Am only,2027 NADGT x Zanfel Leander Premier,"Leander, TX  USA",Leander,TX,USA,,False,False,3
+2027-01-23,2027-01-24,A,Am only,2027 NADGT x Zanfel Premier Tour @ Red Mountain,"Mesa, AZ  USA",Mesa,AZ,USA,,False,False,3
+2027-01-29,2027-01-31,A,Pro only,La Mirada Open,"La Mirada, CA  USA",La Mirada,CA,USA,a,True,True,4
+2027-01-30,2027-01-31,A,Pro/Am,Team Figgins Open 7,"Bradenton, FL  USA",Bradenton,FL,USA,a,True,True,4
+2027-02-04,2027-02-07,A,Pro/Am,Memorial Championship,"Scottsdale, AZ  USA",Scottsdale,AZ,USA,a,True,True,5
+2027-02-06,2027-02-07,A,Pro/Am,Frostbite Open 2027,"Opelika, AL  USA",Opelika,AL,USA,a,True,True,5
+2027-02-12,2027-02-14,A,Pro only,Wintertime Open,"Pasadena, CA  USA",Pasadena,CA,USA,a,True,True,6
+2027-02-13,2027-02-14,A,Pro/Am,The 2027 Gulf Coast Charity Open,"Tampa/St. Petersburg, FL  USA",Tampa/St. Petersburg,FL,USA,a,True,True,6
+2027-02-19,2027-02-21,A,Pro only,Reckoning on the River,"Bainbridge, GA  USA",Bainbridge,GA,USA,a,True,True,7
+2027-02-20,2027-02-21,A,Am only,2027 NADGT x Zanfel Dallas Premier,"Halton City, TX  USA",Halton City,TX,USA,,False,False,7
+2027-02-20,2027-02-21,B/A,Pro/Am,DGPT Companion: Cherry Blossom Open (Non-MPO/FPO),"Conyers, GA  USA",Conyers,GA,USA,,False,False,7
+2027-02-26,2027-02-28,A,MPO/FPO Only,Greater Atlanta Open,"Conyers, GA  USA",Conyers,GA,USA,a,False,True,8
+2027-02-26,2027-02-28,A,Pro only,22nd Open at Tallahassee,"Tallahassee, FL  USA",Tallahassee,FL,USA,a,True,True,8
+2027-02-26,2027-02-28,A,Pro/Am,2027 Pot of Gold,"Marerro, LA  USA",Marerro,LA,USA,a,True,True,8
+2027-03-05,2027-03-07,A,Pro/Am,34th Annual City of Mobile Championships,"Mobile, AL  USA",Mobile,AL,USA,a,True,True,9
+2027-03-05,2027-03-07,A,Pro/Am,38th Annual Earlewood Classic,"Columbia, SC  USA",Columbia,SC,USA,a,True,True,9
+2027-03-05,2027-03-07,A,Pro/Am,The Up the 10 mile Creek Classic,"Fort Pierce, FL  USA",Fort Pierce,FL,USA,a,True,True,9
+2027-03-06,2027-03-07,A,Pro/Am,The Georgia State Championships,"Douglasville, GA  USA",Douglasville,GA,USA,a,True,True,9
+2027-03-12,2027-03-14,ES,MPO/FPO Only,Supreme Flight Open,"Brooksville, FL  USA",Brooksville,FL,USA,elite,False,True,10
+2027-03-12,2027-03-14,A,Am Only,DGPT Companion: Supreme Flight Open - Amateur,"Brooksville, FL  USA",Brooksville,FL,USA,,False,False,10
+2027-03-12,2027-03-14,A,Am only,2027 St. Patrick's Classic - California Amateur State Championships,"Orangevale, CA  USA",Orangevale,CA,USA,,False,False,10
+2027-03-12,2027-03-14,A,Pro/Am,25th Annual Crush on the Concho,"San Angelo, TX  USA",San Angelo,TX,USA,a,True,True,10
+2027-03-19,2027-03-20,A,Am Only,DGPT Companion: Big Easy Open - Amateur,"Jefferson Parish, LA  USA",Jefferson Parish,LA,USA,,False,False,11
+2027-03-19,2027-03-21,ES,MPO/FPO Only,Big Easy Open,"Jefferson Parish, LA  USA",Jefferson Parish,LA,USA,elite,False,True,11
+2027-03-19,2027-03-21,A,Pro only,2026 St. Patrick's Classic - Pro,"Orangevale, CA  USA",Orangevale,CA,USA,a,True,True,11
+2027-03-20,2027-03-21,A,Am only,Southern Michigan Open,"Dexter, MI  USA",Dexter,MI,USA,,False,False,11
+2027-03-20,2027-03-21,A,Pro/Am,The Vintage Open,"Russellville, AR  USA",Russellville,AR,USA,a,True,True,11
+2027-03-20,2027-03-21,A,Pro/Am,Seneca Spring Fling,"Seneca, SC  USA",Seneca,SC,USA,a,True,True,11
+2027-03-26,2027-03-28,A,Pro/Am,32nd Annual Texas States Disc Golf Championships,"Victoria, TX  USA",Victoria,TX,USA,a,True,True,12
+2027-03-26,2027-03-28,A,Pro/Am,2027 Green Country Championships,"Broken Arrow, OK  USA",Broken Arrow,OK,USA,a,True,True,12
+2027-03-26,2027-03-28,A,Pro/Am,Chalamor Challenge,"Mebane, NC  USA",Mebane,NC,USA,a,True,True,12
+2027-03-27,2027-03-28,A,Am only,2027 NADGT x Zanfel Georgia Premier,"Stockbridge, GA  USA",Stockbridge,GA,USA,,False,False,12
+2027-04-01,2027-04-03,A,Am Only,DGPT Companion: Queen City Classic - Amateur,"Charlotte, NC  USA",Charlotte,NC,USA,,False,False,13
+2027-04-02,2027-04-04,ES,MPO/FPO Only,Queen City Classic,"Charlotte, NC  USA",Charlotte,NC,USA,elite,False,True,13
+2027-04-02,2027-04-04,A,Pro/Am,Magic City Mega Bowl,"Birmingham, AL  USA",Birmingham,AL,USA,a,True,True,13
+2027-04-02,2027-04-04,A,Pro only,Throw Down the Mountain XV - Weekend 1,"Brooksville, FL  USA",Brooksville,FL,USA,a,True,True,13
+2027-04-03,2027-04-04,A,Am only,Auburn Amateur,"Auburn, CA  USA",Auburn,CA,USA,,False,False,13
+2027-04-07,2027-04-10,M,Collegiate,College Disc Golf National Championships,"Rock Hill, SC  USA",Rock Hill,SC,USA,,False,False,14
+2027-04-09,2027-04-11,A,MPO/FPO Only,Blue Ridge Championships,"Marion, NC  USA",Marion,NC,USA,a,False,True,14
+2027-04-09,2027-04-11,A,Am Only,DGPT Companion: The Blue Ridge Championship - Amateur,"Marion, NC  USA",Marion,NC,USA,,False,False,14
+2027-04-09,2027-04-11,A,Pro/Am,St. Charles Open,"Wentzville, MO  USA",Wentzville,MO,USA,a,True,True,14
+2027-04-09,2027-04-11,A,Pro/Am,Auburn Masters,"Auburn, CA  USA",Auburn,CA,USA,,False,False,14
+2027-04-09,2027-04-11,A,Am only,22nd Open at Tallahassee,"Tallahassee, FL  USA",Tallahassee,FL,USA,,False,False,14
+2027-04-10,2027-04-11,A,Pro/Am,Resistance Discs Open,"Albany, OR  USA",Albany,OR,USA,a,True,True,14
+2027-04-10,2027-04-11,A,Am only,Illinois Amateur Championships,"Morton, IL  USA",Morton,IL,USA,,False,False,14
+2027-04-10,2027-04-11,A,Am only,Rocky Mountain Amatuer Championships (RMAC),"Brighton, CO  USA",Brighton,CO,USA,,False,False,14
+2027-04-10,2027-04-11,A,Pro/Am,Concordia Cup,"Fort Wayne, IN  USA",Fort Wayne,IN,USA,a,True,True,14
+2027-04-15,2027-04-18,M,MPO/FPO Only,PDGA Champions Cup,"Lynchburg, VA  USA",Lynchburg,VA,USA,major,False,True,15
+2027-04-16,2027-04-18,A,Pro/Am,Daniel Boe Memorial - Weekend 1,"Escondido, CA  USA",Escondido,CA,USA,a,True,True,15
+2027-04-16,2027-04-18,A,Am only,Throw Down the Mountain XV - Weekend 2,"Brooksville, FL  USA",Brooksville,FL,USA,,False,False,15
+2027-04-16,2027-04-18,B/A,Pro/Am,Bowling Green Open,"Bowling Green, KY  USA",Bowling Green,KY,USA,a,True,True,15
+2027-04-16,2027-04-18,C/A,Pro/Am,The Stoney Hill Challenge,"Newberry, SC  USA",Newberry,SC,USA,a,True,True,15
+2027-04-17,2027-04-18,A,Pro/Am,33rd Annual Sizzler,"Coconut Creek, FL  USA",Coconut Creek,FL,USA,a,True,True,15
+2027-04-23,2027-04-25,A,MPO/FPO Only,Tulsa Open at POSTOAK,"Tulsa, OK  USA",Tulsa,OK,USA,a,False,True,16
+2027-04-23,2027-04-25,A,Pro/Am,DGPT Companion: Tulsa Open at POSTOAK (non-MPO/FPO),"Tulsa, OK  USA",Tulsa,OK,USA,,False,False,16
+2027-04-23,2027-04-25,A,Pro only,Daniel Boe Memorial - Weekend 2,"Escondido, CA  USA",Escondido,CA,USA,a,True,True,16
+2027-04-23,2027-04-25,A,Pro only,Jonesboro Open,"Jonesboro, AR  USA",Jonesboro,AR,USA,a,True,True,16
+2027-04-23,2027-04-25,A,Am only,Lake Marshall Open - Amateur,"Montross, VA  USA",Montross,VA,USA,,False,False,16
+2027-04-23,2027-04-25,A,Am only,Throw Down the Mountain XV - Weekend 3,"Brooksville, FL  USA",Brooksville,FL,USA,,False,False,16
+2027-04-23,2027-04-25,A,Pro/Am,24th Annual Live Oak Summer Open,"Live Oak, TX  USA",Live Oak,TX,USA,a,True,True,16
+2027-04-23,2027-04-25,A,Pro/Am,2027 Rocket City Blast,"Huntsville, AL  USA",Huntsville,AL,USA,a,True,True,16
+2027-04-24,2027-04-25,A,Am only,38th Annual No Foolin' Tournament,"Dexter, MI  USA",Dexter,MI,USA,,False,False,16
+2027-04-29,2027-05-02,ES,MPO/FPO Only,The Open at Austin,"Austin, TX  USA",Austin,TX,USA,elite,False,True,17
+2027-04-30,2027-05-02,A,Pro/Am,Huk Central,"Central, SC  USA",Central,SC,USA,a,True,True,17
+2027-04-30,2027-05-02,A,Pro/Am,2027 Shelton Springs Open,"Shelton, WA  USA",Shelton,WA,USA,a,True,True,17
+2027-04-30,2027-05-02,A/C,Pro/Am,Butler County Disc Golf Classic,"Cranberry Twnshp, PA  USA",Cranberry Twnshp,PA,USA,a,True,True,17
+2027-05-01,2027-05-02,A,Am only,2027 NADGT x Zanfel Florida Premier,"Orange Park, FL  USA",Orange Park,FL,USA,,False,False,17
+2027-05-01,2027-05-02,A,Am only,M.O.B. Shootout,"Whitmore Lake, MI  USA",Whitmore Lake,MI,USA,,False,False,17
+2027-05-01,2027-05-02,A,Pro/Am,IOS #144 Forest City Frenzy,"Rockford, IL  USA",Rockford,IL,USA,a,True,True,17
+2027-05-01,2027-05-02,A,Am only,Lebanon Amateur Championship,"Lebanon, PA  USA",Lebanon,PA,USA,,False,False,17
+2027-05-07,2027-05-09,A,Am Only,DGPT Companion: The Open at Austin - Amateur,"Austin, TX  USA",Austin,TX,USA,,False,False,18
+2027-05-07,2027-05-09,A,Pro only,Waco Annual Charity Open - Pro,"Waco, TX  USA",Waco,TX,USA,a,True,True,18
+2027-05-07,2027-05-09,A/B,Pro/Am,Shelly Sharpe Memorial,"Scottsdale, AZ  USA",Scottsdale,AZ,USA,a,True,True,18
+2027-05-07,2027-05-09,A/B,Pro/Am,The Challenge @ Reidy Creek (2027),"Escondido, CA  USA",Escondido,CA,USA,a,True,True,18
+2027-05-07,2027-05-09,A,Pro only,Auburn Open,"Auburn, CA  USA",Auburn,CA,USA,a,True,True,18
+2027-05-07,2027-05-09,A,Pro/Am,The 10th Annual Big Picture Classic,"Pagosa Springs, CO  USA",Pagosa Springs,CO,USA,a,True,True,18
+2027-05-07,2027-05-09,A,Pro/Am,A Call to Arms,"Omaha, NE  USA",Omaha,NE,USA,a,True,True,18
+2027-05-07,2027-05-09,A,Am only,Throw Down the Mountain XV - Weekend 4,"Brooksville, FL  USA",Brooksville,FL,USA,,False,False,18
+2027-05-08,2027-05-09,A,Pro/Am,39th Annual Norman Pro/Am,"Norman, OK  USA",Norman,OK,USA,a,True,True,18
+2027-05-13,2027-05-16,M,Pro/Am,United States Masters Disc Golf Championships,"Burlington, NC  USA",Burlington,NC,USA,,False,False,19
+2027-05-14,2027-05-16,A,MPO/FPO Only,Morley Field Classic,"San Diego, CA  USA",San Diego,CA,USA,a,False,True,19
+2027-05-14,2027-05-16,A,MPO/FPO Only,RPM Open,"Lille Leland, Norway",Lille Leland,,Norway,a,False,True,19
+2027-05-14,2027-05-16,A,Am Only,DGPT Companion: OTB Open - Amateur,"Stockton, CA  USA",Stockton,CA,USA,,False,False,19
+2027-05-14,2027-05-16,A,Am only,Waco Annual Charity Open - Am,"Waco, TX  USA",Waco,TX,USA,,False,False,19
+2027-05-14,2027-05-16,A,Pro/Am,The Rumble 2027,"Davenport, IA  USA",Davenport,IA,USA,a,True,True,19
+2027-05-14,2027-05-16,A/B,Pro/Am,303 Open,"Pueblo, CO  USA",Pueblo,CO,USA,a,True,True,19
+2027-05-14,2027-05-16,A,Pro/Am,Smash & Tap Open,"Eagle, ID  USA",Eagle,ID,USA,a,True,True,19
+2027-05-15,2027-05-16,A,Am only,2027 NADGT x Zanfel Washington Premier,"South Tacoma, WA  USA",South Tacoma,WA,USA,,False,False,19
+2027-05-15,2027-05-16,A,Pro/Am,5th Annual Hogwild Huck,"Farmington, AR  USA",Farmington,AR,USA,a,True,True,19
+2027-05-20,2027-05-23,M,Am Only,PDGA Europa Cup,"Konopiste, Czech Republic",Konopiste,,Czech Republic,,False,False,20
+2027-05-20,2027-05-23,ES,MPO/FPO Only,OTB Open,"Stockton, CA  USA",Stockton,CA,USA,elite,False,True,20
+2027-05-21,2027-05-23,A,Am Only,DGPT Companion: LWS Amateur at Idlewild - Amateur,"Burlington, KY  USA",Burlington,KY,USA,,False,False,20
+2027-05-21,2027-05-23,A,Pro only,Lake Marshall Open - Pro,"Montross, VA  USA",Montross,VA,USA,a,True,True,20
+2027-05-22,2027-05-23,A,Am only,Michigan Amateur Open,"Holly, MI  USA",Holly,MI,USA,,False,False,20
+2027-05-22,2027-05-23,A,Am only,New England Amateur Disc Golf Championship,"Manchester, NH  USA",Manchester,NH,USA,,False,False,20
+2027-05-22,2027-05-23,A,Am only,2027 NADGT x Zanfel Virginia Premier,"Richmond, VA  USA",Richmond,VA,USA,,False,False,20
+2027-05-22,2027-05-23,A,Pro/Am,Ponca City Open,"Ponca City, OK  USA",Ponca City,OK,USA,a,True,True,20
+2027-05-22,2027-05-23,A,Am only,Iowa Amateur Championships,"Des Moines, IA  USA",Des Moines,IA,USA,,False,False,20
+2027-05-22,2027-05-24,A,Pro/Am,2027 Spring Runoff,"Lethbridge, AB  Canada",Lethbridge,AB,Canada,a,True,True,20
+2027-05-28,2027-05-30,A,MPO/FPO Only,Redwood Open at Brooktrails,"Willits, CA  USA",Willits,CA,USA,a,False,True,21
+2027-05-28,2027-05-30,A,MPO/FPO Only,Turku Open,"Turku, Finland",Turku,,Finland,a,False,True,21
+2027-05-28,2027-05-30,A,Pro/Am,9th Annual Sparkman Monster,"Hartstelle, AL  USA",Hartstelle,AL,USA,a,True,True,21
+2027-05-28,2027-05-30,A,Pro/Am,The 5th Annual Scott Burnett Open,"Dayton, OH  USA",Dayton,OH,USA,a,True,True,21
+2027-05-28,2027-05-30,A,Pro/Am,8th Annual Magnolia Open,"Durant, OK  USA",Durant,OK,USA,a,True,True,21
+2027-05-28,2027-05-30,A,Pro/Am,2027 Tar Heel Open,"Chapel Hill, NC  USA",Chapel Hill,NC,USA,a,True,True,21
+2027-05-28,2027-05-30,A,Pro/Am,Tri-State Championship of New England,"Greenfield, MA  USA",Greenfield,MA,USA,a,True,True,21
+2027-05-28,2027-05-30,A,Pro/Am,The Capital of Texas Open,"Austin, TX  USA",Austin,TX,USA,a,True,True,21
+2027-05-29,2027-05-30,B/A,Pro/Am,River City Open,"Grand Rapids, MI  USA",Grand Rapids,MI,USA,a,True,True,21
+2027-06-04,2027-06-06,M,Am Only,United States Amateur Disc Golf Championships,"Milford, MI  USA",Milford,MI,USA,,False,False,22
+2027-06-04,2027-06-06,ES,MPO/FPO Only,Cascade Challenge,"Shelton, WA  USA",Shelton,WA,USA,elite,False,True,22
+2027-06-04,2027-06-05,A,Am only,Kanawha Valley Regional,"Charleston, WV  USA",Charleston,WV,USA,,False,False,22
+2027-06-04,2027-06-06,A,Pro/Am,Tenneessee State Disc Golf Championships,"Morristown, TN  USA",Morristown,TN,USA,a,True,True,22
+2027-06-05,2027-06-06,A,Pro only,2027 Mine Kill Disc Golf Championship,"North Blenheim, NY  USA",North Blenheim,NY,USA,a,True,True,22
+2027-06-11,2027-06-13,A,Pro/Am,IOS Forsyth Open,"Forsyth, IL  USA",Forsyth,IL,USA,a,True,True,23
+2027-06-12,2027-06-13,A,Am only,2027 NADGT x Zanfel Austin Premier,"Austin, TX  USA",Austin,TX,USA,,False,False,23
+2027-06-12,2027-06-13,A,Am only,Charlotte Amateur Championship,"Charlotte, NC  USA",Charlotte,NC,USA,,False,False,23
+2027-06-12,2027-06-13,A,Am only,Minnesota Amateur Disc Golf Championships,"Inver Grove Heights, MN  USA",Inver Grove Heights,MN,USA,,False,False,23
+2027-06-12,2027-06-13,A/B,Pro/Am,Fort Steilacoom Open,"Lakewood, WA  USA",Lakewood,WA,USA,a,True,True,23
+2027-06-12,2027-06-13,A,Am only,Ohio Amateur Championship,"Wellington, OH  USA",Wellington,OH,USA,,False,False,23
+2027-06-12,2027-06-13,A,Pro/Am,Sunshine Open,"Warren, MA  USA",Warren,MA,USA,a,True,True,23
+2027-06-12,2027-06-13,A,Am only,Kansas Amateur Championships,"Emporia, KS  USA",Emporia,KS,USA,,False,False,23
+2027-06-16,2027-06-20,M,MPO/FPO Only,PDGA Professional Disc Golf World Championships,"Portland, OR  USA",Portland,OR,USA,major,False,True,24
+2027-06-18,2027-06-20,A,Am only,2027 North Carolina Junior Disc Golf Championships,"Burlington, NC  USA",Burlington,NC,USA,,False,False,24
+2027-06-18,2027-06-20,A,Pro/Am,Lexington Open XXiX,"Lexington, KY  USA",Lexington,KY,USA,a,True,True,24
+2027-06-18,2027-06-20,A,Pro/Am,DGVTour #5 - Brewster Ridge Open,"Jeffersonville, VT  USA",Jeffersonville,VT,USA,a,True,True,24
+2027-06-19,2027-06-20,A,Pro/Am,Hotlanta,"Covington, GA  USA",Covington,GA,USA,a,True,True,24
+2027-06-25,2027-06-27,B/A,Pro/Am,DGPT Companion: Cascade Challenge (Non-MPO/FPO),"Shelton, WA  USA",Shelton,WA,USA,,False,False,25
+2027-06-25,2027-06-27,A,Am only,Brent Hambrick Memorial Open (Am Weekend),"Westerville, OH  USA",Westerville,OH,USA,,False,False,25
+2027-06-25,2027-06-27,A,Pro/Am,High Plains Challenge,"Fort Morgan, CO  USA",Fort Morgan,CO,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro/Am,Charlie Vettiner Open,"Louisville, KY  USA",Louisville,KY,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro/Am,San Francisco Safari,"San Francisco, CA  USA",San Francisco,CA,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro/Am,Lower Peninsula Open,"Orion Township, MI  USA",Orion Township,MI,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro/Am,Greater Peoria Open,"Morton, IL  USA",Morton,IL,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro/Am,Kansas City Flying Disc Challenge,"Kansas City, MO  USA",Kansas City,MO,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro/Am,The Tiger Open,"McKinney, TX  USA",McKinney,TX,USA,a,True,True,25
+2027-06-25,2027-06-27,A,Pro only,The Majestic,"Cedar, MN  USA",Cedar,MN,USA,a,True,True,25
+2027-06-26,2027-06-27,B/A,Pro/Am,Down South Discs Open,"Greenville, SC  USA",Greenville,SC,USA,a,True,True,25
+2027-06-26,2027-06-27,A,Pro/Am,Woodsboro Open,"Woodsboro, MD  USA",Woodsboro,MD,USA,a,True,True,25
+2027-07-01,2027-07-04,A,MPO/FPO Only,European Disc Golf Championships,"Tampere, Finland",Tampere,,Finland,a,False,True,26
+2027-07-02,2027-07-04,A,Am only,British Colombia Open at Raptors Knoll - Am,"Aldergrove, BC  Canada",Aldergrove,BC,Canada,,False,False,26
+2027-07-02,2027-07-04,A,Pro/Am,30th Annual River City Cup,"Edmonton, AB  Canada",Edmonton,AB,Canada,a,True,True,26
+2027-07-02,2027-07-04,A,Pro/Am,The Open at OnTree,"Windsor, NS  Canada",Windsor,NS,Canada,a,True,True,26
+2027-07-02,2027-07-04,A,Pro only,Cosmic Open,"Leicester, MA  USA",Leicester,MA,USA,a,True,True,26
+2027-07-03,2027-07-04,A,Am only,Back in the Saddle 8 - Amateurs,"Monrovia, IN  USA",Monrovia,IN,USA,,False,False,26
+2027-07-06,2027-07-10,M,Am Only,PDGA Junior Disc Golf World Championships,"Peoria, IL  USA",Peoria,IL,USA,,False,False,27
+2027-07-09,2027-07-11,ES,MPO/FPO Only,European Disc Golf Festival,"Tallinn, Estonia",Tallinn,,Estonia,elite,False,True,27
+2027-07-09,2027-07-11,A,Pro only,Silver Cup XXVII Pro,"Manitowoc, WI  USA",Manitowoc,WI,USA,a,True,True,27
+2027-07-09,2027-07-11,A,Pro only,British Columbia Open at Raptors Knoll - Pro,"Aldergrove, BC  Canada",Aldergrove,BC,Canada,a,True,True,27
+2027-07-10,2027-07-11,A,Am only,2027 NADGT x Zanfel Oregon Premier,"Portland, OR  USA",Portland,OR,USA,,False,False,27
+2027-07-10,2027-07-11,B/A,Pro/Am,4th Annual Southeast Sizzler,"Columbia, SC  USA",Columbia,SC,USA,a,True,True,27
+2027-07-16,2027-07-18,ES,MPO/FPO Only,TBA,"Krokhol,  Norway",Krokhol,,Norway,elite,False,True,28
+2027-07-16,2027-07-18,A,Pro/Am,Circle 1 Maine Classic,"New Gloucester, ME  USA",New Gloucester,ME,USA,a,True,True,28
+2027-07-16,2027-07-18,A,Pro/Am,The Iron Stampede Championship,"Conyers, GA  USA",Conyers,GA,USA,a,True,True,28
+2027-07-16,2027-07-18,A,Pro/Am,32nd Annual Hell On The Border,"Fort Smith, AR  USA",Fort Smith,AR,USA,a,True,True,28
+2027-07-16,2027-07-18,A,Pro/Am,The Appalachia Open,"Rocky Mount, VA  USA",Rocky Mount,VA,USA,a,True,True,28
+2027-07-16,2027-07-18,A,Pro only,Back in the Saddle 8 - Pros,"Monrovia, IN  USA",Monrovia,IN,USA,a,True,True,28
+2027-07-17,2027-07-18,A,Pro/Am,The Warwick Disc Golf Championships,"Warwick, NY  USA",Warwick,NY,USA,a,True,True,28
+2027-07-17,2027-07-18,A,Pro/Am,Oakland County Championship,"Milford, MI  USA",Milford,MI,USA,a,True,True,28
+2027-07-20,2027-07-24,M,Am Only,PDGA Amateur Disc Golf World Championships,"Huntsville, AL  USA",Huntsville,AL,USA,,False,False,29
+2027-07-22,2027-07-25,M,Pro Only,PDGA European Open,"Ale Disc Golf Center, Sweden",Ale Disc Golf Center,,Sweden,major,True,True,29
+2027-07-23,2027-07-25,A,Pro/Am,Daceyland City,"Franklin, MA  USA",Franklin,MA,USA,a,True,True,29
+2027-07-29,2027-08-01,A,MPO/FPO Only,European National Championships Weekend,Various,Various,,,a,False,True,30
+2027-07-29,2027-07-31,A,Pro only,Kanawha Valley Regional (Pros only),"Charleston, WV  USA",Charleston,WV,USA,a,True,True,30
+2027-07-30,2027-08-01,A,MPO/FPO Only,Eagles Crossing Open,"Hawk Point, MO  USA",Hawk Point,MO,USA,a,False,True,30
+2027-07-30,2027-08-01,A,Pro/Am Juniors,United States Junior Disc Golf Championship,"Jeffersonville, VT  USA",Jeffersonville,VT,USA,,False,False,30
+2027-07-30,2027-08-01,A,Pro/Am,2027 South Sound Classic,"Olympia, WA  USA",Olympia,WA,USA,a,True,True,30
+2027-07-30,2027-08-01,A,Pro/Am,The 2027 Greater Raleigh Open (A USDGC/TPWDGC Qualifier),"Cary, NC  USA",Cary,NC,USA,a,True,True,30
+2027-07-30,2027-08-01,A,Pro/Am,Titan Open 2027,"Cedar Rapids, IA  USA",Cedar Rapids,IA,USA,a,True,True,30
+2027-07-31,2027-08-01,A,Am only,2027 NADGT x Zanfel Colorado Premier,"Fort Morgan, CO  USA",Fort Morgan,CO,USA,,False,False,30
+2027-07-31,2027-08-01,A,Pro/Am,22nd Annual Mayhem Open,"West Bend, WI  USA",West Bend,WI,USA,a,True,True,30
+2027-07-31,2027-08-01,A,Pro/Am,15th Annual Hamilton County Open,"Noblesville, IN  USA",Noblesville,IN,USA,a,True,True,30
+2027-08-05,2027-08-08,ES,MPO/FPO Only,Ledgestone Open,"Greater Peoria, IL  USA",Greater Peoria,IL,USA,elite,False,True,31
+2027-08-06,2027-08-08,A,Pro/Am,DGPT Companion: Ledgestone Open (Non-MPO/FPO),"Eureka, IL  USA",Eureka,IL,USA,,False,False,31
+2027-08-06,2027-08-08,A,Pro/Am,Utah State Championships,"Brighton, UT  USA",Brighton,UT,USA,a,True,True,31
+2027-08-07,2027-08-08,A,Am only,2027 NADGT x Zanfel Minnesota Premier,"South St Paul, MN  USA",South St Paul,MN,USA,,False,False,31
+2027-08-13,2027-08-15,ES,MPO/FPO Only,DGPT Doubles Championship at the Preserve,"Clearwater, MN  USA",Clearwater,MN,USA,elite,False,True,32
+2027-08-13,2027-08-15,A,Pro/Am,Idaho State Championship,"Rupert, ID  USA",Rupert,ID,USA,a,True,True,32
+2027-08-13,2027-08-15,A,Pro only,Brent Hambrick Memorial Open (Pro Weekend),"Westerville, OH  USA",Westerville,OH,USA,a,True,True,32
+2027-08-13,2027-08-15,A,Am only,2027 NADGT Junior North American Disc Golf Championships,"Broken Arrow, OK  USA",Broken Arrow,OK,USA,,False,False,32
+2027-08-14,2027-08-15,A,Am only,2027 NADGT x Zanfel Oklahoma Premier,"Broken Arrow, OK  USA",Broken Arrow,OK,USA,,False,False,32
+2027-08-19,2027-08-22,M,Pro/Am,United States Womens Disc Golf Championships,"Columbia, MO  USA",Columbia,MO,USA,major,False,True,33
+2027-08-20,2027-08-22,A,Pro/Am,2027 North Umpqua Invitational,"Roseburg, OR  USA",Roseburg,OR,USA,a,True,True,33
+2027-08-20,2027-08-22,A,Pro/Am,Eastern Canadian Amateur National,"Bourget, ON  Canada",Bourget,ON,Canada,,False,False,33
+2027-08-20,2027-08-22,A,Pro/Am,12th Annual Rally of Rochester GT,"Rochester, NH  USA",Rochester,NH,USA,a,True,True,33
+2027-08-21,2027-08-22,A,Pro/Am,Cedar Creek Open,"Fairmont, MN  USA",Fairmont,MN,USA,a,True,True,33
+2027-08-26,2027-08-29,ES,MPO/FPO Only,Great Lakes Open,"Milford, MI  USA",Milford,MI,USA,elite,False,True,34
+2027-08-27,2027-08-29,A,Am Only,DGPT Companion: DGLO - Amateur,"Milford, MI  USA",Milford,MI,USA,,False,False,34
+2027-08-27,2027-08-29,A,Pro/Am,45th Kansas City Wide Open,"Kansas City, MO  USA",Kansas City,MO,USA,a,True,True,34
+2027-08-27,2027-08-29,A,Pro/Am,The 5th Annual Maple Hill Masters,"Leicester, MA  USA",Leicester,MA,USA,,False,False,34
+2027-08-27,2027-08-29,A,Pro/Am,2027 Dry Creek Cthulhu Championship,"Monroe, NC  USA",Monroe,NC,USA,a,True,True,34
+2027-08-28,2027-08-29,A,Am only,2027 NADGT Canada: Tour Championships,"Edmonton, AB  Canada",Edmonton,AB,Canada,,False,False,34
+2027-08-28,2027-08-29,A,Am only,2027 NADGT x Zanfel Alabama Premier,"Huntsville, AL  USA",Huntsville,AL,USA,,False,False,34
+2027-09-03,2027-09-05,ES,MPO/FPO Only,LWS Open at Idlewild,"Burlington, KY  USA",Burlington,KY,USA,elite,False,True,35
+2027-09-03,2027-09-05,A,Pro/Am,Greater Hartford Disc Golf Open,"Manchester, CT  USA",Manchester,CT,USA,a,True,True,35
+2027-09-03,2027-09-05,A,Pro/Am,Falcon’s Flight 18,"Mountain View County, AB  Canada",Mountain View County,AB,Canada,a,True,True,35
+2027-09-03,2027-09-05,A,Am only,Michigan Amateur Disc Golf State Championships,"Grand Rapids, MI  USA",Grand Rapids,MI,USA,,False,False,35
+2027-09-03,2027-09-05,B/A,Pro/Am,2027 Power Disc Golf Academy Championship,"Hawk Point, MO  USA",Hawk Point,MO,USA,a,True,True,35
+2027-09-04,2027-09-05,A,Pro/Am,The 2026 Keeper of the Chains,"Wichita, KS  USA",Wichita,KS,USA,a,True,True,35
+2027-09-04,2027-09-06,A,Pro/Am,Colorado State Disc Golf Championships,"Thornton, CO  USA",Thornton,CO,USA,a,True,True,35
+2027-09-04,2027-09-06,A,Am only,Southeastern Amateur Championship,"Orlando, FL  USA",Orlando,FL,USA,,False,False,35
+2027-09-09,2027-09-12,A,Pro/Am,2027 Canadian National Championship,"Dieppe, NB  Canada",Dieppe,NB,Canada,a,True,True,36
+2027-09-10,2027-09-12,A,MPO/FPO Only,EuroTour Finale - Parnu Open,"Parnu, Estonia",Parnu,,Estonia,a,False,True,36
+2027-09-10,2027-09-12,A,MPO/FPO Only,Greater Toronto Open,"Milton, ON  Canada",Milton,ON,Canada,a,False,True,36
+2027-09-10,2027-09-12,A,Pro/Am,St. Louis Open,"Bridgeton, MO  USA",Bridgeton,MO,USA,a,True,True,36
+2027-09-10,2027-09-12,A,Pro/Am,2027 Beaver State Fling,"Estacada, OR  USA",Estacada,OR,USA,a,True,True,36
+2027-09-10,2027-09-12,A,Pro/Am,Seth Burton Memorial,"Fairmont, WV  USA",Fairmont,WV,USA,a,True,True,36
+2027-09-10,2027-09-12,A,Pro/Am,The Mint Discs Open,"Waelder, TX  USA",Waelder,TX,USA,a,True,True,36
+2027-09-10,2027-09-12,A,Am only,2027 NADGT x Zanfel California Premier,"San Diego, CA  USA",San Diego,CA,USA,,False,False,36
+2027-09-10,2027-09-12,A,Am only,2027 NADGT x Zanfel New Mexico Premier,"Santa Fe, NM  USA",Santa Fe,NM,USA,,False,False,36
+2027-09-11,2027-09-12,A,Pro/Am,Hollows Fall Classic,"Manchester, NH  USA",Manchester,NH,USA,a,True,True,36
+2027-09-11,2027-09-12,A/B,Pro/Am,The Syracuse Open,"Liverpool, NY  USA",Liverpool,NY,USA,a,True,True,36
+2027-09-11,2027-09-12,A,Pro/Am,TreeMagnets Open,"Holtwood, PA  USA",Holtwood,PA,USA,a,True,True,36
+2027-09-11,2027-09-12,A,Pro/Am,The Mammoth,"Custer, SD  USA",Custer,SD,USA,a,True,True,36
+2027-09-11,2027-09-12,A,Am only,Hub City Amateur Championship,"Spartanburg, SC  USA",Spartanburg,SC,USA,,False,False,36
+2027-09-11,2027-09-12,A,Pro/Am,Indiana State Championships,"Nashville, IN  USA",Nashville,IN,USA,a,True,True,36
+2027-09-16,2027-09-18,A,Pro/Am,DGPT Companion: Green Mountain Championships Pro/Am (Non-MPO/FPO),"Jeffersonville, VT  USA",Jeffersonville,VT,USA,,False,False,37
+2027-09-16,2027-09-19,ES,MPO/FPO Only,Green Mountain Championships,"Jeffersonville, VT  USA",Jeffersonville,VT,USA,elite,False,True,37
+2027-09-17,2027-09-19,A,Pro/Am,Gold Eagle Open 2027,"Cochin, SK  Canada",Cochin,SK,Canada,a,True,True,37
+2027-09-17,2027-09-19,A,Pro/Am,The Oregon Disc Golf Championships,"Rainer, OR  USA",Rainer,OR,USA,a,True,True,37
+2027-09-17,2027-09-19,A,Pro/Am,Muskoka Open,"Dwight, ON  Canada",Dwight,ON,Canada,a,True,True,37
+2027-09-17,2027-09-19,A,Am only,2027 Austin Amateur Series Finale,"Austin, TX  USA",Austin,TX,USA,,False,False,37
+2027-09-18,2027-09-18,C,Pro/Am,The Global Paul McBeth Foundation Tournament Fundraiser,Worldwide,Worldwide,,,,False,False,37
+2027-09-18,2027-09-19,A,Pro/Am,McKinney Classic,"McKinney, TX  USA",McKinney,TX,USA,a,True,True,37
+2027-09-18,2027-09-19,A,Pro/Am,The Memorial at Lemon Lake Celebrating 25 Years of HOMIE,"Crown Point, IN  USA",Crown Point,IN,USA,a,True,True,37
+2027-09-23,2027-09-26,ES,MPO/FPO Only,MVP Open x OTB,"Leicester, MA  USA",Leicester,MA,USA,elite,False,True,38
+2027-09-24,2027-09-26,A,Pro/Am,Music City Open,"Nashville, TN  USA",Nashville,TN,USA,a,True,True,38
+2027-09-24,2027-09-26,B/A,Pro/Am,2027 Throwing Down The Gauntlet Championship,"Caldwell, TX  USA",Caldwell,TX,USA,a,True,True,38
+2027-09-24,2027-09-26,A,Pro/Am,Over The Top Red Rock Classic,"Hurricane, UT  USA",Hurricane,UT,USA,a,True,True,38
+2027-09-25,2027-09-26,A,Am only,Carolina Clash AM weekend,"Charlotte, NC  USA",Charlotte,NC,USA,,False,False,38
+2027-09-28,2027-10-02,M,Pro/Am,PDGA Masters Disc Golf World Championships,"Tulsa, OK  USA",Tulsa,OK,USA,,False,False,39
+2027-10-01,2027-10-03,A,Pro only,Carolina Clash Pro Weekend,"Charlotte, NC  USA",Charlotte,NC,USA,a,True,True,39
+2027-10-01,2027-10-03,A,Pro/Am,The Maine State Championships - USDGC Qualifier,"New Gloucester, ME  USA",New Gloucester,ME,USA,a,True,True,39
+2027-10-01,2027-10-03,A,Pro/Am,The Show Low craze,"Show Low, AZ  USA",Show Low,AZ,USA,a,True,True,39
+2027-10-01,2027-10-03,A,Pro/Am,The Mendocino Migration,"Little River, CA  USA",Little River,CA,USA,a,True,True,39
+2027-10-01,2027-10-03,A,Pro/Am,BC Provincial Disc Golf Championships,"Radium Hot Springs, BC  Canada",Radium Hot Springs,BC,Canada,a,True,True,39
+2027-10-02,2027-10-03,A,Pro/Am,16th Annual LoCo Open,"Leesburg, VA  USA",Leesburg,VA,USA,a,True,True,39
+2027-10-07,2027-10-10,XM,MPO Only,United States Disc Golf Championships,"Rock Hill, SC  USA",Rock Hill,SC,USA,major,True,False,40
+2027-10-07,2027-10-10,A,FPO Only,Throw Pink Women's Disc Golf Championship,"Rock Hill, SC  USA",Rock Hill,SC,USA,a,False,True,40
+2027-10-08,2027-10-10,A,Pro/Am,24th Piney Woods Open,"Tyler, TX  USA",Tyler,TX,USA,a,True,True,40
+2027-10-08,2027-10-10,A,Pro/Am,Lake Superior Open,"Superior, WI/Duluth, MN  USA","Superior, WI/Duluth",MN,USA,a,True,True,40
+2027-10-08,2027-10-10,A,Pro/Am,2027 Arkansas Masters,"Mountain View, AR  USA",Mountain View,AR,USA,,False,False,40
+2027-10-08,2027-10-10,A,Pro/Am,Coral Fall Classic,"Bixby, OK  USA",Bixby,OK,USA,a,True,True,40
+2027-10-09,2027-10-10,A,Am only,Frankfort Amateurs Championship,"Frankfort, KY  USA",Frankfort,KY,USA,,False,False,40
+2027-10-14,2027-10-17,ES,MPO/FPO Only,DGPT Playoffs at Ivy Hill,"Lynchburg/Bedford County, VA  USA",Lynchburg/Bedford County,VA,USA,elite,False,True,41
+2027-10-15,2027-10-17,A,Am Only,DGPT Companion: Amateur Challenge - Amateur,"Forest, VA  USA",Forest,VA,USA,,False,False,41
+2027-10-15,2027-10-17,A,Pro/Am,Glass Blown Open,"Emporia, KS  USA",Emporia,KS,USA,a,True,True,41
+2027-10-15,2027-10-17,A,Pro/Am,2027 Ontario Provincial Championships,"Port Hope, ON  Canada",Port Hope,ON,Canada,a,True,True,41
+2027-10-15,2027-10-17,A,Pro/Am,15th Annual Bud Hill Masters,"Memphis, TN  USA",Memphis,TN,USA,,False,False,41
+2027-10-15,2027-10-17,A,Pro/Am,14th Annual Buffalo Run,"McAlester, OK  USA",McAlester,OK,USA,a,True,True,41
+2027-10-16,2027-10-17,A,Pro/Am,2027 Norcal Series Championships,"TBD, CA  USA",TBD,CA,USA,a,True,True,41
+2027-10-16,2027-10-17,B/A,Pro/Am,29th Upstate Classic,"Greenville, SC  USA",Greenville,SC,USA,a,True,True,41
+2027-10-21,2027-10-24,ES,MPO/FPO Only,Kansas City Wide Open,"Liberty, MO  USA",Liberty,MO,USA,elite,False,True,42
+2027-10-22,2027-10-24,A,Pro/Am,Augusta Classic,"North Augusta, SC  USA",North Augusta,SC,USA,a,True,True,42
+2027-10-22,2027-10-24,A,Pro/Am,Down East Players Cup,"Greenville, NC  USA",Greenville,NC,USA,a,True,True,42
+2027-10-23,2027-10-24,B/A,Pro/Am,2027 NADGT North American DOUBLES Disc Golf Championships,"Austin, TX  USA",Austin,TX,USA,,False,False,42
+2027-10-23,2027-10-24,A,Pro/Am,2027 Wilcox WOW,"Stanfordville, NY  USA",Stanfordville,NY,USA,a,True,True,42
+2027-10-23,2027-10-24,A,Pro/Am,Hard Pan Classic,"Fresno, CA  USA",Fresno,CA,USA,a,True,True,42
+2027-10-27,2027-10-30,A,Am only,2027 NADGT North American Disc Golf Championships,"Austin, TX  USA",Austin,TX,USA,,False,False,43
+2027-10-29,2027-10-31,A,Pro/Am,2027 Oklahoma Open,"Tulsa, OK  USA",Tulsa,OK,USA,a,True,True,43
+2027-10-29,2027-10-31,A,Pro only,The Hub City Halloween Open,"Inman, SC  USA",Inman,SC,USA,a,True,True,43
+2027-11-04,2027-11-07,ES,MPO/FPO Only,Powerball Cup,"Austin, TX USA",Austin,TX,USA,elite,False,True,44
+2027-11-05,2027-11-07,A,Pro/Am,30th Annual Colonial Fall Colors - All Pro divisions and MA1,"Williamsburg, VA  USA",Williamsburg,VA,USA,a,True,True,44
+2027-11-05,2027-11-07,A,Pro/Am,2027 Myrtle Beach Open,"Myrtle Beach, SC  USA",Myrtle Beach,SC,USA,a,True,True,44
+2027-11-05,2027-11-07,A,Pro/Am,2027 Northwest Arkansas Open,"Springdale, AR  USA",Springdale,AR,USA,a,True,True,44
+2027-11-05,2027-11-07,A,Pro/Am,River Riot V,"Florence, AL  USA",Florence,AL,USA,a,True,True,44
+2027-11-06,2027-11-07,A,Pro/Am,The 10th Annual Putnam County Classic,"Hurricane, WV  USA",Hurricane,WV,USA,a,True,True,44
+2027-11-11,2027-11-14,A,Pro/Am,Las Vegas Challenge,"Henderson, NV  USA",Henderson,NV,USA,a,True,True,45
+2027-11-12,2027-11-14,A,Pro only,37th Veterans Park Open,"Arlington, TX  USA",Arlington,TX,USA,a,True,True,45
+2027-11-12,2027-11-14,A,Pro/Am,Big Rip Classic,"Lumberton, MS  USA",Lumberton,MS,USA,a,True,True,45
+2027-11-12,2027-11-14,A,Pro/Am,Charleston Classic,"Johns Island, SC  USA",Johns Island,SC,USA,a,True,True,45
+2027-11-12,2027-11-14,A,Pro/Am,Nevada Open,"Nevada, MO  USA",Nevada,MO,USA,a,True,True,45
+2027-11-12,2027-11-14,A,Pro/Am,2027 Lake County Trailblazer,"Eustis, FL  USA",Eustis,FL,USA,a,True,True,45
+2027-11-13,2027-11-14,A,Am only,30th Annual Colonial Fall Colors - All Amateur divisions except MA1,"Williamsburg, VA  USA",Williamsburg,VA,USA,,False,False,45
+2027-11-19,2027-11-21,A,Pro/Am,2027 Jacksonville Open,"Jacksonville, FL  USA",Jacksonville,FL,USA,a,True,True,46
+2027-11-19,2027-11-21,A,Pro/Am,Phoenix Fall Classic,"Phoenix, AZ  USA",Phoenix,AZ,USA,a,True,True,46
+2027-11-19,2027-11-21,A,Pro/Am,Crosstown Throwdown,"Belton, TX  USA",Belton,TX,USA,a,True,True,46
+2027-11-20,2027-11-21,A,Pro/Am,Ogeechee Crossing Open,"Louisville, GA  USA",Louisville,GA,USA,a,True,True,46
+2027-12-03,2027-12-05,A,Pro/Am,15th Annual Chain Hawk Open,"Gainesville, FL  USA",Gainesville,FL,USA,a,True,True,48
+2027-12-10,2027-12-12,A,Pro/Am,South Florida Open,"Fort Lauderdale, FL  USA",Fort Lauderdale,FL,USA,a,True,True,49
+2027-12-11,2027-12-12,A,Am only,Savannah Open - AM Weekend,"Pooler, GA  USA",Pooler,GA,USA,,False,False,49
+2027-12-11,2027-12-12,A,Pro/Am,California Disc Golf Series Invitational Championship,"La Mirada, CA  USA",La Mirada,CA,USA,a,True,True,49
+2027-12-11,2027-12-12,C/A,Pro/Am,The Fight Round 10,"La Plata, MD  USA",La Plata,MD,USA,a,True,True,49

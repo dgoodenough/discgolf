@@ -1,8 +1,9 @@
 /* DGPT Standings Forecast — the shell.
 
-   Six tabs over three rendering paths: three views of the live 2026 bundle,
-   two tables off the projection bundles, and the what-if, which reads the 2027
-   bundle but renders one invented player rather than the field. Exactly one
+   Seven tabs over four rendering paths: three views of the live 2026 bundle,
+   two tables off the projection bundles, the what-if, which reads the 2027
+   bundle but renders one invented player rather than the field, and the tour
+   planner, which reads its own schedule-and-road-times bundle. Exactly one
    section is visible at a time. This module owns the page header, the
    freshness flag and the tab wiring; the views themselves live in js/.
 
@@ -17,6 +18,7 @@ import { renderPossible } from "./js/possible.js";
 import { renderRace } from "./js/race.js";
 import { PROJ_VIEWS, renderProjection } from "./js/projection.js";
 import { renderWhatIf } from "./js/whatif.js";
+import { renderTourPlan } from "./js/tourplan.js";
 
 /* ---------- shell ---------- */
 
@@ -25,7 +27,7 @@ import { renderWhatIf } from "./js/whatif.js";
 const VIEW_SECTIONS = [
   ["forecast", "#view-forecast"], ["possible", "#view-possible"],
   ["race", "#view-race"], ["next", "#view-next"], ["whatif", "#view-whatif"],
-  ["euro", "#view-euro"],
+  ["euro", "#view-euro"], ["tour", "#view-tour"],
 ];
 
 /* What counts as late is set by the pipeline's own cadence, not a fixed
@@ -62,6 +64,13 @@ async function render() {
   if (state.view === "whatif" && !state.permalink) {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "whatif";
     await renderWhatIf();
+    return;
+  }
+  // The tour planner is not a forecast at all — a shortest-path search over
+  // the 2027 calendar and a road-time matrix — so it owns its header too.
+  if (state.view === "tour" && !state.permalink) {
+    for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "tour";
+    await renderTourPlan(state.div);
     return;
   }
   const d = await loadDiv(state.div);
