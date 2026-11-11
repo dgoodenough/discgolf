@@ -203,3 +203,30 @@ def test_a_finished_cup_keeps_its_result(tiny_world, fake_api):
     res = simulate.run("MPO", n_sims=1000, chunk=500)
     by = dict(zip(res.pdga_numbers, res.p_cup_win))
     assert by[second] == pytest.approx(1.0) and by[star] == 0.0
+
+
+def test_players_yet_to_tee_off_on_day_one_stay_in_the_field(fake_api):
+    """Round 1 is id 2 behind the adv round; the lead card tees off last."""
+    fake_api.event(CUP, cup_event())
+    fake_api.round(CUP, "MPO", 1, round_payload([
+        row(p, n, r, round_to_par=SEED[p], has_score=True) for p, n, r in FIELD]))
+    fake_api.round(CUP, "MPO", 2, round_payload([
+        row(7001, "Top Seed", 1040, played=0, tee_time="14:30"),
+        row(7002, "Second Seed", 1040, played=0, tee_time="14:30"),
+        row(7003, "Bottom Seed", 1040, round_to_par=-2, played=6, running_place=3),
+    ]))
+    field = live_api.live_field(CUP, "MPO")
+    assert set(field) == {7001, 7002, 7003}
+    assert field[7001]["cur"] == 0.0 and field[7001]["rem"] == 4.0 and field[7001]["adv"] == -7.0
+
+
+def test_a_no_show_after_round_one_still_leaves_the_field(fake_api):
+    fake_api.event(CUP, cup_event(latest=3))
+    fake_api.round(CUP, "MPO", 1, round_payload([
+        row(p, n, r, round_to_par=SEED[p], has_score=True) for p, n, r in FIELD]))
+    for rnd in (2, 3):
+        fake_api.round(CUP, "MPO", rnd, round_payload([
+            row(7001, "Top Seed", 1040, round_to_par=0, played=18 if rnd == 2 else 4, has_score=rnd == 2),
+            row(7003, "Bottom Seed", 1040, played=0),   # never played a hole
+        ]))
+    assert set(live_api.live_field(CUP, "MPO")) == {7001}
