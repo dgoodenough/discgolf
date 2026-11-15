@@ -21,11 +21,41 @@ const state = { div: "mpo", view: "forecast", data: {}, sort: { key: "p_champ", 
                 // 1030 MPO reader at the top of the FPO field
                 whatif: {} };
 
-// player permalinks: #mpo-75412 opens that division with the player expanded
-{
-  const m = location.hash.match(/^#(mpo|fpo)-(\d+)$/);
-  if (m) { state.div = m[1]; state.permalink = +m[2]; }
+/* Routes. Every view has its own URL, carried in the hash because the site is
+   one static page with no server to rewrite paths:
+
+     #forecast/mpo   #whats-left/fpo   #tour-planner/mpo   #am-planner
+
+   The slug is what a reader sees and shares, so it is spelled out; the key on
+   the left is the internal view name the rest of the code uses. The amateur
+   planner has no divisions and so no division segment. `#mpo-75412` is the
+   older player permalink — the movers feed publishes those, so it keeps
+   working: it opens the forecast table with that player expanded. */
+const VIEW_SLUGS = {
+  forecast: "forecast", possible: "whats-left", race: "event-odds",
+  next: "2027", whatif: "what-if", euro: "eurotour",
+  tour: "tour-planner", am: "am-planner",
+};
+const routeHash = (view, div) =>
+  `#${VIEW_SLUGS[view]}${view === "am" ? "" : `/${div}`}`;
+
+/* Apply location.hash to `state`. An unrecognised hash changes nothing, and a
+   route without a division keeps the one already showing. */
+function readRoute() {
+  const h = location.hash;
+  const player = h.match(/^#(mpo|fpo)-(\d+)$/);
+  if (player) {
+    state.div = player[1]; state.view = "forecast"; state.permalink = +player[2];
+    return;
+  }
+  if (h === "" || h === "#") { state.view = "forecast"; return; }
+  const m = h.match(/^#\/?([a-z0-9-]+)(?:\/(mpo|fpo))?\/?$/);
+  const view = m && Object.keys(VIEW_SLUGS).find((k) => VIEW_SLUGS[k] === m[1]);
+  if (!view) return;
+  state.view = view;
+  if (m[2]) state.div = m[2];
 }
+readRoute();
 
 const $ = (sel) => document.querySelector(sel);
 // ISO-3166 alpha-2 -> regional-indicator flag emoji (renders as boxed letters
@@ -129,4 +159,4 @@ const hrs = (min) => (min / 60).toFixed(min < 600 ? 1 : 0) + " h";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-export { $, agoText, bust, dateRange, esc, flagEmoji, fmtDShort, fmtPct, fmtPctExact, fmtPts, fmtStroke, hm, hrs, loadDiv, ordinal, plural, state, updatedAt };
+export { $, agoText, bust, dateRange, esc, flagEmoji, fmtDShort, fmtPct, fmtPctExact, fmtPts, fmtStroke, hm, hrs, loadDiv, ordinal, plural, readRoute, routeHash, state, updatedAt };

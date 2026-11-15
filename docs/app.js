@@ -1,16 +1,23 @@
 /* DGPT Standings Forecast — the shell.
 
-   Eight tabs over five rendering paths: three views of the live 2026 bundle,
+   Eight views over five rendering paths: three views of the live 2026 bundle,
    two tables off the projection bundles, the what-if, which reads the 2027
    bundle but renders one invented player rather than the field, and the tour
    planner and its amateur sibling, which read their own bundles. Exactly one
    section is visible at a time. This module owns the page header, the
-   freshness flag and the tab wiring; the views themselves live in js/.
+   freshness flag and the navigation; the views themselves live in js/.
+
+   Navigation is two levels — three groups across the top, and the views of the
+   current group as tabs — and all of it is plain links. The URL hash is the
+   single source of truth for which view and division are showing (the routes
+   are in core.js): a click changes the hash, `hashchange` re-renders, and so
+   Back, reload, bookmarks and "open in new tab" all work without any code of
+   their own.
 
    Loaded as `<script type="module">`, so the imports below are the whole
    dependency graph and nothing here is global. */
 
-import { $, agoText, loadDiv, state, updatedAt } from "./js/core.js";
+import { $, agoText, loadDiv, readRoute, routeHash, state, updatedAt } from "./js/core.js";
 import { tipAttrs } from "./js/tooltip.js";
 import { liveEvents, shortName } from "./js/cells.js";
 import { renderForecast, toggleDetail } from "./js/forecast.js";
@@ -23,13 +30,50 @@ import { renderAmPlan } from "./js/amplan.js";
 
 /* ---------- shell ---------- */
 
-/* Every top-level view and the section it owns, in one list: six tabs across
-   three rendering paths, and exactly one of them visible at a time. */
+/* Every view and the section it owns, in one list; exactly one is visible
+   at a time. */
 const VIEW_SECTIONS = [
   ["forecast", "#view-forecast"], ["possible", "#view-possible"],
   ["race", "#view-race"], ["next", "#view-next"], ["whatif", "#view-whatif"],
   ["euro", "#view-euro"], ["tour", "#view-tour"], ["am", "#view-am"],
 ];
+
+/* The groups of the top-level nav, each listing its views in tab order. A
+   group's link goes to its first view. */
+const GROUPS = {
+  season: ["forecast", "possible", "race"],
+  next: ["next", "whatif", "euro"],
+  plan: ["tour", "am"],
+};
+const SITE_TITLE = document.title;
+
+/* Point every nav link at the right route for the current division, mark the
+   current group / view / division, and show only the current group's tabs. */
+function syncNav() {
+  const mark = (a, on) => {
+    a.classList.toggle("active", on);
+    if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  };
+  const group = Object.keys(GROUPS).find((g) => GROUPS[g].includes(state.view));
+  document.querySelectorAll("#site-nav a[data-group]").forEach((a) => {
+    a.href = routeHash(GROUPS[a.dataset.group][0], state.div);
+    mark(a, a.dataset.group === group);
+  });
+  document.querySelectorAll("#view-seg a").forEach((a) => {
+    const on = a.dataset.view === state.view;
+    a.href = routeHash(a.dataset.view, state.div);
+    a.hidden = !GROUPS[group].includes(a.dataset.view);
+    mark(a, on);
+    if (on) document.title = state.view === "forecast"
+      ? SITE_TITLE : `${a.textContent} · ${SITE_TITLE}`;
+  });
+  document.querySelectorAll("#division-seg a").forEach((a) => {
+    a.href = routeHash(state.view, a.dataset.div);
+    mark(a, a.dataset.div === state.div);
+  });
+  // the amateur planner has no divisions; every other view is per division
+  $("#division-seg").hidden = state.view === "am";
+}
 
 /* What counts as late is set by the pipeline's own cadence, not a fixed
    number: during a live event the loop re-simulates within ~6 minutes of a
@@ -48,14 +92,13 @@ function freshness(d) {
 }
 
 async function render() {
-  // the amateur planner has no divisions; every other view is per division
-  $("#division-seg").hidden = state.view === "am" && !state.permalink;
+  syncNav();
   // The projection tabs read their own bundle and write their own header, so
   // they branch before loadDiv: the 2026 forecast's stakes line, live note and
   // freshness flag are all statements about a season in progress, and none of
   // them mean anything on a page about 2027.
   const proj = PROJ_VIEWS[state.view];
-  if (proj && !state.permalink) {
+  if (proj) {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== proj.view;
     await renderProjection(proj);
     return;
@@ -64,21 +107,21 @@ async function render() {
   // same reason, but it is not a table of the field — it is one invented
   // player against it — so it renders itself rather than going through
   // PROJ_VIEWS' shared table path.
-  if (state.view === "whatif" && !state.permalink) {
+  if (state.view === "whatif") {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "whatif";
     await renderWhatIf();
     return;
   }
   // The tour planner is not a forecast at all — a shortest-path search over
   // the 2027 calendar and a road-time matrix — so it owns its header too.
-  if (state.view === "tour" && !state.permalink) {
+  if (state.view === "tour") {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "tour";
     await renderTourPlan(state.div);
     return;
   }
   // The amateur planner (alpha) is the same search over every sanctioned
   // amateur event, from one home — its own bundle and header again.
-  if (state.view === "am" && !state.permalink) {
+  if (state.view === "am") {
     for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== "am";
     await renderAmPlan();
     return;
@@ -129,8 +172,9 @@ async function render() {
     note.hidden = true;
   }
   // the three season-in-progress views read this one bundle; only the visible
-  // one is built, and a deep link always lands on the table it points into
-  const view = state.permalink ? "forecast" : state.view;
+  // one is built (a player permalink has already set the view to the forecast
+  // table it points into — readRoute in core.js)
+  const view = state.view;
   for (const [key, sel] of VIEW_SECTIONS) $(sel).hidden = key !== view;
   if (view === "possible") { renderPossible(d); return; }
   if (view === "race") { renderRace(d); return; }
@@ -147,22 +191,6 @@ async function render() {
   }
 }
 
-document.querySelectorAll("#division-seg button").forEach((b) => {
-  b.classList.toggle("active", b.dataset.div === state.div);  // honor a deep link's division
-  b.addEventListener("click", () => {
-    state.div = b.dataset.div;
-    history.replaceState(null, "", location.pathname + location.search);
-    document.querySelectorAll("#division-seg button").forEach((x) => x.classList.toggle("active", x === b));
-    render();
-  });
-});
-
-document.querySelectorAll("#view-seg button").forEach((b) => {
-  b.addEventListener("click", () => {
-    state.view = b.dataset.view;
-    document.querySelectorAll("#view-seg button").forEach((x) => x.classList.toggle("active", x === b));
-    render();
-  });
-});
+window.addEventListener("hashchange", () => { readRoute(); render(); });
 
 render();

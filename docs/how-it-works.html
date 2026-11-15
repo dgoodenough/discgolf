@@ -18,8 +18,13 @@
 </head>
 <body class="ledger">
 <div class="page">
+  <nav id="site-nav" aria-label="Site">
+    <a href="./#forecast">This season</a>
+    <a href="./#2027">Next season</a>
+    <a href="./#tour-planner">Planners</a>
+    <a href="how-it-works.html" class="active" aria-current="page">How it works</a>
+  </nav>
   <h1>How the DGPT points system works</h1>
-  <p class="hint"><a href="index.html">← back to the forecast</a></p>
   <p>The Disc Golf Pro Tour crowns its season champion at the <b>Powerball Cup</b>
   (the DGPT Championship). Who gets to play in it is decided by the
   <b>Powerball DGPT World Standings</b> — a season-long points race. This page
@@ -389,6 +394,7 @@
   <div class="band">Changelog</div>
   <table class="table-ledger">
     <tbody>
+      <tr><td class="changelog-date">Nov 15</td><td><b>Every view has its own address.</b> The eight tabs are now three sections across the top of every page — <a href="./#forecast">This season</a>, <a href="./#2027">Next season</a> and <a href="./#tour-planner">Planners</a> — with each section's views as tabs beneath. Each view and division has a link you can bookmark or send, such as <code>#whats-left/fpo</code> or <code>#tour-planner/mpo</code>, and the browser's Back button now steps through the views you visited. Player links (<code>#mpo-75412</code>) work as before. No number changed.</td></tr>
       <tr><td class="changelog-date">Sep 27</td><td><b>The MVP Open is allowed to finish on Monday.</b> The DGPT has pre-authorized a Monday return to finish round 3, or to settle a tie for the win or for a Cup place. PDGA still lists the event as ending Sunday, and the forecast used to treat the day after an event's end date as final. So a Monday finish would have been banked on Monday morning from Sunday's unfinished scores. The event now stays live, and unbanked, until the scoreboard says it is done. A tie for first no longer counts as a result until the playoff is played. Also fixed: once the MVP Open was banked, the four MPO and two FPO Cup places it awards for finishing position dropped out of the Cup odds. They now come from the actual result. And if the final round moves to one of the DGPT's shortened 13- or 9-hole layouts, the live odds count the holes that are actually left, not a full 18.</td></tr>
       <tr><td class="changelog-date">Sep 26</td><td><b>New column: If over now.</b> With weather threatening the MVP Open, the forecast's one built-in assumption — that every round gets played — is the thing most worth seeing past. While an event is live, this column shows where each player would finish the standings if play stopped now and the event went final: not a forecast, one answer. It is scored the way a called-off event is scored, not off the live leaderboard. Completed rounds count in full, and a round in progress counts only on the holes <b>every</b> player has finished, so if a lightning stop leaves the early cards through 18 and the late ones through 9, holes 1–9 count for everyone and the rest are thrown away. Because the MVP Open is the last event before the Cup, the column also settles the Cup field: the rank is green inside it and red for a contender who would miss, with <b>MVP</b> and <b>inv</b> marking the spots won by an MVP Open finish or an event-win invite. The ▲▼ is the move from the standings as they stand before the event. Tap a rank for the points and the starting strokes.</td></tr>
       <tr><td class="changelog-date">Sep 23</td><td><b>The full points table is published.</b> Section 1 now has the points for every finishing place in both divisions, at each event class, under <a href="#points-table">Points for every finishing place</a>. It is generated from the same curve the forecast scores with, and a test keeps the two in step.</td></tr>

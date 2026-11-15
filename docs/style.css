@@ -29,10 +29,23 @@ html, body { margin: 0; }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 .controls { display: flex; gap: 8px; }
 
-/* segmented control (band = active, per Ledger greyscale-structure rule) */
+/* segmented control (band = active, per Ledger greyscale-structure rule).
+   The header's two are links, so each view has a URL; the in-page ones are
+   buttons. */
 .seg { display: flex; border: 1px solid var(--grid-strong); border-radius: var(--radius); overflow: hidden; background: var(--paper); }
-.seg button { font: inherit; padding: 6px 13px; background: none; border: none; color: var(--ink-2); cursor: pointer; }
-.seg button.active { background: var(--band); color: var(--band-ink); font-weight: 700; }
+.seg button, .seg a { font: inherit; padding: 6px 13px; background: none; border: none; color: var(--ink-2); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.seg a:hover { color: var(--ink); }
+.seg a[hidden] { display: none; }
+.seg button.active, .seg a.active { background: var(--band); color: var(--band-ink); font-weight: 700; }
+
+/* top-level nav: the site's sections, on every page. Greyscale, because it is
+   structure — the current section is marked by weight and a rule, not colour. */
+#site-nav { display: flex; flex-wrap: wrap; gap: 2px 20px; padding-top: 10px; border-bottom: 1px solid var(--grid-strong); font-size: var(--fs-body); }
+#site-nav a { padding: 4px 0 6px; margin-bottom: -1px; color: var(--ink-2); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+#site-nav a:hover { color: var(--ink); }
+#site-nav a.active { color: var(--ink); font-weight: 700; border-bottom-color: var(--ink); }
+/* four sections on one line down to a 360px phone */
+@media (max-width: 480px) { #site-nav { gap: 2px 13px; font-size: 13px; } }
 
 /* tables */
 /* guide on the left, column-mode control on the right; they stack rather than
@@ -659,8 +672,8 @@ td.lev-na, td.lev-wait { color: var(--ink-3); }
   .wi-hint:empty { display: none; }
 }
 
-/* Six tabs no longer fit one line on a phone; let the row wrap rather than
-   scroll the header sideways. */
+/* On a narrow phone the tabs and the division switch share a row that may not
+   hold both; let it wrap rather than scroll the header sideways. */
 .controls { flex-wrap: wrap; }
 #view-seg { flex-wrap: wrap; }
 

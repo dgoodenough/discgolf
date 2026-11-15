@@ -39,6 +39,12 @@
 </head>
 <body class="ledger">
 <div id="app">
+  <nav id="site-nav" aria-label="Site">
+    <a data-group="season" href="#forecast" class="active">This season</a>
+    <a data-group="next" href="#2027">Next season</a>
+    <a data-group="plan" href="#tour-planner">Planners</a>
+    <a href="how-it-works.html">How it works</a>
+  </nav>
   <header id="top">
     <div class="title">
       <p class="kicker" id="kicker">2026 DGPT Season Forecast</p>
@@ -50,20 +56,22 @@
       <p id="live-note" hidden></p>
     </div>
     <div class="controls">
-      <div class="seg" id="view-seg">
-        <button data-view="forecast" class="active">Forecast</button>
-        <button data-view="possible">What's left</button>
-        <button data-view="race">Event odds</button>
-        <button data-view="next">2027</button>
-        <button data-view="whatif">What if</button>
-        <button data-view="euro">EuroTour</button>
-        <button data-view="tour">Tour planner</button>
-        <button data-view="am">Am planner</button>
-      </div>
-      <div class="seg" id="division-seg">
-        <button data-div="mpo" class="active">MPO</button>
-        <button data-div="fpo">FPO</button>
-      </div>
+      <!-- app.js keeps these hrefs, the active marks and which group's tabs
+           are showing in step with the URL hash -->
+      <nav class="seg" id="view-seg" aria-label="Views">
+        <a data-view="forecast" href="#forecast" class="active">Forecast</a>
+        <a data-view="possible" href="#whats-left">What's left</a>
+        <a data-view="race" href="#event-odds">Event odds</a>
+        <a data-view="next" href="#2027" hidden>2027</a>
+        <a data-view="whatif" href="#what-if" hidden>What if</a>
+        <a data-view="euro" href="#eurotour" hidden>EuroTour</a>
+        <a data-view="tour" href="#tour-planner" hidden>Tour planner</a>
+        <a data-view="am" href="#am-planner" hidden>Am planner</a>
+      </nav>
+      <nav class="seg" id="division-seg" aria-label="Division">
+        <a data-div="mpo" href="#forecast/mpo" class="active">MPO</a>
+        <a data-div="fpo" href="#forecast/fpo">FPO</a>
+      </nav>
     </div>
   </header>
 

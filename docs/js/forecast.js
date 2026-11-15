@@ -4,7 +4,7 @@
    The site's main view. `toggleDetail` is exported as well as `renderForecast`
    because a player permalink (#mpo-75412) has to open a row from the shell. */
 
-import { $, flagEmoji, fmtPct, fmtPctExact, fmtPts, fmtStroke, ordinal, state } from "./core.js";
+import { $, flagEmoji, fmtPct, fmtPctExact, fmtPts, fmtStroke, ordinal, routeHash, state } from "./core.js";
 import { tipAttrs } from "./tooltip.js";
 import { CLS_LABEL, countedTids, eventLink, fieldCell, liveThru, liveTidSet, nameCell, placeTag, playoffNote, probClass, shortName, sparkCell, strokesCell, wireSparkTips } from "./cells.js";
 import { eventProj, replay } from "./sim.js";
@@ -267,7 +267,7 @@ function toggleDetail(tr, d) {
   if (next && next.classList.contains("detail")) {
     next.remove();
     mark(tr, false);
-    history.replaceState(null, "", location.pathname + location.search);
+    history.replaceState(null, "", routeHash("forecast", state.div));
     return;
   }
   // only one row is ever open, so every other row's state is reset with it

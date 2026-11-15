@@ -10,7 +10,7 @@ its own.
 ## Modules
 
 `app.js` is the entry point and owns the shell — page header, freshness flag,
-tab wiring. Everything else lives in `js/`:
+navigation. Everything else lives in `js/`:
 
 | module | owns |
 |---|---|
@@ -58,6 +58,30 @@ and `pendingWaves` sit in `cells` (only `playoffNote` uses them) rather than in
 
 Adding a module means adding a `<link rel="modulepreload">` to `index.html`, or
 its fetch waits an extra round trip behind whatever imports it.
+
+## Navigation and URLs
+
+The URL hash is the single source of truth for what is showing. `core.js`
+holds the route table (`VIEW_SLUGS`), `routeHash(view, div)` and `readRoute()`;
+`app.js` re-renders on `hashchange` and `syncNav()` keeps the links in step.
+
+| URL | shows |
+|---|---|
+| `#forecast/mpo`, `#whats-left/fpo`, `#event-odds/…` | This season |
+| `#2027/…`, `#what-if/…`, `#eurotour/…` | Next season |
+| `#tour-planner/…`, `#am-planner` (no division) | Planners |
+| `#mpo-75412` | the forecast table with that player's row open |
+
+- Nav controls are `<a href>`, not buttons with click handlers. Do not add a
+  handler that sets `state.view` — link to `routeHash(...)` and let the hash
+  change do it, or Back and deep links stop agreeing with the page.
+- **Slugs and the `#mpo-NNN` form are public.** `dgpt/feed.py` publishes
+  player links in the movers feed and people share the rest; rename a slug
+  only with the old one still accepted in `readRoute()`.
+- A new view needs: a slug in `VIEW_SLUGS`, a place in `GROUPS` and
+  `VIEW_SECTIONS` (`app.js`), and its tab link and `<section>` in `index.html`.
+- `how-it-works.html` carries a static copy of the top-level nav; keep the two
+  in step by hand.
 
 ## Conventions that are load-bearing
 
